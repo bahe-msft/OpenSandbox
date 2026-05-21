@@ -42,6 +42,7 @@ import com.alibaba.opensandbox.sandbox.infrastructure.adapters.converter.Executi
 import com.alibaba.opensandbox.sandbox.infrastructure.adapters.converter.ExecutionEventDispatcher
 import com.alibaba.opensandbox.sandbox.infrastructure.adapters.converter.jsonParser
 import com.alibaba.opensandbox.sandbox.infrastructure.adapters.converter.parseSandboxError
+import com.alibaba.opensandbox.sandbox.infrastructure.adapters.converter.toCommandTimeoutMillis
 import com.alibaba.opensandbox.sandbox.infrastructure.adapters.converter.toSandboxException
 import okhttp3.Headers.Companion.toHeaders
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -196,7 +197,7 @@ internal class CommandsAdapter(
                 RunInSessionRequestApi(
                     command = request.command,
                     cwd = request.workingDirectory,
-                    timeout = request.timeout?.toMillis(),
+                    timeout = request.timeout?.toCommandTimeoutMillis(),
                 )
             val runUrl =
                 execdBaseUrl
