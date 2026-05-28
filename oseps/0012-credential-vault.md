@@ -25,6 +25,7 @@ status: provisional
   - [API Schema](#api-schema)
   - [Credential Sources](#credential-sources)
   - [Credential Injection](#credential-injection)
+  - [Response Redaction and Echo Handling](#response-redaction-and-echo-handling)
   - [Runtime Modes](#runtime-modes)
   - [Policy and Egress Integration](#policy-and-egress-integration)
   - [Observability](#observability)
@@ -59,7 +60,7 @@ to:
 
 ### Goals
 
-1. **Brokered credentials**: Let sandboxed workloads use credentials without receiving plaintext secret values in the sandbox environment, filesystem, command line, or user-visible process output.
+1. **Brokered credentials**: Let sandboxed workloads use credentials without receiving plaintext secret values through OpenSandbox-managed environment variables, files, lifecycle API responses, diagnostics, or logs.
 2. **Declarative binding**: Add a sandbox creation-time credential binding model that describes source, scope, and injection behavior.
 3. **Policy-aware runtime injection**: Inject credentials only when sandbox identity, destination FQDN, HTTP method, and path all match the binding.
 4. **Egress alignment**: Integrate with `networkPolicy.egress` so credential scope and network reachability are consistent.
@@ -83,16 +84,17 @@ to:
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | R1 | Users can attach credential bindings to a sandbox at creation time | Must Have |
-| R2 | Plaintext credentials are not exposed through sandbox env vars, files, lifecycle API responses, command output, or diagnostic APIs | Must Have |
-| R3 | Credential Proxy injects credentials only for matching FQDN, HTTP method, and path scope | Must Have |
+| R2 | Plaintext credentials are not exposed through OpenSandbox-managed sandbox env vars, files, lifecycle API responses, diagnostics, or logs | Must Have |
+| R3 | Credential Proxy injects credentials only for matching scheme, port, FQDN, HTTP method, and path scope | Must Have |
 | R4 | Initial injection supports HTTP request headers | Must Have |
 | R5 | Kubernetes Secret, server-local configuration, and inline ephemeral values can be used as credential sources | Must Have |
-| R6 | Credential bindings can be validated against `networkPolicy.egress` when both are present | Should Have |
+| R6 | Credential-enabled sandboxes require explicit `networkPolicy.egress` coverage for every binding target | Must Have |
 | R7 | Audit logs and metrics identify binding usage without logging credential values | Must Have |
 | R8 | Docker and Kubernetes runtimes use the same user-facing API semantics | Must Have |
 | R9 | Credential Proxy is default-deny for missing, invalid, or non-matching bindings | Must Have |
 | R10 | The runtime uses egress transparent mitmproxy as the Credential Proxy implementation | Must Have |
-| R11 | Future secret managers can be added through a provider interface | Should Have |
+| R11 | Credential-enabled egress startup fails closed when transparent redirect, mitm readiness, CA bootstrap, or egress API auth cannot be configured | Must Have |
+| R12 | Future secret managers can be added through a provider interface | Should Have |
 
 ## Proposal
 
@@ -104,7 +106,7 @@ The first implementation supports **transparent proxy mode**:
 2. OpenSandbox server validates bindings, resolves source references, and enables egress transparent mitmproxy for the sandbox.
 3. The sandbox application container sends normal outbound HTTP/HTTPS traffic, for example to `https://api.github.com/repos/alibaba/OpenSandbox`.
 4. Egress transparent mitmproxy intercepts outbound `TCP 80/443` traffic in the sandbox network namespace.
-5. Credential Proxy evaluates the intercepted request against the sandbox credential bindings.
+5. Credential Proxy evaluates the intercepted request against the sandbox credential bindings, including scheme and port.
 6. If exactly one binding matches and policy allows the request, Credential Proxy fetches or receives the credential material from a trusted source path and injects it into the request.
 7. The external service receives the credential-bearing request; the sandbox process only sees the service response.
 
@@ -144,8 +146,9 @@ At a high level:
 2. **HTTPS interception requires trusted CA setup**: Transparent HTTPS injection depends on the sandbox trusting the mitmproxy root CA. Images or runtime startup must install the OpenSandbox MITM CA, otherwise HTTPS handshakes fail.
 3. **Credential source access is control-plane trusted**: Runtime sidecars should not be granted broad cluster secret access. The server should resolve or mint scoped runtime material for only the requested sandbox bindings.
 4. **Credential material must be short-lived in memory**: Credential Proxy should not persist plaintext credentials on disk. If temporary files are unavoidable for runtime bootstrap, they must be mounted read-only, scoped to one sandbox, and cleaned up with sandbox deletion.
-5. **Binding scope must be narrower than or equal to egress scope**: A binding that injects a credential for a destination not allowed by egress policy should fail validation or produce a warning depending on compatibility mode.
+5. **Binding scope must be covered by egress scope**: A credential-enabled sandbox must include `networkPolicy.egress`, and every credential binding target must be covered by an allow rule. Missing or inconsistent egress policy fails sandbox creation.
 6. **Multiple matching bindings are ambiguous**: If more than one binding matches a request and no deterministic precedence is declared, Credential Proxy must fail closed.
+7. **Upstream echo is outside the absolute secrecy guarantee**: OpenSandbox prevents its own control plane and runtime surfaces from exposing credentials, but an upstream service can still echo request headers in response bodies or headers. Credential Proxy should redact known credential values from responses where practical, and users should avoid binding credentials to services that echo sensitive request headers.
 
 ### Risks and Mitigations
 
@@ -153,11 +156,17 @@ At a high level:
 |------|--------|------------|
 | Sandbox bypasses Credential Proxy | Credential not injected, or traffic reaches destination without policy mediation | Use egress transparent redirect for TCP 80/443 and recommend `networkPolicy.defaultAction=deny` with `dns+nft` |
 | Credential leakage through logs | Secret exposure | Central redaction helpers; never log injected headers or rendered values; regression tests for logs |
+| Upstream echoes injected credential | Credential appears in sandbox-visible response content | Redact known credential values from response headers and text bodies where practical; document that services which echo sensitive request headers are unsupported unless response redaction is sufficient |
 | Inline ephemeral value leaked by lifecycle logging | Secret exposure | Treat `inlineEphemeral.value` as write-only input; redact request bodies, validation errors, SDK debug logs, and persisted sandbox metadata |
 | Credential source over-permissioned to sidecars | Cluster-wide secret access risk | Server resolves sources and passes only sandbox-scoped material; sidecar has no Kubernetes API permission by default |
-| Binding and egress policy drift | Credential may be configured for unreachable or unintended destinations | Validate binding targets against `networkPolicy.egress`; expose diagnostics for mismatches |
+| Arbitrary Kubernetes Secret binding | Sandbox creator can use server RBAC to access unrelated cluster Secrets | Require configured source providers, namespace scope, allowlists, and requester authorization before resolving any Kubernetes Secret |
+| Binding and egress policy drift | Credential may be configured for unreachable or unintended destinations | Require `networkPolicy.egress` and fail creation when any binding target is not covered |
 | Header injection into wrong host due to redirects | Credential sent to unintended destination | Re-evaluate policy after each redirected request; strip injected credentials on cross-host redirect unless target scope matches |
+| Credential injected over cleartext HTTP | Credential exposed on the network | Default binding scope to `schemes: [https]` and `ports: [443]`; require explicit opt-in for any HTTP injection |
 | HTTPS CA not trusted by sandbox image | Authenticated HTTPS requests fail | Install/export the OpenSandbox mitmproxy CA during sandbox startup or document image requirements |
+| Transparent redirect unavailable | Credential traffic bypasses proxy policy | Fail sandbox creation/readiness when credential bindings are present and mitmproxy, iptables redirect, CA bootstrap, or egress auth cannot be configured |
+| User mitm addon observes injected headers | Credential exposure through extension hook | Disable user-provided mitm addons for credential-enabled sandboxes unless a future isolation model prevents addon access to credential-bearing flows |
+| Egress policy API unauthenticated | Sandbox process rewrites sidecar policy | Always provision `OPENSANDBOX_EGRESS_TOKEN` for credential-enabled sidecars, even when network policy would otherwise be omitted |
 | Multiple bindings match one request | Wrong credential injection | Fail closed unless a single highest-priority binding is configured |
 | Long-lived credentials remain in proxy memory | Expanded exposure window | Cache with TTL, zero buffers where practical, prefer short-lived tokens from providers |
 | Users expect full secret management | Product confusion | Document Credential Vault as a broker layer, not a standalone secret manager |
@@ -275,6 +284,19 @@ components:
       type: object
       required: [targets]
       properties:
+        schemes:
+          type: array
+          items:
+            type: string
+            enum: [https, http]
+          default: [https]
+          description: URL schemes eligible for credential injection. Defaults to HTTPS only.
+        ports:
+          type: array
+          items:
+            type: integer
+          default: [443]
+          description: Destination ports eligible for credential injection. Defaults to 443.
         targets:
           type: array
           items:
@@ -330,6 +352,8 @@ Example request:
           "key": "token"
         },
         "scope": {
+          "schemes": ["https"],
+          "ports": [443],
           "targets": ["api.github.com"],
           "methods": ["GET"],
           "paths": ["/repos/*", "/search/*"]
@@ -351,7 +375,9 @@ The MVP supports three source types.
 
 1. **Kubernetes Secret**
    - Available only for Kubernetes runtime.
-   - The OpenSandbox server reads the referenced secret through its existing service account permissions.
+   - The OpenSandbox server reads the referenced secret through a configured source provider, not arbitrary namespace/name input from the sandbox creator.
+   - The source provider must define allowed namespaces, allowed secret names or label selectors, and requester authorization rules.
+   - Sandbox creation must fail if the requester is not authorized to bind the referenced Kubernetes Secret.
    - Credential Proxy does not receive Kubernetes API permissions by default.
    - The resolved value is passed to the proxy through a sandbox-scoped secret volume or bootstrap channel.
 
@@ -405,9 +431,23 @@ Rules:
 
 - `{{ credential }}` is the only supported template variable in the MVP.
 - Credential Proxy must reject templates that do not include `{{ credential }}`.
+- Credential Proxy must inject only for HTTPS on port 443 by default.
+- Any HTTP or non-443 injection requires explicit `scope.schemes` and `scope.ports` opt-in and should be rejected by default platform policy unless the operator enables it.
 - Credential Proxy must reject attempts to inject hop-by-hop proxy headers unless explicitly allowed by implementation.
 - Credential Proxy must remove any existing request header with the same name before injecting a credential, unless a future merge strategy is added.
 - On redirect, Credential Proxy must re-evaluate target scope before preserving injected headers.
+
+### Response Redaction and Echo Handling
+
+Credential Proxy should redact known credential values from upstream response headers and text-like response bodies where practical. This protects against common debug endpoints and error handlers that echo request headers.
+
+This redaction is best effort, not an absolute secrecy guarantee:
+
+- Binary, compressed, encrypted, streaming, or very large response bodies may be passed without full body rewriting.
+- If response redaction is disabled or not possible, Credential Proxy should at least strip or redact response headers that contain known credential values.
+- Operators should not bind credentials to upstream services that intentionally echo sensitive request headers back to callers unless the response path is known to be safely redacted.
+
+The formal guarantee is that OpenSandbox-controlled surfaces do not expose plaintext credentials. It cannot guarantee that arbitrary upstream services will never include an injected credential in application-level response content.
 
 ### Runtime Modes
 
@@ -430,26 +470,30 @@ Limitations:
 - Requires the sandbox to trust the mitmproxy CA for HTTPS interception.
 - Applies to HTTP/HTTPS traffic on `80/443`; non-HTTP protocols need future designs.
 - In `ignore_hosts` pass-through mode, Credential Proxy cannot inspect or inject credentials for those hosts.
+- Credential-enabled startup must fail closed if mitmproxy, `iptables` redirect, CA bootstrap, credential addon loading, or egress API authentication cannot be configured.
+- User-provided mitm addons are disabled for credential-enabled sandboxes unless a future isolation model prevents them from observing credential-bearing flows.
 
 ### Policy and Egress Integration
 
-When both `credentialVault` and `networkPolicy` are present, the server should validate destination consistency.
+Credential-enabled sandboxes must include `networkPolicy.egress`. The server must validate destination consistency before sandbox creation.
 
-Recommended validation:
+Required validation:
 
 - Every credential binding target must be covered by an allow rule in `networkPolicy.egress`.
-- If `networkPolicy.defaultAction` is `allow`, the server should warn that credential-bearing requests may coexist with broad outbound access.
-- If a binding target is not reachable under egress policy, sandbox creation should fail with HTTP 400 in strict mode.
+- `networkPolicy.defaultAction` should be `deny`; if `allow` is accepted for compatibility, the server must still require explicit allow coverage for every binding target and warn that broad outbound access coexists with credential-bearing traffic.
+- If `networkPolicy` is omitted, if `egress` is empty, or if a binding target is not reachable under egress policy, sandbox creation must fail with HTTP 400.
 
 Suggested configuration:
 
 ```toml
 [credential_vault]
 enabled = true
-egress_validation = "strict" # strict | warn | disabled
+egress_validation = "strict"
 ```
 
-Credential Proxy remains fail-closed even if egress validation is disabled.
+For credential-enabled sandboxes, strict validation is required. Non-strict egress validation would allow credential-bearing traffic to run without an explicit network policy boundary.
+
+Credential-enabled sidecars must always provision `OPENSANDBOX_EGRESS_TOKEN` for the egress policy API, including cases where the egress sidecar starts solely because credentials are enabled. The application container must not receive this token.
 
 ### Observability
 
@@ -491,17 +535,20 @@ All diagnostics APIs that surface runtime logs must preserve redaction behavior.
 - Add config model for `[credential_vault]`.
 - Add source provider interface.
 - Validate `CreateSandboxRequest.credentialVault`.
+- Require and validate `networkPolicy.egress` for credential-enabled sandboxes.
 - Persist credential binding metadata without plaintext credential values.
 - Resolve or prepare sandbox-scoped credential material during sandbox creation.
 - Redact `inlineEphemeral.value` from request logging, validation errors, persisted metadata, and lifecycle responses.
-- Enable egress transparent mitmproxy and credential addon bootstrap for Docker and Kubernetes runtimes when bindings are present.
+- Enable egress transparent mitmproxy, egress API auth, and credential addon bootstrap for Docker and Kubernetes runtimes when bindings are present.
 
 #### Components / Egress
 
 - Extend `components/egress` transparent mitmproxy support with a first-party credential addon.
 - Load credential binding bootstrap config into the egress sidecar.
 - Implement binding evaluation, header injection, redaction, and audit events in the mitm addon path.
-- Keep the existing system addon behavior for streaming and user addon loading.
+- Keep the existing system addon behavior for streaming.
+- Disable user-provided mitm addon loading for credential-enabled sandboxes until addon isolation is designed.
+- Fail readiness/startup when transparent redirect, credential addon loading, CA bootstrap, or egress API auth is unavailable for a credential-enabled sandbox.
 
 #### Kubernetes
 
@@ -511,12 +558,14 @@ All diagnostics APIs that surface runtime logs must preserve redaction behavior.
 - Generated runtime Secrets must use labels and `ownerReferences` when possible; finalizers are reserved for cleanup that Kubernetes garbage collection cannot cover.
 - Ensure Credential Proxy has no broad Kubernetes API permissions by default.
 - Ensure the mitmproxy CA is trusted by the sandbox application container when HTTPS interception is enabled.
+- Ensure generated egress API auth material is available only to the control plane and egress sidecar, not the application container.
 
 #### Docker
 
 - Enable the egress sidecar with transparent mitmproxy sharing the sandbox network namespace.
 - Ensure the mitmproxy CA is trusted by the sandbox application container when HTTPS interception is enabled.
 - Clean up sidecar and sandbox-scoped credential material when the sandbox is deleted.
+- Ensure generated egress API auth material is not exposed to the application container.
 
 #### SDKs and CLI
 
@@ -529,21 +578,27 @@ All diagnostics APIs that surface runtime logs must preserve redaction behavior.
 ### Unit Tests
 
 - Schema validation accepts valid bindings and rejects missing `name`, `sourceRef`, `scope`, or `injection`.
-- FQDN, wildcard, method, and path matching work as expected.
+- Scheme, port, FQDN, wildcard, method, and path matching work as expected.
+- Injection defaults to HTTPS/443 only and rejects HTTP injection unless explicitly configured and permitted.
 - Multiple matching bindings fail closed.
 - Existing headers with the injection name are replaced or rejected according to the selected implementation rule.
 - Redaction removes credential values from logs and errors.
+- Response redaction removes known credential values from response headers and supported text bodies.
 - `inlineEphemeral.value` is accepted only as write-only create input and never appears in serialized sandbox metadata or API responses.
-- Egress validation catches binding targets not allowed by `networkPolicy.egress`.
+- Egress validation requires `networkPolicy.egress` and catches binding targets not allowed by policy.
+- Kubernetes Secret source providers reject namespace/name references that are outside configured allowlists or requester authorization.
 
 ### Integration Tests
 
 - Docker sandbox with server-local source can call a mock HTTP/HTTPS server that requires an injected header without setting proxy or base URL configuration.
 - Docker sandbox with inline ephemeral source can call a mock HTTP/HTTPS server and cannot recover the inline credential from environment, filesystem, diagnostics, or lifecycle responses.
-- Docker sandbox cannot read credential value from environment variables, mounted files, lifecycle API response, command output, or diagnostics.
+- Docker sandbox cannot read credential value from environment variables, mounted files, lifecycle API response, or diagnostics.
 - Kubernetes sandbox with Kubernetes Secret source can call a mock HTTP/HTTPS server that requires an injected header without setting proxy or base URL configuration.
 - Kubernetes sandbox with inline ephemeral source creates sandbox-scoped runtime material mounted only into the egress sidecar and cleans it up on sandbox deletion.
 - Credential Proxy denies non-matching hosts, paths, and methods.
+- Credential-enabled sandbox creation/readiness fails when transparent redirect, mitm readiness, CA bootstrap, credential addon loading, or egress API auth cannot be configured.
+- Credential-enabled sidecars require egress API auth even when credentials are the only reason the egress sidecar starts.
+- User-provided mitm addons are not loaded for credential-enabled sandboxes.
 - Cross-host redirect strips or re-evaluates injected credentials.
 - Sandbox deletion cleans up Credential Proxy and any sandbox-scoped credential material.
 
@@ -552,11 +607,15 @@ All diagnostics APIs that surface runtime logs must preserve redaction behavior.
 - Create a sandbox with `networkPolicy.defaultAction=deny`, allow `api.github.com`, bind a read-only GitHub credential, and verify a normal `https://api.github.com/...` call succeeds through Credential Proxy.
 - Verify direct access to a non-allowed domain fails under egress policy.
 - Verify logs and diagnostic APIs never contain the credential string.
+- Verify a mock upstream that echoes request headers does not expose known credential values in supported response headers or text bodies.
 
 ## Drawbacks
 
 - Requires enabling transparent MITM for credential-bearing HTTP/HTTPS traffic.
 - Adds a new control-plane surface and a credential-aware path inside egress.
+- Requires stricter startup behavior than ordinary egress policy; credential-enabled sandboxes fail closed instead of gracefully degrading when transparent interception is unavailable.
+- Disables user-provided mitm addons for credential-enabled sandboxes until addon isolation is available.
+- Cannot provide an absolute secrecy guarantee against arbitrary upstream services that echo credentials in unsupported response encodings or protocols.
 - Users may confuse Credential Vault with a full secret management system.
 - Debugging outbound requests becomes more complex because credentials are injected outside the application process.
 - Header injection covers common API use cases but not all credential workflows, such as SSH private keys or database passwords.
