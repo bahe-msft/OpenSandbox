@@ -41,23 +41,29 @@ interface PoolStateStore {
     /**
      * Variant of [tryTakeIdle] that skips entries whose remaining TTL is below [minRemainingTtl].
      *
-     * Atomically removes and returns one idle sandbox ID for the pool whose expiry is at least
-     * [minRemainingTtl] in the future, or null if no such entry exists. Entries failing the check
-     * are still consumed (removed from idle membership) so the pool can replenish with fresh ones.
+     * Atomically removes and returns a [TakeIdleResult] holding the chosen idle sandbox ID (or
+     * null if none satisfied the threshold) and the IDs of any **alive** entries that were
+     * skipped because their remaining TTL fell below [minRemainingTtl]. Already-expired entries
+     * are silently dropped — the server has already reaped them.
      *
-     * Default implementation falls back to [tryTakeIdle] when [minRemainingTtl] is zero or negative
-     * so existing custom store implementations remain source-compatible.
+     * Callers should best-effort terminate every ID in [TakeIdleResult.discardedAliveSandboxIds]
+     * so those sandboxes do not linger past their pool membership and consume quota until
+     * server-side TTL.
+     *
+     * Default implementation falls back to [tryTakeIdle] when [minRemainingTtl] is zero or
+     * negative so existing custom store implementations remain source-compatible.
      */
     fun tryTakeIdle(
         poolName: String,
         minRemainingTtl: Duration,
-    ): String? {
+    ): TakeIdleResult {
         if (minRemainingTtl.isNegative || minRemainingTtl.isZero) {
-            return tryTakeIdle(poolName)
+            return TakeIdleResult.of(tryTakeIdle(poolName))
         }
-        // Custom stores that do not override this method fall back to the binary-expiry behavior.
-        // Calling sites that pass a positive minRemainingTtl rely on overrides for correct filtering.
-        return tryTakeIdle(poolName)
+        // Custom stores predating this method only implement the binary-expiry path. Filtering
+        // is best-effort: they cannot surface near-expiry entries, so the discarded-alive list
+        // is empty. Stores that genuinely want near-expiry filtering must override this method.
+        return TakeIdleResult.of(tryTakeIdle(poolName))
     }
 
     /**
@@ -119,20 +125,26 @@ interface PoolStateStore {
      * (rather than waiting for them to fully expire), letting the pool replenish them with fresh
      * sandboxes before a future acquire would discard them.
      *
+     * Returns the IDs of **alive** entries that were evicted because their remaining TTL fell
+     * below [minRemainingTtl]. Already-expired entries are silently dropped — the server has
+     * already reaped them. Callers should best-effort terminate every returned ID so those
+     * sandboxes do not linger past their pool membership.
+     *
      * Default implementation falls back to [reapExpiredIdle] when [minRemainingTtl] is zero or
-     * negative so existing custom store implementations remain source-compatible.
+     * negative so existing custom store implementations remain source-compatible. Stores that
+     * predate this method cannot surface near-expiry entries; they return an empty list.
      */
     fun reapExpiredIdle(
         poolName: String,
         now: Instant,
         minRemainingTtl: Duration,
-    ) {
+    ): List<String> {
         if (minRemainingTtl.isNegative || minRemainingTtl.isZero) {
             reapExpiredIdle(poolName, now)
-            return
+            return emptyList()
         }
-        // Custom stores that do not override this method fall back to the strict-expiry sweep.
         reapExpiredIdle(poolName, now)
+        return emptyList()
     }
 
     /**

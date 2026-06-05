@@ -209,7 +209,9 @@ class SandboxPool internal constructor(
                 throw PoolNotRunningException("Cannot acquire when pool state is $state")
             }
             val poolName = config.poolName
-            val sandboxId = stateStore.tryTakeIdle(poolName, config.acquireMinRemainingTtl)
+            val takeResult = stateStore.tryTakeIdle(poolName, config.acquireMinRemainingTtl)
+            val sandboxId = takeResult.sandboxId
+            killDiscardedAlive(poolName, takeResult.discardedAliveSandboxIds, source = "acquire")
             var noIdleReason: String? = null // null = got a sandbox from idle; non-null = reason we have no usable idle
             var idleConnectFailure: Exception? = null
             if (sandboxId != null) {
@@ -411,6 +413,44 @@ class SandboxPool internal constructor(
     }
 
     private fun resolveMaxIdle(): Int = stateStore.getMaxIdle(config.poolName) ?: currentMaxIdle
+
+    /**
+     * Best-effort terminate sandboxes the store dropped because their remaining TTL fell below
+     * `acquireMinRemainingTtl`. The store has already removed them from idle membership; without
+     * this kill they would linger on the server until their TTL elapses, exceeding the intended
+     * pool size during the gap.
+     *
+     * Failures are logged and swallowed: the caller's primary outcome (acquire/reconcile) must
+     * not be impacted by a janitor failure.
+     */
+    private fun killDiscardedAlive(
+        poolName: String,
+        sandboxIds: List<String>,
+        source: String,
+    ) {
+        if (sandboxIds.isEmpty()) return
+        val manager = sandboxManager ?: return
+        for (sandboxId in sandboxIds) {
+            try {
+                manager.killSandbox(sandboxId)
+                logger.debug(
+                    "Killed near-expiry idle sandbox: pool_name={} sandbox_id={} source={}",
+                    poolName,
+                    sandboxId,
+                    source,
+                )
+            } catch (e: Exception) {
+                logger.warn(
+                    "Failed to kill near-expiry idle sandbox (best-effort, will expire server-side): " +
+                        "pool_name={} sandbox_id={} source={} error={}",
+                    poolName,
+                    sandboxId,
+                    source,
+                    e.message,
+                )
+            }
+        }
+    }
 
     private fun createSandboxManager(): SandboxManager = sandboxManagerFactory(connectionConfig.copyWithoutConnectionPool())
 

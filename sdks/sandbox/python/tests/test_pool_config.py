@@ -52,14 +52,22 @@ def _async_kwargs() -> dict[str, object]:
     }
 
 
-def test_default_acquire_min_remaining_ttl_is_60s() -> None:
+def test_default_acquire_min_remaining_ttl_is_60s_for_long_idle_timeout() -> None:
+    # 24h idle_timeout caps at 60s.
     config = PoolConfig(**_sync_kwargs())  # type: ignore[arg-type]
     assert config.acquire_min_remaining_ttl == timedelta(seconds=60)
 
 
-def test_async_default_acquire_min_remaining_ttl_is_60s() -> None:
+def test_async_default_acquire_min_remaining_ttl_is_60s_for_long_idle_timeout() -> None:
     config = AsyncPoolConfig(**_async_kwargs())  # type: ignore[arg-type]
     assert config.acquire_min_remaining_ttl == timedelta(seconds=60)
+
+
+def test_default_acquire_min_remaining_ttl_scales_for_short_idle_timeout() -> None:
+    # idle_timeout=30s ⇒ default = min(60s, 30s/2) = 15s. Existing users with short
+    # idle timeouts must not get a config-time error from a hidden 60s default.
+    config = PoolConfig(**_sync_kwargs(), idle_timeout=timedelta(seconds=30))  # type: ignore[arg-type]
+    assert config.acquire_min_remaining_ttl == timedelta(seconds=15)
 
 
 def test_negative_acquire_min_remaining_ttl_rejected() -> None:
@@ -67,20 +75,24 @@ def test_negative_acquire_min_remaining_ttl_rejected() -> None:
         PoolConfig(**_sync_kwargs(), acquire_min_remaining_ttl=timedelta(seconds=-1))  # type: ignore[arg-type]
 
 
-def test_acquire_min_remaining_ttl_at_or_above_idle_timeout_rejected() -> None:
-    # Default 60s threshold against a 30s idle_timeout ⇒ every freshly warmed entry
-    # would fail the check, so build() must reject this misconfiguration upfront.
-    with pytest.raises(
-        ValueError, match="strictly less than"
-    ):
-        PoolConfig(**_sync_kwargs(), idle_timeout=timedelta(seconds=30))  # type: ignore[arg-type]
+def test_explicit_acquire_min_remaining_ttl_at_or_above_idle_timeout_rejected() -> None:
+    # The auto-default protects against this, but an explicit value above idle_timeout
+    # still fails validation.
+    with pytest.raises(ValueError, match="strictly less than"):
+        PoolConfig(  # type: ignore[arg-type]
+            **_sync_kwargs(),
+            idle_timeout=timedelta(seconds=30),
+            acquire_min_remaining_ttl=timedelta(seconds=30),
+        )
 
 
-def test_async_acquire_min_remaining_ttl_at_or_above_idle_timeout_rejected() -> None:
-    with pytest.raises(
-        ValueError, match="strictly less than"
-    ):
-        AsyncPoolConfig(**_async_kwargs(), idle_timeout=timedelta(seconds=30))  # type: ignore[arg-type]
+def test_async_explicit_acquire_min_remaining_ttl_at_or_above_idle_timeout_rejected() -> None:
+    with pytest.raises(ValueError, match="strictly less than"):
+        AsyncPoolConfig(  # type: ignore[arg-type]
+            **_async_kwargs(),
+            idle_timeout=timedelta(seconds=30),
+            acquire_min_remaining_ttl=timedelta(seconds=30),
+        )
 
 
 def test_acquire_min_remaining_ttl_just_below_idle_timeout_accepted() -> None:

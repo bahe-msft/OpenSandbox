@@ -117,9 +117,13 @@ def _run_primary_replenish_once(
     ttl = config.primary_lock_ttl
     now = datetime.now(timezone.utc)
 
-    _reap_expired_idle_with_min_ttl(
+    discarded_alive = _reap_expired_idle_with_min_ttl(
         state_store, pool_name, now, config.acquire_min_remaining_ttl
     )
+    for sandbox_id in discarded_alive:
+        # Reaped near-expiry but server-side TTL has not yet elapsed; kill so the live
+        # sandbox does not linger past its pool membership and consume quota.
+        on_discard_sandbox(sandbox_id)
     counters = state_store.snapshot_counters(pool_name)
     excess = max(0, counters.idle_count - config.max_idle)
     to_remove = min(excess, int(config.warmup_concurrency or 1))

@@ -77,7 +77,7 @@ class SandboxPoolAsync:
         warmup_skip_health_check: bool = False,
         idle_timeout: timedelta = timedelta(hours=24),
         drain_timeout: timedelta = timedelta(seconds=30),
-        acquire_min_remaining_ttl: timedelta = timedelta(seconds=60),
+        acquire_min_remaining_ttl: timedelta | None = None,
         sandbox_manager_factory: Callable[
             [ConnectionConfig], Awaitable[SandboxManager]
         ] = SandboxManager.create,
@@ -170,10 +170,14 @@ class SandboxPoolAsync:
                     f"Cannot acquire when pool state is {state.value}"
                 )
             pool_name = self._config.pool_name
-            sandbox_id = await _try_take_idle_with_min_ttl_async(
+            take_result = await _try_take_idle_with_min_ttl_async(
                 self._state_store,
                 pool_name,
                 self._config.acquire_min_remaining_ttl,
+            )
+            sandbox_id = take_result.sandbox_id
+            await self._kill_discarded_alive(
+                pool_name, take_result.discarded_alive_sandbox_ids, source="acquire"
             )
             no_idle_reason: str | None = None
             idle_connect_failure: Exception | None = None
@@ -471,6 +475,24 @@ class SandboxPoolAsync:
                 self._config.pool_name,
                 sandbox_id,
                 exc,
+            )
+
+    async def _kill_discarded_alive(
+        self,
+        pool_name: str,
+        sandbox_ids: tuple[str, ...],
+        source: str,
+    ) -> None:
+        """Async counterpart of :meth:`SandboxPoolSync._kill_discarded_alive`."""
+        if not sandbox_ids:
+            return
+        for sandbox_id in sandbox_ids:
+            await self._kill_sandbox_best_effort(sandbox_id)
+            logger.debug(
+                "Killed near-expiry idle sandbox: pool_name=%s sandbox_id=%s source=%s",
+                pool_name,
+                sandbox_id,
+                source,
             )
 
     async def _begin_operation(self) -> None:

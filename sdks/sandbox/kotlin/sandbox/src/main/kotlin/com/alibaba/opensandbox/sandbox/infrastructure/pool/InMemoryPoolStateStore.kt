@@ -19,6 +19,7 @@ package com.alibaba.opensandbox.sandbox.infrastructure.pool
 import com.alibaba.opensandbox.sandbox.domain.pool.IdleEntry
 import com.alibaba.opensandbox.sandbox.domain.pool.PoolStateStore
 import com.alibaba.opensandbox.sandbox.domain.pool.StoreCounters
+import com.alibaba.opensandbox.sandbox.domain.pool.TakeIdleResult
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -43,33 +44,45 @@ class InMemoryPoolStateStore : PoolStateStore {
     /** Per pool: (map = sandboxId -> entry for idempotent put + expiry, queue = FIFO order for take). */
     private val pools = ConcurrentHashMap<String, PoolIdleState>()
 
-    override fun tryTakeIdle(poolName: String): String? = takeIdle(poolName, Instant.now())
+    override fun tryTakeIdle(poolName: String): String? {
+        val state = pools[poolName] ?: return null
+        val now = Instant.now()
+        while (true) {
+            val sandboxId = state.queue.poll() ?: return null
+            val entry = state.map.remove(sandboxId) ?: continue // already removed (e.g. by removeIdle)
+            if (entry.expiresAt.isAfter(now)) return sandboxId
+            // expired, discard and poll next
+        }
+    }
 
     override fun tryTakeIdle(
         poolName: String,
         minRemainingTtl: Duration,
-    ): String? {
+    ): TakeIdleResult {
         if (minRemainingTtl.isNegative || minRemainingTtl.isZero) {
-            return tryTakeIdle(poolName)
+            return TakeIdleResult.of(tryTakeIdle(poolName))
         }
-        return takeIdle(poolName, Instant.now().plus(minRemainingTtl))
-    }
-
-    /**
-     * Drains the FIFO queue, returning the first idle entry whose [IdleEntry.expiresAt] is
-     * strictly after [cutoff]. Entries failing the check (including already-expired and near-expiry)
-     * are removed from idle membership and discarded so reconcile can replenish.
-     */
-    private fun takeIdle(
-        poolName: String,
-        cutoff: Instant,
-    ): String? {
-        val state = pools[poolName] ?: return null
+        val state = pools[poolName] ?: return TakeIdleResult.EMPTY
+        val now = Instant.now()
+        val cutoff = now.plus(minRemainingTtl)
+        var discardedAlive: MutableList<String>? = null
         while (true) {
-            val sandboxId = state.queue.poll() ?: return null
+            val sandboxId = state.queue.poll() ?: return TakeIdleResult(
+                sandboxId = null,
+                discardedAliveSandboxIds = discardedAlive ?: emptyList(),
+            )
             val entry = state.map.remove(sandboxId) ?: continue // already removed (e.g. by removeIdle)
-            if (entry.expiresAt.isAfter(cutoff)) return sandboxId
-            // expired or below minRemainingTtl, discard and poll next
+            if (entry.expiresAt.isAfter(cutoff)) {
+                return TakeIdleResult(
+                    sandboxId = sandboxId,
+                    discardedAliveSandboxIds = discardedAlive ?: emptyList(),
+                )
+            }
+            // Below threshold. If still alive (server-side TTL not yet elapsed), surface it so
+            // the caller can kill it; otherwise silently drop — the server has already reaped it.
+            if (entry.expiresAt.isAfter(now)) {
+                (discardedAlive ?: ArrayList<String>().also { discardedAlive = it }).add(sandboxId)
+            }
         }
     }
 
@@ -131,15 +144,25 @@ class InMemoryPoolStateStore : PoolStateStore {
         poolName: String,
         now: Instant,
         minRemainingTtl: Duration,
-    ) {
+    ): List<String> {
         if (minRemainingTtl.isNegative || minRemainingTtl.isZero) {
             reapExpiredIdle(poolName, now)
-            return
+            return emptyList()
         }
-        val state = pools[poolName] ?: return
+        val state = pools[poolName] ?: return emptyList()
         val cutoff = now.plus(minRemainingTtl)
-        state.map.entries.removeIf { !it.value.expiresAt.isAfter(cutoff) }
+        var discardedAlive: MutableList<String>? = null
+        // Snapshot to avoid mutating the map while iterating.
+        for ((sandboxId, entry) in state.map.entries.toList()) {
+            if (entry.expiresAt.isAfter(cutoff)) continue
+            if (state.map.remove(sandboxId, entry)) {
+                if (entry.expiresAt.isAfter(now)) {
+                    (discardedAlive ?: ArrayList<String>().also { discardedAlive = it }).add(sandboxId)
+                }
+            }
+        }
         state.queue.removeIf { sandboxId -> !state.map.containsKey(sandboxId) }
+        return discardedAlive ?: emptyList()
     }
 
     override fun snapshotCounters(poolName: String): StoreCounters {

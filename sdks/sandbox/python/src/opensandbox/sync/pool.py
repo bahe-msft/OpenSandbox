@@ -76,7 +76,7 @@ class SandboxPoolSync:
         warmup_skip_health_check: bool = False,
         idle_timeout: timedelta = timedelta(hours=24),
         drain_timeout: timedelta = timedelta(seconds=30),
-        acquire_min_remaining_ttl: timedelta = timedelta(seconds=60),
+        acquire_min_remaining_ttl: timedelta | None = None,
         sandbox_manager_factory: Callable[
             [ConnectionConfigSync], SandboxManagerSync
         ] = SandboxManagerSync.create,
@@ -176,10 +176,14 @@ class SandboxPoolSync:
                     f"Cannot acquire when pool state is {state.value}"
                 )
             pool_name = self._config.pool_name
-            sandbox_id = _try_take_idle_with_min_ttl(
+            take_result = _try_take_idle_with_min_ttl(
                 self._state_store,
                 pool_name,
                 self._config.acquire_min_remaining_ttl,
+            )
+            sandbox_id = take_result.sandbox_id
+            self._kill_discarded_alive(
+                pool_name, take_result.discarded_alive_sandbox_ids, source="acquire"
             )
             no_idle_reason: str | None = None
             idle_connect_failure: Exception | None = None
@@ -453,6 +457,27 @@ class SandboxPoolSync:
                 self._config.pool_name,
                 sandbox_id,
                 exc,
+            )
+
+    def _kill_discarded_alive(
+        self,
+        pool_name: str,
+        sandbox_ids: tuple[str, ...],
+        source: str,
+    ) -> None:
+        """Best-effort terminate sandboxes the store dropped because their remaining TTL
+        fell below ``acquire_min_remaining_ttl``. Without this, alive-but-near-expiry
+        sandboxes would linger past their pool membership until server-side TTL elapses.
+        """
+        if not sandbox_ids:
+            return
+        for sandbox_id in sandbox_ids:
+            self._kill_sandbox_best_effort(sandbox_id)
+            logger.debug(
+                "Killed near-expiry idle sandbox: pool_name=%s sandbox_id=%s source=%s",
+                pool_name,
+                sandbox_id,
+                source,
             )
 
     def _begin_operation(self) -> None:

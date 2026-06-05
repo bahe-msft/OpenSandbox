@@ -177,39 +177,63 @@ class InMemoryPoolStateStoreTest {
     @Test
     fun `tryTakeIdle with minRemainingTtl falls back to base behavior when zero or negative`() {
         store.putIdle(poolName, "id-1")
-        // Duration.ZERO must not change behavior
-        assertEquals("id-1", store.tryTakeIdle(poolName, Duration.ZERO))
+        // Duration.ZERO must not change behavior; result has no discarded-alive entries.
+        val first = store.tryTakeIdle(poolName, Duration.ZERO)
+        assertEquals("id-1", first.sandboxId)
+        assertEquals(emptyList<String>(), first.discardedAliveSandboxIds)
 
         store.putIdle(poolName, "id-2")
-        // Negative also falls through to the base path; should still return the entry
-        assertEquals("id-2", store.tryTakeIdle(poolName, Duration.ofSeconds(-1)))
+        val second = store.tryTakeIdle(poolName, Duration.ofSeconds(-1))
+        assertEquals("id-2", second.sandboxId)
+        assertEquals(emptyList<String>(), second.discardedAliveSandboxIds)
     }
 
     @Test
-    fun `tryTakeIdle skips entries whose remaining TTL is below threshold`() {
+    fun `tryTakeIdle surfaces alive entries below the threshold so callers can kill them`() {
         val inMemoryStore = InMemoryPoolStateStore()
         // Entries get a 5-second TTL.
         inMemoryStore.setIdleEntryTtl(poolName, Duration.ofSeconds(5))
         inMemoryStore.putIdle(poolName, "id-1")
         inMemoryStore.putIdle(poolName, "id-2")
 
-        // Demand more remaining TTL than the entries have. Both should be discarded;
-        // the call returns null without crossing into another pool's data.
-        assertNull(inMemoryStore.tryTakeIdle(poolName, Duration.ofSeconds(60)))
+        // Demand more remaining TTL than the entries have. Both have ~5s remaining
+        // and are still server-side alive, so they show up in discardedAliveSandboxIds.
+        val result = inMemoryStore.tryTakeIdle(poolName, Duration.ofSeconds(60))
+        assertNull(result.sandboxId)
+        assertEquals(listOf("id-1", "id-2"), result.discardedAliveSandboxIds)
         // The discarded entries are also removed from idle membership.
         assertEquals(0, inMemoryStore.snapshotCounters(poolName).idleCount)
     }
 
     @Test
-    fun `reapExpiredIdle with minRemainingTtl evicts near-expiry entries`() {
+    fun `tryTakeIdle silently drops fully-expired entries because the server has reaped them`() {
+        val inMemoryStore = InMemoryPoolStateStore()
+        // 1ms TTL → entry is fully expired by the time we try to take it.
+        inMemoryStore.setIdleEntryTtl(poolName, Duration.ofMillis(1))
+        inMemoryStore.putIdle(poolName, "expired-1")
+        Thread.sleep(20)
+        inMemoryStore.setIdleEntryTtl(poolName, Duration.ofMinutes(10))
+        inMemoryStore.putIdle(poolName, "alive-1")
+
+        // The expired entry is silently dropped (no kill needed — server already reaped it);
+        // the alive entry is returned.
+        val result = inMemoryStore.tryTakeIdle(poolName, Duration.ofSeconds(60))
+        assertEquals("alive-1", result.sandboxId)
+        assertEquals(emptyList<String>(), result.discardedAliveSandboxIds)
+    }
+
+    @Test
+    fun `reapExpiredIdle with minRemainingTtl returns alive evicted entries`() {
         val inMemoryStore = InMemoryPoolStateStore()
         inMemoryStore.setIdleEntryTtl(poolName, Duration.ofSeconds(5))
         inMemoryStore.putIdle(poolName, "id-1")
         inMemoryStore.putIdle(poolName, "id-2")
 
-        // Sweep with a 60s threshold while entries only have 5s left → both reaped.
-        inMemoryStore.reapExpiredIdle(poolName, Instant.now(), Duration.ofSeconds(60))
+        // Sweep with a 60s threshold while entries only have ~5s left → both reaped, both alive.
+        val discardedAlive =
+            inMemoryStore.reapExpiredIdle(poolName, Instant.now(), Duration.ofSeconds(60))
 
+        assertEquals(setOf("id-1", "id-2"), discardedAlive.toSet())
         assertEquals(0, inMemoryStore.snapshotCounters(poolName).idleCount)
     }
 
@@ -219,8 +243,10 @@ class InMemoryPoolStateStoreTest {
         inMemoryStore.setIdleEntryTtl(poolName, Duration.ofMinutes(10))
         inMemoryStore.putIdle(poolName, "id-1")
 
-        inMemoryStore.reapExpiredIdle(poolName, Instant.now(), Duration.ofSeconds(60))
+        val discardedAlive =
+            inMemoryStore.reapExpiredIdle(poolName, Instant.now(), Duration.ofSeconds(60))
 
+        assertEquals(emptyList<String>(), discardedAlive)
         assertEquals(1, inMemoryStore.snapshotCounters(poolName).idleCount)
     }
 
@@ -232,11 +258,31 @@ class InMemoryPoolStateStoreTest {
 
         // Zero threshold matches the strict-expiry behavior — entry has 5s left, sweep at "now"
         // does not evict it.
-        inMemoryStore.reapExpiredIdle(poolName, Instant.now(), Duration.ZERO)
+        assertEquals(emptyList<String>(), inMemoryStore.reapExpiredIdle(poolName, Instant.now(), Duration.ZERO))
         assertEquals(1, inMemoryStore.snapshotCounters(poolName).idleCount)
 
-        inMemoryStore.reapExpiredIdle(poolName, Instant.now(), Duration.ofSeconds(-1))
+        assertEquals(
+            emptyList<String>(),
+            inMemoryStore.reapExpiredIdle(poolName, Instant.now(), Duration.ofSeconds(-1)),
+        )
         assertEquals(1, inMemoryStore.snapshotCounters(poolName).idleCount)
+    }
+
+    @Test
+    fun `reapExpiredIdle excludes already-expired entries from the alive list`() {
+        val inMemoryStore = InMemoryPoolStateStore()
+        inMemoryStore.setIdleEntryTtl(poolName, Duration.ofMillis(1))
+        inMemoryStore.putIdle(poolName, "expired")
+        Thread.sleep(20)
+        inMemoryStore.setIdleEntryTtl(poolName, Duration.ofSeconds(5))
+        inMemoryStore.putIdle(poolName, "alive")
+
+        val discardedAlive =
+            inMemoryStore.reapExpiredIdle(poolName, Instant.now(), Duration.ofSeconds(60))
+
+        // expired is reaped silently (server already gone); alive is surfaced for kill.
+        assertEquals(listOf("alive"), discardedAlive)
+        assertEquals(0, inMemoryStore.snapshotCounters(poolName).idleCount)
     }
 
     @Test
@@ -246,7 +292,9 @@ class InMemoryPoolStateStoreTest {
         inMemoryStore.putIdle(poolName, "id-1")
 
         // 10 minutes of TTL is well above a 60-second threshold.
-        assertEquals("id-1", inMemoryStore.tryTakeIdle(poolName, Duration.ofSeconds(60)))
+        val result = inMemoryStore.tryTakeIdle(poolName, Duration.ofSeconds(60))
+        assertEquals("id-1", result.sandboxId)
+        assertEquals(emptyList<String>(), result.discardedAliveSandboxIds)
     }
 
     @Test

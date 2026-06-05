@@ -41,12 +41,15 @@ import kotlin.math.ceil
  * ready (default: 200ms).
  * @property acquireHealthCheck Optional custom health check for sandboxes returned by acquire.
  * @property acquireSkipHealthCheck When true, skip readiness checks for sandboxes returned by acquire (default: false).
- * @property acquireMinRemainingTtl Minimum remaining TTL an idle sandbox must have to be returned by acquire.
- * Idle entries closer to expiry than this threshold are discarded so the subsequent ready-check and
- * any user-side renew have time to run before server-side expiry. Defaults to 60s, which covers the
- * default [acquireReadyTimeout] of 30s with comfortable headroom. Must be strictly less than
- * [idleTimeout] — a value at or above [idleTimeout] would reject every freshly warmed entry. Set to
+ * @property acquireMinRemainingTtl Minimum remaining TTL an idle sandbox must have to be returned
+ * by acquire. Idle entries closer to expiry than this threshold are discarded so the subsequent
+ * ready-check and any user-side renew have time to run before server-side expiry. Set to
  * [Duration.ZERO] to opt out and restore the pre-existing binary-expiry behavior.
+ *
+ * Default is auto-derived from [idleTimeout] so existing users with short idle timeouts are not
+ * silently broken: 60s when [idleTimeout] > 60s, otherwise `idleTimeout / 2` (rounded down). The
+ * resolved value is always strictly less than [idleTimeout]. Pass an explicit value to the builder
+ * to override.
  * @property warmupReadyTimeout Max time to wait for a pool-created sandbox to become ready (default: 30s).
  * @property warmupHealthCheckPollingInterval Poll interval while waiting for a pool-created sandbox to become ready
  * (default: 200ms).
@@ -113,7 +116,7 @@ class PoolConfig private constructor(
         private const val DEFAULT_DEGRADED_THRESHOLD = 3
         private val DEFAULT_ACQUIRE_READY_TIMEOUT = Duration.ofSeconds(30)
         private val DEFAULT_ACQUIRE_HEALTH_CHECK_POLLING_INTERVAL = Duration.ofMillis(200)
-        private val DEFAULT_ACQUIRE_MIN_REMAINING_TTL: Duration = Duration.ofSeconds(60)
+        private val DEFAULT_ACQUIRE_MIN_REMAINING_TTL_CAP: Duration = Duration.ofSeconds(60)
         private val DEFAULT_WARMUP_READY_TIMEOUT = Duration.ofSeconds(30)
         private val DEFAULT_WARMUP_HEALTH_CHECK_POLLING_INTERVAL = Duration.ofMillis(200)
         private val DEFAULT_IDLE_TIMEOUT = Duration.ofHours(24)
@@ -121,6 +124,21 @@ class PoolConfig private constructor(
 
         @JvmStatic
         fun builder(): Builder = Builder()
+
+        /**
+         * Resolves the default `acquireMinRemainingTtl` from the user's [idleTimeout]:
+         * `min(60s, idleTimeout / 2)`. The result is always strictly less than [idleTimeout],
+         * so users with short idle timeouts get an automatically scaled threshold instead of a
+         * config-time error.
+         */
+        internal fun defaultAcquireMinRemainingTtl(idleTimeout: Duration): Duration {
+            val half = idleTimeout.dividedBy(2L)
+            return if (DEFAULT_ACQUIRE_MIN_REMAINING_TTL_CAP < half) {
+                DEFAULT_ACQUIRE_MIN_REMAINING_TTL_CAP
+            } else {
+                half
+            }
+        }
     }
 
     internal fun withMaxIdle(maxIdle: Int): PoolConfig {
@@ -165,7 +183,7 @@ class PoolConfig private constructor(
         private var acquireHealthCheckPollingInterval: Duration = DEFAULT_ACQUIRE_HEALTH_CHECK_POLLING_INTERVAL
         private var acquireHealthCheck: ((Sandbox) -> Boolean)? = null
         private var acquireSkipHealthCheck: Boolean = false
-        private var acquireMinRemainingTtl: Duration = DEFAULT_ACQUIRE_MIN_REMAINING_TTL
+        private var acquireMinRemainingTtl: Duration? = null
         private var warmupReadyTimeout: Duration = DEFAULT_WARMUP_READY_TIMEOUT
         private var warmupHealthCheckPollingInterval: Duration = DEFAULT_WARMUP_HEALTH_CHECK_POLLING_INTERVAL
         private var warmupHealthCheck: ((Sandbox) -> Boolean)? = null
@@ -246,11 +264,13 @@ class PoolConfig private constructor(
 
         /**
          * Sets the minimum remaining TTL an idle sandbox must have to be returned by acquire.
-         * Idle entries closer to expiry than [acquireMinRemainingTtl] are discarded so the subsequent
-         * ready-check and any user-side renew have time to run before the server-side expiry kicks in.
+         * Idle entries closer to expiry than [acquireMinRemainingTtl] are discarded so the
+         * subsequent ready-check and any user-side renew have time to run before the server-side
+         * expiry kicks in.
          *
-         * Must be non-negative and strictly less than [idleTimeout]. Defaults to 60s. Set to
-         * [Duration.ZERO] to opt out and restore the pre-existing binary-expiry behavior.
+         * Must be non-negative and strictly less than `idleTimeout`. If not set, the resolved
+         * default is `min(60s, idleTimeout / 2)`. Pass [Duration.ZERO] to opt out and restore the
+         * pre-existing binary-expiry behavior.
          */
         fun acquireMinRemainingTtl(acquireMinRemainingTtl: Duration): Builder {
             this.acquireMinRemainingTtl = acquireMinRemainingTtl
@@ -305,6 +325,8 @@ class PoolConfig private constructor(
             val spec = creationSpec ?: throw IllegalArgumentException("creationSpec is required")
 
             val warmup = warmupConcurrency ?: ceil(max * 0.2).toInt().coerceAtLeast(1)
+            val resolvedAcquireMinRemainingTtl =
+                acquireMinRemainingTtl ?: defaultAcquireMinRemainingTtl(idleTimeout)
 
             return PoolConfig(
                 poolName = name,
@@ -321,7 +343,7 @@ class PoolConfig private constructor(
                 acquireHealthCheckPollingInterval = acquireHealthCheckPollingInterval,
                 acquireHealthCheck = acquireHealthCheck,
                 acquireSkipHealthCheck = acquireSkipHealthCheck,
-                acquireMinRemainingTtl = acquireMinRemainingTtl,
+                acquireMinRemainingTtl = resolvedAcquireMinRemainingTtl,
                 warmupReadyTimeout = warmupReadyTimeout,
                 warmupHealthCheckPollingInterval = warmupHealthCheckPollingInterval,
                 warmupHealthCheck = warmupHealthCheck,

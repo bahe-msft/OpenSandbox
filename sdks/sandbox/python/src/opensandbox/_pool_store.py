@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from threading import RLock
 
-from opensandbox.pool_types import IdleEntry, StoreCounters
+from opensandbox.pool_types import IdleEntry, StoreCounters, TakeIdleResult
 
 
 class InMemoryPoolStateStore:
@@ -35,33 +35,54 @@ class InMemoryPoolStateStore:
         self._lock = RLock()
 
     def try_take_idle(self, pool_name: str) -> str | None:
-        return self._take_idle(pool_name, _now())
-
-    def try_take_idle_min_ttl(
-        self, pool_name: str, min_remaining_ttl: timedelta
-    ) -> str | None:
-        """Variant of :meth:`try_take_idle` that skips entries with insufficient remaining TTL.
-
-        Entries failing the check are still consumed (removed from idle membership) so
-        the pool can replenish with fresh ones on the next reconcile.
-        """
-        if min_remaining_ttl.total_seconds() <= 0:
-            return self.try_take_idle(pool_name)
-        return self._take_idle(pool_name, _now() + min_remaining_ttl)
-
-    def _take_idle(self, pool_name: str, cutoff: datetime) -> str | None:
         with self._lock:
             state = self._pools.get(pool_name)
             if state is None:
                 return None
+            now = _now()
+            while state.queue:
+                sandbox_id = state.queue.popleft()
+                entry = state.entries.pop(sandbox_id, None)
+                if entry is None:
+                    continue
+                if entry.expires_at > now:
+                    return sandbox_id
+            return None
+
+    def try_take_idle_min_ttl(
+        self, pool_name: str, min_remaining_ttl: timedelta
+    ) -> TakeIdleResult:
+        """Variant of :meth:`try_take_idle` that skips entries with insufficient remaining TTL.
+
+        Returns a :class:`TakeIdleResult` carrying the chosen ID (if any) plus the IDs of
+        any **alive** entries skipped because their remaining TTL fell below ``min_remaining_ttl``.
+        Already-expired entries are silently dropped — the server has already reaped them.
+        """
+        if min_remaining_ttl.total_seconds() <= 0:
+            return TakeIdleResult(sandbox_id=self.try_take_idle(pool_name))
+        with self._lock:
+            state = self._pools.get(pool_name)
+            if state is None:
+                return TakeIdleResult(sandbox_id=None)
+            now = _now()
+            cutoff = now + min_remaining_ttl
+            discarded_alive: list[str] = []
             while state.queue:
                 sandbox_id = state.queue.popleft()
                 entry = state.entries.pop(sandbox_id, None)
                 if entry is None:
                     continue
                 if entry.expires_at > cutoff:
-                    return sandbox_id
-            return None
+                    return TakeIdleResult(
+                        sandbox_id=sandbox_id,
+                        discarded_alive_sandbox_ids=tuple(discarded_alive),
+                    )
+                if entry.expires_at > now:
+                    discarded_alive.append(sandbox_id)
+            return TakeIdleResult(
+                sandbox_id=None,
+                discarded_alive_sandbox_ids=tuple(discarded_alive),
+            )
 
     def put_idle(self, pool_name: str, sandbox_id: str) -> None:
         if not sandbox_id or not sandbox_id.strip():
@@ -98,13 +119,32 @@ class InMemoryPoolStateStore:
 
     def reap_expired_idle_min_ttl(
         self, pool_name: str, now: datetime, min_remaining_ttl: timedelta
-    ) -> None:
-        """Variant of :meth:`reap_expired_idle` that also evicts near-expiry entries."""
+    ) -> tuple[str, ...]:
+        """Variant of :meth:`reap_expired_idle` that also evicts near-expiry entries.
+
+        Returns IDs of **alive** entries (server-side TTL has not elapsed) that were evicted
+        because their remaining TTL fell below ``min_remaining_ttl``. Already-expired entries
+        are still evicted but excluded from the return value — the server has reaped them.
+        """
         if min_remaining_ttl.total_seconds() <= 0:
             self.reap_expired_idle(pool_name, now)
-            return
+            return ()
+        cutoff = now + min_remaining_ttl
+        discarded_alive: list[str] = []
         with self._lock:
-            self._reap_locked(pool_name, now + min_remaining_ttl)
+            state = self._pools.get(pool_name)
+            if state is None:
+                return ()
+            for sandbox_id, entry in list(state.entries.items()):
+                if entry.expires_at > cutoff:
+                    continue
+                state.entries.pop(sandbox_id, None)
+                if entry.expires_at > now:
+                    discarded_alive.append(sandbox_id)
+            state.queue = deque(
+                sandbox_id for sandbox_id in state.queue if sandbox_id in state.entries
+            )
+        return tuple(discarded_alive)
 
     def snapshot_counters(self, pool_name: str) -> StoreCounters:
         with self._lock:

@@ -23,12 +23,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, TypeVar, cast
 
 from opensandbox.exceptions import PoolStateStoreUnavailableException
-from opensandbox.pool_types import IdleEntry, StoreCounters
+from opensandbox.pool_types import IdleEntry, StoreCounters, TakeIdleResult
 from opensandbox.redis_pool_store import (
     _REQUIRED_REDIS_METHODS,
     Redis,
     RedisPoolStateStore,
     _decode,
+    _decode_take_idle_result,
     _millis,
     _validate_owner_and_ttl,
 )
@@ -55,17 +56,20 @@ class AsyncRedisPoolStateStore:
         self._default_idle_ttl = timedelta(hours=24)
 
     async def try_take_idle(self, pool_name: str) -> str | None:
-        return await self._take_idle(pool_name, "0")
+        result = await self._eval_take_idle(pool_name, "0")
+        return result.sandbox_id
 
     async def try_take_idle_min_ttl(
         self, pool_name: str, min_remaining_ttl: timedelta
-    ) -> str | None:
+    ) -> TakeIdleResult:
         """Variant of :meth:`try_take_idle` that skips entries with insufficient remaining TTL."""
         if min_remaining_ttl.total_seconds() <= 0:
-            return await self.try_take_idle(pool_name)
-        return await self._take_idle(pool_name, str(max(0, _millis(min_remaining_ttl))))
+            return TakeIdleResult(sandbox_id=await self.try_take_idle(pool_name))
+        return await self._eval_take_idle(pool_name, str(max(0, _millis(min_remaining_ttl))))
 
-    async def _take_idle(self, pool_name: str, min_remaining_ttl_ms: str) -> str | None:
+    async def _eval_take_idle(
+        self, pool_name: str, min_remaining_ttl_ms: str
+    ) -> TakeIdleResult:
         result = await self._execute(
             "try_take_idle",
             pool_name,
@@ -80,7 +84,7 @@ class AsyncRedisPoolStateStore:
                 ),
             ),
         )
-        return _decode(result) if result is not None else None
+        return _decode_take_idle_result(result)
 
     async def put_idle(self, pool_name: str, sandbox_id: str) -> None:
         if not sandbox_id or not sandbox_id.strip():
@@ -176,15 +180,20 @@ class AsyncRedisPoolStateStore:
 
     async def reap_expired_idle_min_ttl(
         self, pool_name: str, now: datetime, min_remaining_ttl: timedelta
-    ) -> None:
-        """Variant of :meth:`reap_expired_idle` that also evicts near-expiry entries."""
+    ) -> tuple[str, ...]:
+        """Variant of :meth:`reap_expired_idle` that also evicts near-expiry entries.
+
+        Returns IDs of alive evicted sandboxes (excluding fully-expired entries).
+        """
         if min_remaining_ttl.total_seconds() <= 0:
             await self.reap_expired_idle(pool_name, now)
-            return
-        await self._reap_idle(pool_name, str(max(0, _millis(min_remaining_ttl))))
+            return ()
+        return await self._reap_idle(pool_name, str(max(0, _millis(min_remaining_ttl))))
 
-    async def _reap_idle(self, pool_name: str, min_remaining_ttl_ms: str) -> None:
-        await self._execute(
+    async def _reap_idle(
+        self, pool_name: str, min_remaining_ttl_ms: str
+    ) -> tuple[str, ...]:
+        result = await self._execute(
             "reap_expired_idle",
             pool_name,
             lambda: cast(
@@ -198,6 +207,9 @@ class AsyncRedisPoolStateStore:
                 ),
             ),
         )
+        if not result:
+            return ()
+        return tuple(_decode(item) for item in result)
 
     async def snapshot_counters(self, pool_name: str) -> StoreCounters:
         async def op() -> StoreCounters:

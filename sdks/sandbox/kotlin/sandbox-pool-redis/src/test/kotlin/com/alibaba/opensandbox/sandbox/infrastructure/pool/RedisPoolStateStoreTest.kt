@@ -137,34 +137,49 @@ class RedisPoolStateStoreTest {
     }
 
     @Test
-    fun `tryTakeIdle with minRemainingTtl skips entries below the threshold`() {
+    fun `tryTakeIdle surfaces alive entries below the threshold so callers can kill them`() {
         val stateStore = requireStore()
 
-        // Entries get a 200ms TTL.
-        stateStore.setIdleEntryTtl(poolName, Duration.ofMillis(200))
+        // 1s TTL: still alive (server-side TTL has not elapsed) but well below the 60s threshold.
+        stateStore.setIdleEntryTtl(poolName, Duration.ofSeconds(1))
         stateStore.putIdle(poolName, "id-1")
         stateStore.putIdle(poolName, "id-2")
 
-        // Demand more remaining TTL than the entries can possibly have.
-        // Both should be discarded; the call returns null.
-        assertNull(stateStore.tryTakeIdle(poolName, Duration.ofSeconds(60)))
-        // Discarded entries are also removed from idle membership.
+        val result = stateStore.tryTakeIdle(poolName, Duration.ofSeconds(60))
+        assertNull(result.sandboxId)
+        assertEquals(setOf("id-1", "id-2"), result.discardedAliveSandboxIds.toSet())
         assertEquals(0, stateStore.snapshotCounters(poolName).idleCount)
     }
 
     @Test
-    fun `reapExpiredIdle with minRemainingTtl evicts near-expiry entries`() {
+    fun `tryTakeIdle silently drops fully-expired entries`() {
         val stateStore = requireStore()
 
-        stateStore.setIdleEntryTtl(poolName, Duration.ofMillis(500))
+        stateStore.setIdleEntryTtl(poolName, Duration.ofMillis(50))
+        stateStore.putIdle(poolName, "expired")
+        Thread.sleep(150)
+        stateStore.setIdleEntryTtl(poolName, Duration.ofMinutes(10))
+        stateStore.putIdle(poolName, "alive")
+
+        val result = stateStore.tryTakeIdle(poolName, Duration.ofSeconds(60))
+        // expired silently dropped (no kill needed); alive returned.
+        assertEquals("alive", result.sandboxId)
+        assertEquals(emptyList<String>(), result.discardedAliveSandboxIds)
+    }
+
+    @Test
+    fun `reapExpiredIdle with minRemainingTtl returns alive evicted entries`() {
+        val stateStore = requireStore()
+
+        stateStore.setIdleEntryTtl(poolName, Duration.ofSeconds(1))
         stateStore.putIdle(poolName, "id-1")
         stateStore.putIdle(poolName, "id-2")
 
-        // 60s threshold against 500ms TTL → both entries are near-expiry and reaped.
-        stateStore.reapExpiredIdle(poolName, Instant.now(), Duration.ofSeconds(60))
+        val discardedAlive =
+            stateStore.reapExpiredIdle(poolName, Instant.now(), Duration.ofSeconds(60))
 
+        assertEquals(setOf("id-1", "id-2"), discardedAlive.toSet())
         assertEquals(0, stateStore.snapshotCounters(poolName).idleCount)
-        assertNull(stateStore.tryTakeIdle(poolName))
     }
 
     @Test
@@ -174,8 +189,10 @@ class RedisPoolStateStoreTest {
         stateStore.setIdleEntryTtl(poolName, Duration.ofMinutes(10))
         stateStore.putIdle(poolName, "id-1")
 
-        stateStore.reapExpiredIdle(poolName, Instant.now(), Duration.ofSeconds(60))
+        val discardedAlive =
+            stateStore.reapExpiredIdle(poolName, Instant.now(), Duration.ofSeconds(60))
 
+        assertEquals(emptyList<String>(), discardedAlive)
         assertEquals(1, stateStore.snapshotCounters(poolName).idleCount)
     }
 
@@ -186,8 +203,9 @@ class RedisPoolStateStoreTest {
         stateStore.setIdleEntryTtl(poolName, Duration.ofMinutes(10))
         stateStore.putIdle(poolName, "id-1")
 
-        // 10 minutes of TTL is well above a 60-second threshold.
-        assertEquals("id-1", stateStore.tryTakeIdle(poolName, Duration.ofSeconds(60)))
+        val result = stateStore.tryTakeIdle(poolName, Duration.ofSeconds(60))
+        assertEquals("id-1", result.sandboxId)
+        assertEquals(emptyList<String>(), result.discardedAliveSandboxIds)
     }
 
     @Test
@@ -195,9 +213,13 @@ class RedisPoolStateStoreTest {
         val stateStore = requireStore()
 
         stateStore.putIdle(poolName, "id-1")
-        // Duration.ZERO must not change behavior.
-        assertEquals("id-1", stateStore.tryTakeIdle(poolName, Duration.ZERO))
-        assertNull(stateStore.tryTakeIdle(poolName, Duration.ZERO))
+        val taken = stateStore.tryTakeIdle(poolName, Duration.ZERO)
+        assertEquals("id-1", taken.sandboxId)
+        assertEquals(emptyList<String>(), taken.discardedAliveSandboxIds)
+
+        val empty = stateStore.tryTakeIdle(poolName, Duration.ZERO)
+        assertNull(empty.sandboxId)
+        assertEquals(emptyList<String>(), empty.discardedAliveSandboxIds)
     }
 
     @Test
