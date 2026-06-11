@@ -22,6 +22,8 @@ This adapter handles file operations within sandboxes using the auto-generated A
 
 import json
 import logging
+import os
+import time
 from collections.abc import AsyncIterator
 from io import IOBase, TextIOBase
 from typing import TypedDict
@@ -228,7 +230,8 @@ class FilesystemAdapter(Filesystem):
     async def write_files(self, entries: list[WriteEntry]) -> None:
         """Write multiple files in a single operation using multipart upload.
 
-        Aligned with Kotlin SDK implementation.
+        Uses chunked transfer encoding via async generator so the proxy layer
+        does not impose Content-Length-based body size limits.
         """
         if not entries:
             return
@@ -237,54 +240,81 @@ class FilesystemAdapter(Filesystem):
 
         try:
             client = await self._get_httpx_client()
-            multipart_parts = []
+            boundary = f"opensandbox_{os.urandom(8).hex()}_{int(time.time())}"
 
-            for entry in entries:
-                if not entry.path:
-                    raise InvalidArgumentException("File path cannot be null")
-                if entry.data is None:
-                    raise InvalidArgumentException("File data cannot be null")
+            async def _body() -> AsyncIterator[bytes]:
+                for entry in entries:
+                    if not entry.path:
+                        raise InvalidArgumentException("File path cannot be null")
+                    if entry.data is None:
+                        raise InvalidArgumentException("File data cannot be null")
 
-                metadata = {
-                    "path": entry.path,
-                    "owner": entry.owner,
-                    "group": entry.group,
-                    "mode": entry.mode,
-                }
-                metadata_json = json.dumps(metadata)
+                    metadata = {
+                        "path": entry.path,
+                        "owner": entry.owner,
+                        "group": entry.group,
+                        "mode": entry.mode,
+                    }
+                    metadata_json = json.dumps(metadata)
 
-                multipart_parts.append(
-                    ("metadata", ("metadata", metadata_json, "application/json"))
-                )
+                    content: bytes | str | IOBase
+                    content_type: str
 
-                content: bytes | str | IOBase
-                content_type: str
-
-                if isinstance(entry.data, bytes):
-                    content = entry.data
-                    content_type = "application/octet-stream"
-
-                elif isinstance(entry.data, str):
-                    encoding = entry.encoding or "utf-8"
-                    content = entry.data
-                    content_type = f"text/plain; charset={encoding}"
-
-                elif isinstance(entry.data, IOBase):
-                    if isinstance(entry.data, TextIOBase):
-                        raise InvalidArgumentException(
-                            "File stream must be binary (opened with 'rb'). Text streams are not supported."
-                        )
-                    else:
+                    if isinstance(entry.data, bytes):
                         content = entry.data
                         content_type = "application/octet-stream"
-                else:
-                    raise InvalidArgumentException(
-                        f"Unsupported file data type: {type(entry.data)}"
-                    )
-                multipart_parts.append(("file", (entry.path, content, content_type)))
+                    elif isinstance(entry.data, str):
+                        content = entry.data
+                        content_type = "text/plain; charset=utf-8"
+                    elif isinstance(entry.data, IOBase):
+                        if isinstance(entry.data, TextIOBase):
+                            raise InvalidArgumentException(
+                                "File stream must be binary (opened with 'rb'). Text streams are not supported."
+                            )
+                        content = entry.data
+                        content_type = "application/octet-stream"
+                    else:
+                        raise InvalidArgumentException(
+                            f"Unsupported file data type: {type(entry.data)}"
+                        )
+
+                    # metadata part
+                    yield f"--{boundary}\r\n".encode()
+                    yield 'Content-Disposition: form-data; name="metadata"\r\n'.encode()
+                    yield "Content-Type: application/json\r\n\r\n".encode()
+                    yield metadata_json.encode()
+                    yield b"\r\n"
+
+                    # file part header
+                    filename = os.path.basename(entry.path) or "file"
+                    yield f"--{boundary}\r\n".encode()
+                    yield f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode()
+                    yield f"Content-Type: {content_type}\r\n\r\n".encode()
+
+                    # file data
+                    if isinstance(content, bytes):
+                        yield content
+                    elif isinstance(content, str):
+                        yield content.encode("utf-8")
+                    else:  # IOBase
+                        while True:
+                            chunk = content.read(64 * 1024)
+                            if not chunk:
+                                break
+                            if isinstance(chunk, str):
+                                yield chunk.encode()
+                            else:
+                                yield chunk
+                    yield b"\r\n"
+
+                yield f"--{boundary}--\r\n".encode()
 
             url = self._get_execd_url(self.FILESYSTEM_UPLOAD_PATH)
-            response = await client.post(url, files=multipart_parts)
+            response = await client.post(
+                url,
+                content=_body(),
+                headers={"content-type": f"multipart/form-data; boundary={boundary}"},
+            )
             response.raise_for_status()
         except Exception as e:
             logger.error(f"Failed to write {len(entries)} files", exc_info=e)
