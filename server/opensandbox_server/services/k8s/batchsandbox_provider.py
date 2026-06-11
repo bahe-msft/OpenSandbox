@@ -440,7 +440,7 @@ class BatchSandboxProvider(WorkloadProvider):
     ) -> Dict[str, Any]:
         """Build pool taskTemplate with shell-escaped bootstrap command."""
         escaped_entrypoint = ' '.join(shlex.quote(arg) for arg in entrypoint)
-        user_process_cmd = f"/opt/opensandbox/bin/bootstrap.sh {escaped_entrypoint} &"
+        user_process_cmd = f"/opt/opensandbox/bootstrap.sh {escaped_entrypoint} &"
         
         wrapped_command = ["/bin/sh", "-c", user_process_cmd]
 
