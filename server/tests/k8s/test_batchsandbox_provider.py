@@ -463,7 +463,7 @@ spec:
         main_container = body["spec"]["template"]["spec"]["containers"][0]
         
         assert main_container["command"] == [
-            "/opt/opensandbox/bin/bootstrap.sh",
+            "/opt/opensandbox/bootstrap.sh",
             "/usr/bin/python",
             "app.py"
         ]
@@ -495,7 +495,7 @@ spec:
         assert env_dict["FOO"] == "bar"
         assert env_dict["BAZ"] == "qux"
         # Verify EXECD is automatically injected
-        assert env_dict["EXECD"] == "/opt/opensandbox/bin/execd"
+        assert env_dict["EXECD"] == "/opt/opensandbox/execd"
 
     def test_create_workload_merges_template_volumes_and_mounts(self, mock_k8s_client, tmp_path):
         template_file = tmp_path / "template.yaml"
@@ -564,7 +564,7 @@ spec:
         - name: sandbox
           volumeMounts:
             - name: opensandbox-bin
-              mountPath: /opt/opensandbox/bin
+              mountPath: /opt/opensandbox
             - name: sandbox-shared-data
               mountPath: /data
 """
@@ -1373,8 +1373,8 @@ spec:
         assert command[0] == "/bin/sh"
         assert command[1] == "-c"
         # Command should contain bootstrap.sh execution
-        # Example: /opt/opensandbox/bin/bootstrap.sh python app.py &
-        assert "/opt/opensandbox/bin/bootstrap.sh python app.py" in command[2]
+        # Example: /opt/opensandbox/bootstrap.sh python app.py &
+        assert "/opt/opensandbox/bootstrap.sh python app.py" in command[2]
         assert command[2].endswith(" &")
         assert task_template["spec"]["process"]["env"] == [{"name": "FOO", "value": "bar"}]
     
@@ -1388,7 +1388,7 @@ spec:
         - Env list formatted correctly for K8s
         
         Generated command example:
-        /bin/sh -c "/opt/opensandbox/bin/bootstrap.sh /usr/bin/python app.py &"
+        /bin/sh -c "/opt/opensandbox/bootstrap.sh /usr/bin/python app.py &"
         """
         provider = BatchSandboxProvider(mock_k8s_client)
         
@@ -1406,7 +1406,7 @@ spec:
         assert command[0] == "/bin/sh"
         assert command[1] == "-c"
         # Should execute via bootstrap.sh in background (&)
-        assert "/opt/opensandbox/bin/bootstrap.sh" in command[2]
+        assert "/opt/opensandbox/bootstrap.sh" in command[2]
         assert "/usr/bin/python" in command[2]
         assert "app.py" in command[2]
         # Should end with & (run in background)
@@ -1425,7 +1425,7 @@ spec:
         Verifies command is wrapped in shell and executes via bootstrap.sh in background.
         
         Generated command example:
-        /bin/sh -c "/opt/opensandbox/bin/bootstrap.sh /usr/bin/python app.py &"
+        /bin/sh -c "/opt/opensandbox/bootstrap.sh /usr/bin/python app.py &"
         """
         provider = BatchSandboxProvider(mock_k8s_client)
         
@@ -1443,7 +1443,7 @@ spec:
         assert command[0] == "/bin/sh"
         assert command[1] == "-c"
         # Check escaped entrypoint
-        assert "/opt/opensandbox/bin/bootstrap.sh" in command[2]
+        assert "/opt/opensandbox/bootstrap.sh" in command[2]
         assert "/usr/bin/python" in command[2]
         assert "app.py" in command[2]
         assert command[2].endswith(" &")
@@ -1465,7 +1465,7 @@ spec:
         
         command = result["spec"]["process"]["command"][2]
         # Should execute bootstrap.sh in background
-        assert "/opt/opensandbox/bin/bootstrap.sh" in command
+        assert "/opt/opensandbox/bootstrap.sh" in command
         assert "python" in command
         assert "app.py" in command
         assert command.endswith(" &")

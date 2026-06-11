@@ -115,10 +115,10 @@ def _build_execd_init_container(
     disable_ipv6_for_egress: bool = False,
 ) -> V1Container:
     script = (
-        "cp ./execd /opt/opensandbox/bin/execd && "
-        "cp ./bootstrap.sh /opt/opensandbox/bin/bootstrap.sh && "
-        "chmod +x /opt/opensandbox/bin/execd && "
-        "chmod +x /opt/opensandbox/bin/bootstrap.sh"
+        "cp ./execd /opt/opensandbox/execd && "
+        "cp ./bootstrap.sh /opt/opensandbox/bootstrap.sh && "
+        "chmod +x /opt/opensandbox/execd && "
+        "chmod +x /opt/opensandbox/bootstrap.sh"
     )
     security_context = None
     if disable_ipv6_for_egress:
@@ -140,7 +140,7 @@ def _build_execd_init_container(
         volume_mounts=[
             V1VolumeMount(
                 name="opensandbox-bin",
-                mount_path="/opt/opensandbox/bin",
+                mount_path="/opt/opensandbox",
             )
         ],
         resources=resources,
@@ -158,7 +158,7 @@ def _build_main_container(
     image_pull_policy: Optional[str] = None,
 ) -> V1Container:
     env_vars = [V1EnvVar(name=k, value=v) for k, v in env.items()]
-    env_vars.append(V1EnvVar(name="EXECD", value="/opt/opensandbox/bin/execd"))
+    env_vars.append(V1EnvVar(name="EXECD", value="/opt/opensandbox/execd"))
 
     translated_limits = _translate_resource_limits_for_k8s(resource_limits)
     resources = None
@@ -171,7 +171,7 @@ def _build_main_container(
     volume_mounts = [
         V1VolumeMount(
             name="opensandbox-bin",
-            mount_path="/opt/opensandbox/bin",
+            mount_path="/opt/opensandbox",
         )
     ]
 
@@ -184,7 +184,7 @@ def _build_main_container(
         name="sandbox",
         image=image_spec.uri,
         image_pull_policy=image_pull_policy,
-        command=["/opt/opensandbox/bin/bootstrap.sh"] + entrypoint,
+        command=["/opt/opensandbox/bootstrap.sh"] + entrypoint,
         env=env_vars if env_vars else None,
         resources=resources,
         volume_mounts=volume_mounts,

@@ -343,7 +343,7 @@ class TestApplyEgressToSpec:
 
 class TestPrepExecdInitForEgress:
     def test_returns_privileged_security_dict_and_prefixed_script(self):
-        base = "cp ./execd /opt/opensandbox/bin/execd"
+        base = "cp ./execd /opt/opensandbox/execd"
         script, sc = prep_execd_init_for_egress(base)
         assert sc == {"privileged": True}
         assert "/proc/sys/net/ipv6/conf/all/disable_ipv6" in script
