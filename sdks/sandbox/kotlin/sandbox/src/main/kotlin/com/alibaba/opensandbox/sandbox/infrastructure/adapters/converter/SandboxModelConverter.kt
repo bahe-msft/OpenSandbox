@@ -18,7 +18,6 @@ package com.alibaba.opensandbox.sandbox.infrastructure.adapters.converter
 
 // API Models
 import com.alibaba.opensandbox.sandbox.api.models.CreateSandboxRequest
-import com.alibaba.opensandbox.sandbox.api.models.CredentialProxyConfig as ApiCredentialProxyConfig
 import com.alibaba.opensandbox.sandbox.api.models.CreateSandboxResponse
 import com.alibaba.opensandbox.sandbox.api.models.Endpoint
 import com.alibaba.opensandbox.sandbox.api.models.ImageSpec
@@ -51,6 +50,7 @@ import com.alibaba.opensandbox.sandbox.domain.models.sandboxes.SnapshotStatus
 import com.alibaba.opensandbox.sandbox.domain.models.sandboxes.Volume
 import java.time.Duration
 import java.time.OffsetDateTime
+import com.alibaba.opensandbox.sandbox.api.models.CredentialProxyConfig as ApiCredentialProxyConfig
 import com.alibaba.opensandbox.sandbox.api.models.Host as ApiHost
 import com.alibaba.opensandbox.sandbox.api.models.NetworkPolicy as ApiNetworkPolicy
 import com.alibaba.opensandbox.sandbox.api.models.NetworkRule as ApiNetworkRule

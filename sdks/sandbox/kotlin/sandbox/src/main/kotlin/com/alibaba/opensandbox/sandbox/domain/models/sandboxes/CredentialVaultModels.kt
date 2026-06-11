@@ -266,23 +266,19 @@ class CredentialAuth private constructor(
         fun builder(): Builder = Builder()
 
         @JvmStatic
-        fun bearer(credential: String): CredentialAuth =
-            builder().type(Type.BEARER).credential(credential).build()
+        fun bearer(credential: String): CredentialAuth = builder().type(Type.BEARER).credential(credential).build()
 
         @JvmStatic
-        fun basic(credential: String): CredentialAuth =
-            builder().type(Type.BASIC).credential(credential).build()
+        fun basic(credential: String): CredentialAuth = builder().type(Type.BASIC).credential(credential).build()
 
         @JvmStatic
         fun apiKey(
             name: String,
             credential: String,
-        ): CredentialAuth =
-            builder().type(Type.API_KEY).name(name).credential(credential).build()
+        ): CredentialAuth = builder().type(Type.API_KEY).name(name).credential(credential).build()
 
         @JvmStatic
-        fun customHeaders(headers: List<CustomHeaderEntry>): CredentialAuth =
-            builder().type(Type.CUSTOM_HEADERS).headers(headers).build()
+        fun customHeaders(headers: List<CustomHeaderEntry>): CredentialAuth = builder().type(Type.CUSTOM_HEADERS).headers(headers).build()
     }
 
     class Builder {
@@ -409,8 +405,7 @@ class CredentialVaultCreateRequest private constructor(
             return this
         }
 
-        fun build(): CredentialVaultCreateRequest =
-            CredentialVaultCreateRequest(credentials = credentials, bindings = bindings)
+        fun build(): CredentialVaultCreateRequest = CredentialVaultCreateRequest(credentials = credentials, bindings = bindings)
     }
 }
 
@@ -490,8 +485,7 @@ class CredentialBindingMutationSet private constructor(
 
         fun delete(vararg delete: String): Builder = delete(delete.toList())
 
-        fun build(): CredentialBindingMutationSet =
-            CredentialBindingMutationSet(add = add, replace = replace, delete = delete)
+        fun build(): CredentialBindingMutationSet = CredentialBindingMutationSet(add = add, replace = replace, delete = delete)
     }
 }
 

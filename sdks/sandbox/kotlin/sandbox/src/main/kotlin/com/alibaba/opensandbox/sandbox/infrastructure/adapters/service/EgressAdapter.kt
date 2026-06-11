@@ -400,8 +400,7 @@ internal class EgressAdapter(
         )
     }
 
-    private fun String.toCredentialMetadata(): CredentialMetadata =
-        jsonParser.parseToJsonElement(this).jsonObject.toCredentialMetadata()
+    private fun String.toCredentialMetadata(): CredentialMetadata = jsonParser.parseToJsonElement(this).jsonObject.toCredentialMetadata()
 
     private fun String.toCredentialBindingMetadata(): CredentialBindingMetadata =
         jsonParser.parseToJsonElement(this).jsonObject.toCredentialBindingMetadata()
@@ -449,8 +448,7 @@ internal class EgressAdapter(
         get(name)?.jsonPrimitive?.content
             ?: throw IllegalStateException("Credential Vault response missing required string field: $name")
 
-    private fun JsonObject.optionalString(name: String): String? =
-        get(name)?.takeUnless { it is JsonNull }?.jsonPrimitive?.contentOrNull
+    private fun JsonObject.optionalString(name: String): String? = get(name)?.takeUnless { it is JsonNull }?.jsonPrimitive?.contentOrNull
 
     private fun JsonObject.requiredInt(name: String): Int =
         get(name)?.jsonPrimitive?.int
@@ -460,20 +458,15 @@ internal class EgressAdapter(
         get(name)?.jsonArray
             ?: throw IllegalStateException("Credential Vault response missing required array field: $name")
 
-    private fun JsonObject.optionalObject(name: String): JsonObject? =
-        get(name)?.takeUnless { it is JsonNull }?.jsonObject
+    private fun JsonObject.optionalObject(name: String): JsonObject? = get(name)?.takeUnless { it is JsonNull }?.jsonObject
 
-    private fun JsonObject.optionalArray(name: String): JsonArray? =
-        get(name)?.takeUnless { it is JsonNull }?.jsonArray
+    private fun JsonObject.optionalArray(name: String): JsonArray? = get(name)?.takeUnless { it is JsonNull }?.jsonArray
 
-    private fun JsonObject.requiredStringArray(name: String): List<String> =
-        requiredArray(name).map { it.requiredStringValue() }
+    private fun JsonObject.requiredStringArray(name: String): List<String> = requiredArray(name).map { it.requiredStringValue() }
 
-    private fun JsonObject.optionalStringArray(name: String): List<String>? =
-        optionalArray(name)?.map { it.requiredStringValue() }
+    private fun JsonObject.optionalStringArray(name: String): List<String>? = optionalArray(name)?.map { it.requiredStringValue() }
 
-    private fun JsonObject.optionalIntArray(name: String): List<Int>? =
-        optionalArray(name)?.map { it.jsonPrimitive.int }
+    private fun JsonObject.optionalIntArray(name: String): List<Int>? = optionalArray(name)?.map { it.jsonPrimitive.int }
 
     private fun JsonElement.requiredStringValue(): String = jsonPrimitive.content
 }
