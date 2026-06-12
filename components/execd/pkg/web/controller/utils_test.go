@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/alibaba/opensandbox/execd/pkg/web/model"
@@ -82,7 +83,9 @@ func TestMakeDir_NewDir(t *testing.T) {
 	info, err := os.Stat(newDir)
 	require.NoError(t, err)
 	require.True(t, info.IsDir())
-	require.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		require.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+	}
 }
 
 func TestSetFileOwnership_EmptyOwnerGroup(t *testing.T) {
@@ -92,6 +95,11 @@ func TestSetFileOwnership_EmptyOwnerGroup(t *testing.T) {
 
 	err := SetFileOwnership(file, "", "")
 	require.NoError(t, err, "empty owner and group should be a no-op")
+}
+
+func TestSetFileOwnership_MissingFile(t *testing.T) {
+	err := SetFileOwnership("/nonexistent/path/file.txt", "", "")
+	require.Error(t, err, "empty owner/group on missing file should return error")
 }
 
 func TestSearchFileMetadata(t *testing.T) {

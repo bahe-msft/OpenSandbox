@@ -106,6 +106,9 @@ func SetFileOwnership(absPath string, owner string, group string) error {
 	}
 
 	if uid == -1 && gid == -1 {
+		if _, err := os.Stat(absPath); err != nil {
+			return fmt.Errorf("failed to set owner/group for %s: %w", absPath, err)
+		}
 		return nil
 	}
 
