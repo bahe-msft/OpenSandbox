@@ -383,9 +383,6 @@ func (v *Store) Ready() error {
 }
 
 func (v *Store) validateCandidate(credentials map[string]record, bindings map[string]Binding, pol *policy.NetworkPolicy) error {
-	if len(bindings) > 0 && (pol == nil || (len(pol.Egress) == 0 && pol.DefaultAction != policy.ActionAllow)) {
-		return fmt.Errorf("credential bindings require explicit networkPolicy.egress allow rules or defaultAction allow")
-	}
 	for _, b := range bindings {
 		if err := validateBindingCredentialRefs(b, credentials); err != nil {
 			return err
