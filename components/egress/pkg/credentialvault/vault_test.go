@@ -88,7 +88,7 @@ func TestCredentialVaultDefaultAllowRespectsExplicitDenyRule(t *testing.T) {
 	pol := testCredentialPolicy(t, `{"defaultAction":"allow","egress":[{"action":"deny","target":"code.example.com"}]}`)
 
 	_, err := store.Create(testCredentialVaultRequest(), pol)
-	require.ErrorContains(t, err, "not covered")
+	require.ErrorContains(t, err, "not allowed by egress policy")
 }
 
 func TestCredentialVaultRejectsReservedAndDuplicateHeaderNamesCaseInsensitively(t *testing.T) {

@@ -394,11 +394,6 @@ func (v *Store) validateCandidate(credentials map[string]record, bindings map[st
 	if err := validateBindingAmbiguity(bindings); err != nil {
 		return err
 	}
-	for name := range credentials {
-		if strings.TrimSpace(name) == "" {
-			return fmt.Errorf("credential name cannot be blank")
-		}
-	}
 	return nil
 }
 
@@ -410,7 +405,7 @@ func (v *Store) validateBindingPolicy(b Binding, pol *policy.NetworkPolicy) erro
 	}
 	for _, host := range b.Match.Hosts {
 		if !explicitAllowCoversHost(pol, host) {
-			return fmt.Errorf("binding %q host %q is not covered by an explicit allow egress rule", b.Name, host)
+			return fmt.Errorf("binding %q host %q is not allowed by egress policy", b.Name, host)
 		}
 		if bindingHostMatchesIgnoreHosts(host) {
 			return fmt.Errorf("binding %q host %q matches mitmproxy ignore_hosts", b.Name, host)
