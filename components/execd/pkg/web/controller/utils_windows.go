@@ -117,20 +117,18 @@ func RenameFile(item model.RenameFileItem) error {
 // MkdirAllWithOwnership creates targetDir and any missing parents, then applies
 // owner/group only to the directories that were actually created (not pre-existing ones).
 func MkdirAllWithOwnership(targetDir string, dirPerm os.FileMode, owner, group string) error {
-	firstNew := targetDir
+	firstNew := ""
+	cur := targetDir
 	for {
-		parent := filepath.Dir(firstNew)
-		if parent == firstNew {
+		if _, err := os.Stat(cur); err == nil {
 			break
 		}
-		if _, err := os.Stat(firstNew); err == nil {
-			firstNew = ""
+		firstNew = cur
+		parent := filepath.Dir(cur)
+		if parent == cur {
 			break
 		}
-		if _, err := os.Stat(parent); err == nil {
-			break
-		}
-		firstNew = parent
+		cur = parent
 	}
 
 	if err := os.MkdirAll(targetDir, dirPerm); err != nil {
@@ -146,7 +144,7 @@ func MkdirAllWithOwnership(targetDir string, dirPerm os.FileMode, owner, group s
 		return err
 	}
 	parts := strings.Split(rel, string(filepath.Separator))
-	cur := firstNew
+	cur = firstNew
 	if err := SetFileOwnership(cur, owner, group); err != nil {
 		return err
 	}
