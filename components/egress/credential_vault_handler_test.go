@@ -199,7 +199,7 @@ func TestCredentialVaultWriteRequiresTLSOrLoopback(t *testing.T) {
 	initial := testCredentialVaultPolicy(t, `{"defaultAction":"deny","egress":[{"action":"allow","target":"code.example.com"}]}`)
 	srv := &policyServer{
 		proxy:                     &stubProxy{updated: initial},
-		credentialVault:            credentialvault.NewStore(nil, func() bool { return true }),
+		credentialVault:           credentialvault.NewStore(nil, func() bool { return true }),
 		credentialVaultRequireTLS: true,
 	}
 
@@ -237,7 +237,7 @@ func TestCredentialVaultWriteAllowsForwardedProto(t *testing.T) {
 	initial := testCredentialVaultPolicy(t, `{"defaultAction":"deny","egress":[{"action":"allow","target":"code.example.com"}]}`)
 	srv := &policyServer{
 		proxy:                     &stubProxy{updated: initial},
-		credentialVault:            credentialvault.NewStore(nil, func() bool { return true }),
+		credentialVault:           credentialvault.NewStore(nil, func() bool { return true }),
 		credentialVaultRequireTLS: true,
 	}
 

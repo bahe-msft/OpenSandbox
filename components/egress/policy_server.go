@@ -175,11 +175,11 @@ type policyServer struct {
 	alwaysLoader     *policy.AlwaysRuleLoader
 	stopAlwaysReload chan struct{}
 
-	lastAlwaysFP    uint64
-	lastAlwaysFPSet bool
-	credentialVault            *credentialvault.Store
-	mitmGate                   *mitmproxy.HealthGate
-	credentialVaultRequireTLS  bool
+	lastAlwaysFP              uint64
+	lastAlwaysFPSet           bool
+	credentialVault           *credentialvault.Store
+	mitmGate                  *mitmproxy.HealthGate
+	credentialVaultRequireTLS bool
 }
 
 type policyStatusResponse struct {
