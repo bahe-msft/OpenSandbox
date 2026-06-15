@@ -383,8 +383,8 @@ func (v *Store) Ready() error {
 }
 
 func (v *Store) validateCandidate(credentials map[string]record, bindings map[string]Binding, pol *policy.NetworkPolicy) error {
-	if len(bindings) > 0 && (pol == nil || len(pol.Egress) == 0) {
-		return fmt.Errorf("credential bindings require explicit networkPolicy.egress allow rules")
+	if len(bindings) > 0 && (pol == nil || (len(pol.Egress) == 0 && pol.DefaultAction != policy.ActionAllow)) {
+		return fmt.Errorf("credential bindings require explicit networkPolicy.egress allow rules or defaultAction allow")
 	}
 	for _, b := range bindings {
 		if err := validateBindingCredentialRefs(b, credentials); err != nil {
@@ -820,6 +820,12 @@ func explicitAllowCoversHost(pol *policy.NetworkPolicy, host string) bool {
 	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
 	if host == "" {
 		return false
+	}
+	if pol.DefaultAction == policy.ActionAllow {
+		if strings.HasPrefix(host, "*.") {
+			return pol.Evaluate("probe."+strings.TrimPrefix(host, "*.")) == policy.ActionAllow
+		}
+		return pol.Evaluate(host) == policy.ActionAllow
 	}
 	if strings.HasPrefix(host, "*.") {
 		return explicitAllowRuleMatches(pol, host) && pol.Evaluate("probe."+strings.TrimPrefix(host, "*.")) == policy.ActionAllow
