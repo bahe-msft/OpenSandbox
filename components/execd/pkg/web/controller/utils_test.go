@@ -88,6 +88,51 @@ func TestMakeDir_NewDir(t *testing.T) {
 	}
 }
 
+func TestMkdirAllWithOwnership_NewNestedDirs(t *testing.T) {
+	tmp := t.TempDir()
+	nested := filepath.Join(tmp, "a", "b", "c")
+
+	err := MkdirAllWithOwnership(nested, 0o755, "", "")
+	require.NoError(t, err)
+
+	for _, seg := range []string{"a", "a/b", "a/b/c"} {
+		info, err := os.Stat(filepath.Join(tmp, seg))
+		require.NoError(t, err)
+		require.True(t, info.IsDir())
+	}
+}
+
+func TestMkdirAllWithOwnership_PreExistingParent(t *testing.T) {
+	tmp := t.TempDir()
+	existing := filepath.Join(tmp, "existing")
+	require.NoError(t, os.Mkdir(existing, 0o755))
+
+	origInfo, err := os.Stat(existing)
+	require.NoError(t, err)
+	origMode := origInfo.Mode().Perm()
+
+	nested := filepath.Join(existing, "new-child", "deep")
+	err = MkdirAllWithOwnership(nested, 0o755, "", "")
+	require.NoError(t, err)
+
+	afterInfo, err := os.Stat(existing)
+	require.NoError(t, err)
+	require.Equal(t, origMode, afterInfo.Mode().Perm(), "pre-existing dir should be unchanged")
+
+	info, err := os.Stat(nested)
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+}
+
+func TestMkdirAllWithOwnership_AllExist(t *testing.T) {
+	tmp := t.TempDir()
+	existing := filepath.Join(tmp, "already")
+	require.NoError(t, os.MkdirAll(existing, 0o755))
+
+	err := MkdirAllWithOwnership(existing, 0o755, "", "")
+	require.NoError(t, err, "all dirs exist — should be no-op")
+}
+
 func TestSetFileOwnership_EmptyOwnerGroup(t *testing.T) {
 	tmp := t.TempDir()
 	file := filepath.Join(tmp, "test.txt")
