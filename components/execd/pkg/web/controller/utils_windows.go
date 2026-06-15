@@ -114,6 +114,54 @@ func RenameFile(item model.RenameFileItem) error {
 	return nil
 }
 
+// MkdirAllWithOwnership creates targetDir and any missing parents, then applies
+// owner/group only to the directories that were actually created (not pre-existing ones).
+func MkdirAllWithOwnership(targetDir string, dirPerm os.FileMode, owner, group string) error {
+	firstNew := targetDir
+	for {
+		parent := filepath.Dir(firstNew)
+		if parent == firstNew {
+			break
+		}
+		if _, err := os.Stat(firstNew); err == nil {
+			firstNew = ""
+			break
+		}
+		if _, err := os.Stat(parent); err == nil {
+			break
+		}
+		firstNew = parent
+	}
+
+	if err := os.MkdirAll(targetDir, dirPerm); err != nil {
+		return err
+	}
+
+	if firstNew == "" || (owner == "" && group == "") {
+		return nil
+	}
+
+	rel, err := filepath.Rel(firstNew, targetDir)
+	if err != nil {
+		return err
+	}
+	parts := strings.Split(rel, string(filepath.Separator))
+	cur := firstNew
+	if err := SetFileOwnership(cur, owner, group); err != nil {
+		return err
+	}
+	for _, p := range parts {
+		if p == "." {
+			continue
+		}
+		cur = filepath.Join(cur, p)
+		if err := SetFileOwnership(cur, owner, group); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func MakeDir(dir string, perm model.Permission) error {
 	abs, err := pathutil.ExpandAbsPath(dir)
 	if err != nil {
@@ -123,13 +171,16 @@ func MakeDir(dir string, perm model.Permission) error {
 	_, statErr := os.Stat(abs)
 	existed := statErr == nil
 
-	err = os.MkdirAll(abs, os.ModePerm)
-	if err != nil {
+	if err := MkdirAllWithOwnership(abs, os.ModePerm, perm.Owner, perm.Group); err != nil {
 		return err
 	}
 
-	if !existed {
-		return ChmodFile(abs, perm)
+	if !existed && perm.Mode != 0 {
+		mode, err := strconv.ParseUint(strconv.Itoa(perm.Mode), 8, 32)
+		if err != nil {
+			return err
+		}
+		return os.Chmod(abs, os.FileMode(mode))
 	}
 	return nil
 }
