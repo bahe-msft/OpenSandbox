@@ -4,6 +4,8 @@ Credential Vault is OpenSandbox's outbound credential broker for sandboxed agent
 
 ## How It Works
 
+![Credential Vault request flow](assets/credential-vault.png)
+
 Credential Vault is implemented by the egress sidecar. A sandbox must be created
 with both an outbound `network_policy` / `networkPolicy` and Credential Proxy
 enabled. The lifecycle API field name is `credentialProxy.enabled`; SDKs expose
