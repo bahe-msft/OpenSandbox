@@ -29,14 +29,14 @@ var (
 	AccessControlAllowOrigin  = http.CanonicalHeaderKey("Access-Control-Allow-Origin")
 	ReverseProxyServerPowerBy = http.CanonicalHeaderKey("Reverse-Proxy-Server-PowerBy")
 
-	SecWebSocketProtocol    = http.CanonicalHeaderKey("Sec-WebSocket-Protocol")
-	SecWebSocketKey         = http.CanonicalHeaderKey("Sec-WebSocket-Key")
-	SecWebSocketVersion     = http.CanonicalHeaderKey("Sec-WebSocket-Version")
-	SecWebSocketExtensions  = http.CanonicalHeaderKey("Sec-WebSocket-Extensions")
-	Cookie                  = http.CanonicalHeaderKey("Cookie")
-	SetCookie               = http.CanonicalHeaderKey("Set-Cookie")
-	Host                    = http.CanonicalHeaderKey("Host")
-	Origin                  = http.CanonicalHeaderKey("Origin")
+	SecWebSocketProtocol   = http.CanonicalHeaderKey("Sec-WebSocket-Protocol")
+	SecWebSocketKey        = http.CanonicalHeaderKey("Sec-WebSocket-Key")
+	SecWebSocketVersion    = http.CanonicalHeaderKey("Sec-WebSocket-Version")
+	SecWebSocketExtensions = http.CanonicalHeaderKey("Sec-WebSocket-Extensions")
+	Cookie                 = http.CanonicalHeaderKey("Cookie")
+	SetCookie              = http.CanonicalHeaderKey("Set-Cookie")
+	Host                   = http.CanonicalHeaderKey("Host")
+	Origin                 = http.CanonicalHeaderKey("Origin")
 
 	// Hop-by-hop headers per RFC 7230 §6.1 — must not be forwarded by proxies.
 	HopByHopConnection       = http.CanonicalHeaderKey("Connection")
