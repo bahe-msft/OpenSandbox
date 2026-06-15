@@ -118,6 +118,7 @@ class BatchSandboxProvider(WorkloadProvider):
         egress_auth_token: Optional[str] = None,
         egress_mode: str = EGRESS_MODE_DNS,
         credential_proxy_enabled: bool = False,
+        egress_env: Optional[Dict[str, Optional[str]]] = None,
     ) -> Dict[str, Any]:
         """Create a BatchSandbox in template mode or pool mode."""
         extensions = extensions or {}
@@ -225,6 +226,7 @@ class BatchSandboxProvider(WorkloadProvider):
             egress_auth_token=egress_auth_token,
             egress_mode=egress_mode,
             credential_proxy_enabled=credential_proxy_enabled,
+            extra_env=egress_env,
         )
 
         if volumes:
