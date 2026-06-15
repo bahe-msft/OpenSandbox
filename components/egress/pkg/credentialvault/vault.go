@@ -821,43 +821,10 @@ func explicitAllowCoversHost(pol *policy.NetworkPolicy, host string) bool {
 	if host == "" {
 		return false
 	}
-	if pol.DefaultAction == policy.ActionAllow {
-		if strings.HasPrefix(host, "*.") {
-			return pol.Evaluate("probe."+strings.TrimPrefix(host, "*.")) == policy.ActionAllow
-		}
-		return pol.Evaluate(host) == policy.ActionAllow
-	}
 	if strings.HasPrefix(host, "*.") {
-		return explicitAllowRuleMatches(pol, host) && pol.Evaluate("probe."+strings.TrimPrefix(host, "*.")) == policy.ActionAllow
+		return pol.Evaluate("probe."+strings.TrimPrefix(host, "*.")) == policy.ActionAllow
 	}
-	return explicitAllowRuleMatches(pol, host) && pol.Evaluate(host) == policy.ActionAllow
-}
-
-func explicitAllowRuleMatches(pol *policy.NetworkPolicy, host string) bool {
-	for _, r := range pol.Egress {
-		if r.Action != policy.ActionAllow {
-			continue
-		}
-		target := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(r.Target), "."))
-		if target == host {
-			return true
-		}
-		if strings.HasPrefix(target, "*.") && hostMatchesPattern(host, target) {
-			return true
-		}
-	}
-	return false
-}
-
-func hostMatchesPattern(host, pattern string) bool {
-	host = strings.ToLower(strings.TrimSuffix(host, "."))
-	pattern = strings.ToLower(strings.TrimSuffix(pattern, "."))
-	if strings.HasPrefix(pattern, "*.") {
-		suffix := strings.TrimPrefix(pattern, "*")
-		apex := strings.TrimPrefix(pattern, "*.")
-		return strings.HasSuffix(host, suffix) && host != apex
-	}
-	return host == pattern
+	return pol.Evaluate(host) == policy.ActionAllow
 }
 
 func bindingHostMatchesIgnoreHosts(host string) bool {
