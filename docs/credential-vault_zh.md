@@ -78,6 +78,12 @@ X-Client-Secret: <client-secret>
 - 创建沙箱时启用 Credential Proxy。
 - 沙箱镜像包含要运行的工具。运行 Claude Code 时，可以使用包含 Node.js 和 npm 的 OpenSandbox code-interpreter 镜像。
 
+## Egress Sidecar 配置
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `OPENSANDBOX_EGRESS_CREDENTIAL_VAULT_REQUIRE_TLS` | 关闭 | 启用后（`true`/`1`/`on`），credential vault 写操作（create、patch、delete）要求请求通过 TLS 到达、来自 loopback 地址、或携带 `X-Forwarded-Proto: https` 头。关闭时（默认），只要通过认证的请求均被接受，不校验传输层安全。在 egress sidecar 可从非信任网络直接访问且没有 TLS 终止反向代理的部署中应启用此选项。 |
+
 ## SDK 快速对照
 
 所有 sandbox SDK 使用同一套 wire contract，主要差异是命名和语言风格：
