@@ -26,10 +26,10 @@
     <img src="https://img.shields.io/badge/DingTalk-Join-0089FF?style=flat-square&logo=dingtalk&logoColor=white" alt="DingTalk" />
   </a>
   <a href="https://github.com/alibaba/OpenSandbox/actions">
-    <img src="https://img.shields.io/github/actions/workflow/status/alibaba/OpenSandbox/real-e2e.yml?branch=main&label=TEST&style=flat-square&logo=github&logoColor=white" alt="E2E Status" />
+    <img src="https://github.com/alibaba/OpenSandbox/actions/workflows/real-e2e.yml/badge.svg?branch=main" alt="E2E Status" />
   </a>
   <a href="https://github.com/alibaba/OpenSandbox/actions">
-    <img src="https://img.shields.io/github/actions/workflow/status/alibaba/OpenSandbox/kubernetes-nightly-build.yml?branch=main&label=K8S&style=flat-square&logo=kubernetes&logoColor=white" alt="Kubernetes nightly build status" />
+    <img src="https://github.com/alibaba/OpenSandbox/actions/workflows/kubernetes-nightly-build.yml/badge.svg?branch=main" alt="Kubernetes nightly build status" />
   </a>
 </p>
 
