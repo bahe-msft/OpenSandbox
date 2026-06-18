@@ -54,6 +54,8 @@ static_resources:
         name: envoy.transport_sockets.tls
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+          disable_stateless_session_resumption: true
+          disable_stateful_session_resumption: true
           common_tls_context:
 %s
             tls_certificate_sds_secret_configs:

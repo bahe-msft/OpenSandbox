@@ -32,6 +32,8 @@ func TestBootstrapYAMLUsesSDSForDownstreamCertificate(t *testing.T) {
 	require.Contains(t, yaml, "tls_certificate_sds_secret_configs:")
 	require.Contains(t, yaml, "id: opensandbox-egress")
 	require.Contains(t, yaml, "cluster: opensandbox-egress")
+	require.Contains(t, yaml, "disable_stateless_session_resumption: true")
+	require.Contains(t, yaml, "disable_stateful_session_resumption: true")
 	require.Contains(t, yaml, "name: \"opensandbox_downstream_mitm\"")
 	require.Contains(t, yaml, "cluster_name: sds_cluster")
 	require.Contains(t, yaml, "port_value: 19002")
