@@ -41,6 +41,9 @@ const (
 	EnvEnvoyPort                 = "OPENSANDBOX_EGRESS_ENVOY_PORT"
 	EnvEnvoyAdminPort            = "OPENSANDBOX_EGRESS_ENVOY_ADMIN_PORT"
 	EnvEnvoyExtProcAddr          = "OPENSANDBOX_EGRESS_ENVOY_EXT_PROC_ADDR"
+	EnvEnvoySDSAddr              = "OPENSANDBOX_EGRESS_ENVOY_SDS_ADDR"
+	EnvEnvoySDSSecret            = "OPENSANDBOX_EGRESS_ENVOY_SDS_SECRET"
+	EnvEnvoyOnDemandSDS          = "OPENSANDBOX_EGRESS_ENVOY_ON_DEMAND_SDS"
 	EnvEnvoyMitmCADir            = "OPENSANDBOX_EGRESS_ENVOY_MITM_CA_DIR"
 	EnvEnvoyMitmHosts            = "OPENSANDBOX_EGRESS_ENVOY_MITM_HOSTS"
 
@@ -72,6 +75,8 @@ const (
 	DefaultEnvoyPort             = 18082
 	DefaultEnvoyAdminPort        = 19000
 	DefaultEnvoyExtProcAddr      = "127.0.0.1:19001"
+	DefaultEnvoySDSAddr          = "127.0.0.1:19002"
+	DefaultEnvoySDSSecret        = "opensandbox_downstream_mitm"
 	DefaultCredentialProxySocket = "/run/opensandbox/credential-proxy/active.sock"
 	ResolvNameserverCap          = 10
 	DefaultMaxEgressRules        = 4096

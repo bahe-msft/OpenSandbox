@@ -18,8 +18,10 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	tlsv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
@@ -27,6 +29,7 @@ import (
 	secretv3 "github.com/envoyproxy/go-control-plane/envoy/service/secret/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 const TypeURLSecret = "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret"
@@ -34,6 +37,7 @@ const TypeURLSecret = "type.googleapis.com/envoy.extensions.transport_sockets.tl
 type Server struct {
 	secretName string
 	version    atomic.Uint64
+	mint       func(string) (certPEM, keyPEM []byte, err error)
 
 	mu      sync.RWMutex
 	secret  *tlsv3.Secret
@@ -49,6 +53,12 @@ func New(secretName string, certPEM, keyPEM []byte) (*Server, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+func (s *Server) SetMintFunc(fn func(string) ([]byte, []byte, error)) {
+	s.mu.Lock()
+	s.mint = fn
+	s.mu.Unlock()
 }
 
 func (s *Server) Serve(ctx context.Context, lis net.Listener) error {
@@ -150,8 +160,71 @@ func (s *Server) FetchSecrets(context.Context, *discoveryv3.DiscoveryRequest) (*
 	return s.response(s.version.Load())
 }
 
-func (s *Server) DeltaSecrets(secretv3.SecretDiscoveryService_DeltaSecretsServer) error {
-	return fmt.Errorf("delta SDS is not supported")
+func (s *Server) DeltaSecrets(stream secretv3.SecretDiscoveryService_DeltaSecretsServer) error {
+	for {
+		req, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		if req.GetTypeUrl() != "" && req.GetTypeUrl() != TypeURLSecret {
+			continue
+		}
+		var resources []*discoveryv3.Resource
+		for _, name := range req.GetResourceNamesSubscribe() {
+			name = strings.TrimSpace(strings.TrimSuffix(strings.ToLower(name), "."))
+			if name == "" {
+				continue
+			}
+			resource, err := s.deltaResource(name)
+			if err != nil {
+				return err
+			}
+			resources = append(resources, resource)
+		}
+		if len(resources) == 0 && req.GetResponseNonce() != "" {
+			continue
+		}
+		version := s.version.Load()
+		if err := stream.Send(&discoveryv3.DeltaDiscoveryResponse{
+			SystemVersionInfo: fmt.Sprintf("%d", version),
+			Resources:         resources,
+			TypeUrl:           TypeURLSecret,
+			Nonce:             fmt.Sprintf("%d", version),
+		}); err != nil {
+			return err
+		}
+	}
+}
+
+func (s *Server) deltaResource(name string) (*discoveryv3.Resource, error) {
+	s.mu.RLock()
+	mint := s.mint
+	s.mu.RUnlock()
+	if mint == nil {
+		return nil, fmt.Errorf("on-demand minting is not configured")
+	}
+	certPEM, keyPEM, err := mint(name)
+	if err != nil {
+		return nil, err
+	}
+	secret := &tlsv3.Secret{
+		Name: name,
+		Type: &tlsv3.Secret_TlsCertificate{TlsCertificate: &tlsv3.TlsCertificate{
+			CertificateChain: &corev3.DataSource{Specifier: &corev3.DataSource_InlineBytes{InlineBytes: certPEM}},
+			PrivateKey:       &corev3.DataSource{Specifier: &corev3.DataSource_InlineBytes{InlineBytes: keyPEM}},
+		}},
+	}
+	anySecret, err := anypb.New(secret)
+	if err != nil {
+		return nil, err
+	}
+	version := fmt.Sprintf("%d", s.version.Add(1))
+	return &discoveryv3.Resource{
+		Name:     name,
+		Version:  version,
+		Resource: anySecret,
+		Ttl:      durationpb.New(24 * time.Hour),
+	}, nil
 }
 
 func (s *Server) response(version uint64) (*discoveryv3.DiscoveryResponse, error) {

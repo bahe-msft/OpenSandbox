@@ -16,6 +16,7 @@ package envoysds
 
 import (
 	"context"
+	"io"
 	"testing"
 
 	tlsv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
@@ -41,4 +42,47 @@ func TestUpdateChangesSecretResponse(t *testing.T) {
 	require.Equal(t, "downstream", secret.Name)
 	require.Equal(t, []byte("cert-2"), secret.GetTlsCertificate().GetCertificateChain().GetInlineBytes())
 	require.Equal(t, []byte("key-2"), secret.GetTlsCertificate().GetPrivateKey().GetInlineBytes())
+}
+
+func TestDeltaResourceMintsRequestedSecretName(t *testing.T) {
+	srv, err := New("default", []byte("cert-default"), []byte("key-default"))
+	require.NoError(t, err)
+	srv.SetMintFunc(func(name string) ([]byte, []byte, error) {
+		return []byte("cert-" + name), []byte("key-" + name), nil
+	})
+
+	res, err := srv.deltaResource("dev.azure.com")
+	require.NoError(t, err)
+	require.Equal(t, "dev.azure.com", res.Name)
+	secret := &tlsv3.Secret{}
+	require.NoError(t, res.Resource.UnmarshalTo(secret))
+	require.Equal(t, "dev.azure.com", secret.Name)
+	require.Equal(t, []byte("cert-dev.azure.com"), secret.GetTlsCertificate().GetCertificateChain().GetInlineBytes())
+	require.Equal(t, []byte("key-dev.azure.com"), secret.GetTlsCertificate().GetPrivateKey().GetInlineBytes())
+}
+
+var _ secretDeltaStream = (*fakeDeltaStream)(nil)
+
+type secretDeltaStream interface {
+	Send(*discoveryv3.DeltaDiscoveryResponse) error
+	Recv() (*discoveryv3.DeltaDiscoveryRequest, error)
+}
+
+type fakeDeltaStream struct {
+	reqs []*discoveryv3.DeltaDiscoveryRequest
+	sent []*discoveryv3.DeltaDiscoveryResponse
+}
+
+func (f *fakeDeltaStream) Send(resp *discoveryv3.DeltaDiscoveryResponse) error {
+	f.sent = append(f.sent, resp)
+	return nil
+}
+
+func (f *fakeDeltaStream) Recv() (*discoveryv3.DeltaDiscoveryRequest, error) {
+	if len(f.reqs) == 0 {
+		return nil, io.EOF
+	}
+	req := f.reqs[0]
+	f.reqs = f.reqs[1:]
+	return req, nil
 }

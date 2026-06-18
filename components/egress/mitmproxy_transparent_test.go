@@ -15,6 +15,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -40,4 +41,14 @@ func TestMergeHostsNormalizesAndDeduplicates(t *testing.T) {
 			[]string{"packages.microsoft.com", "example.com"},
 		),
 	)
+}
+
+func TestEnvBoolDefaultTrue(t *testing.T) {
+	const key = "OPENSANDBOX_TEST_DEFAULT_TRUE"
+	require.NoError(t, os.Unsetenv(key))
+	require.True(t, envBoolDefaultTrue(key))
+	t.Setenv(key, "false")
+	require.False(t, envBoolDefaultTrue(key))
+	t.Setenv(key, "true")
+	require.True(t, envBoolDefaultTrue(key))
 }

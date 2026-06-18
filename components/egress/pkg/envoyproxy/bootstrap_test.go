@@ -34,3 +34,19 @@ func TestBootstrapYAMLUsesSDSForDownstreamCertificate(t *testing.T) {
 	require.Contains(t, yaml, "cluster_name: sds_cluster")
 	require.Contains(t, yaml, "port_value: 19002")
 }
+
+func TestBootstrapYAMLCanEnableOnDemandSDS(t *testing.T) {
+	yaml := BootstrapYAML(BootstrapConfig{
+		ListenPort:  18082,
+		AdminPort:   19000,
+		ExtProcAddr: "127.0.0.1:19001",
+		SDSAddr:     "127.0.0.1:19002",
+		SDSSecret:   "default_host",
+		OnDemandSDS: true,
+	})
+
+	require.Contains(t, yaml, "custom_tls_certificate_selector:")
+	require.Contains(t, yaml, "cert_selectors.on_demand_secret.v3.Config")
+	require.Contains(t, yaml, "cert_mappers.sni.v3.SNI")
+	require.Contains(t, yaml, "api_type: DELTA_GRPC")
+}

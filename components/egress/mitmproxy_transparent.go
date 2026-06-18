@@ -193,12 +193,15 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("envoy mitm SDS cert for %v: %w", mitmHosts, err)
 	}
-	sdsAddr := envOrDefault("OPENSANDBOX_EGRESS_ENVOY_SDS_ADDR", "127.0.0.1:19002")
-	sdsSecret := envOrDefault("OPENSANDBOX_EGRESS_ENVOY_SDS_SECRET", "opensandbox_downstream_mitm")
+	sdsAddr := envOrDefault(constants.EnvEnvoySDSAddr, constants.DefaultEnvoySDSAddr)
+	sdsSecret := envOrDefault(constants.EnvEnvoySDSSecret, constants.DefaultEnvoySDSSecret)
 	sds, err := envoysds.New(sdsSecret, certPEM, keyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("envoy sds: %w", err)
 	}
+	sds.SetMintFunc(func(name string) ([]byte, []byte, error) {
+		return auth.MintLeaf(name)
+	})
 	sdsLis, err := net.Listen("tcp", sdsAddr)
 	if err != nil {
 		return nil, fmt.Errorf("envoy sds listen %s: %w", sdsAddr, err)
@@ -217,17 +220,15 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 		ExtProcAddr: extProcAddr,
 		SDSAddr:     sdsAddr,
 		SDSSecret:   sdsSecret,
+		OnDemandSDS: envBoolDefaultTrue(constants.EnvEnvoyOnDemandSDS),
 		WorkDir:     workDir,
 		UID:         proxyUID,
 		GID:         proxyGID,
 	}
-	running, err := envoyproxy.Launch(envoyCfg)
-	if err != nil {
-		return nil, fmt.Errorf("start envoy: %w", err)
-	}
 	waitAddr := fmt.Sprintf("127.0.0.1:%d", mpPort)
-	if err := mitmproxy.WaitListenPort(waitAddr, 15*time.Second); err != nil {
-		return nil, fmt.Errorf("wait listen %s: %w", waitAddr, err)
+	running, err := launchEnvoyWithFallback(envoyCfg, waitAddr)
+	if err != nil {
+		return nil, err
 	}
 	addrs, err := iptables.SetupTransparentHTTPForHosts(mpPort, proxyUID, mitmHosts)
 	if err != nil {
@@ -238,6 +239,30 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 	}
 	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d, MITM hosts=%v)", mpPort, mitmHosts)
 	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID, gid: proxyGID, addrs: addrs, auth: auth, sds: sds, envoyCfg: envoyCfg, staticHosts: staticHosts, mitmHosts: mitmHosts}, nil
+}
+
+func launchEnvoyWithFallback(cfg envoyproxy.Config, waitAddr string) (*envoyproxy.Running, error) {
+	running, err := envoyproxy.Launch(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("start envoy: %w", err)
+	}
+	if err := mitmproxy.WaitListenPort(waitAddr, 15*time.Second); err == nil {
+		return running, nil
+	} else if !cfg.OnDemandSDS {
+		return nil, fmt.Errorf("wait listen %s: %w", waitAddr, err)
+	} else {
+		log.Warnf("envoy: on-demand SDS did not become ready (%v); retrying with regular SDS", err)
+		envoyproxy.GracefulShutdown(running, defaultMitmShutdownTimeout)
+	}
+	cfg.OnDemandSDS = false
+	running, err = envoyproxy.Launch(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("start envoy fallback: %w", err)
+	}
+	if err := mitmproxy.WaitListenPort(waitAddr, 15*time.Second); err != nil {
+		return nil, fmt.Errorf("wait listen %s after fallback: %w", waitAddr, err)
+	}
+	return running, nil
 }
 
 func (m *mitmTransparent) updateEnvoyHosts(hosts []string) {

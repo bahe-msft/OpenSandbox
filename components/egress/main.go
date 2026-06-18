@@ -183,6 +183,14 @@ func envOrDefault(key, defaultVal string) string {
 	return defaultVal
 }
 
+func envBoolDefaultTrue(key string) bool {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return true
+	}
+	return constants.IsTruthy(v)
+}
+
 func containsAddr(addrs []netip.Addr, a netip.Addr) bool {
 	for _, x := range addrs {
 		if x == a {

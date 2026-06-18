@@ -22,6 +22,7 @@ type BootstrapConfig struct {
 	ExtProcAddr string
 	SDSAddr     string
 	SDSSecret   string
+	OnDemandSDS bool
 }
 
 func BootstrapYAML(cfg BootstrapConfig) string {
@@ -50,6 +51,7 @@ static_resources:
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
           common_tls_context:
+%s
             tls_certificate_sds_secret_configs:
             - name: %q
               sds_config:
@@ -195,7 +197,31 @@ static_resources:
         dns_cache_config:
           name: opensandbox_dynamic_forward_proxy_cache
           dns_lookup_family: V4_ONLY
-`, cfg.AdminPort, cfg.ListenPort, cfg.SDSSecret, host(cfg.SDSAddr), port(cfg.SDSAddr), host(cfg.ExtProcAddr), port(cfg.ExtProcAddr))
+`, cfg.AdminPort, cfg.ListenPort, onDemandSelectorYAML(cfg), cfg.SDSSecret, host(cfg.SDSAddr), port(cfg.SDSAddr), host(cfg.ExtProcAddr), port(cfg.ExtProcAddr))
+}
+
+func onDemandSelectorYAML(cfg BootstrapConfig) string {
+	if !cfg.OnDemandSDS {
+		return ""
+	}
+	return fmt.Sprintf(`            custom_tls_certificate_selector:
+              name: on-demand
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.cert_selectors.on_demand_secret.v3.Config
+                config_source:
+                  api_config_source:
+                    api_type: DELTA_GRPC
+                    transport_api_version: V3
+                    grpc_services:
+                    - envoy_grpc:
+                        cluster_name: sds_cluster
+                certificate_mapper:
+                  name: sni
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.cert_mappers.sni.v3.SNI
+                    default_value: %q
+                prefetch_secret_names:
+                - %q`, cfg.SDSSecret, cfg.SDSSecret)
 }
 
 func host(addr string) string {

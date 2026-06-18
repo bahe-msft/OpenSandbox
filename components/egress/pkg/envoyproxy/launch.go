@@ -33,6 +33,7 @@ type Config struct {
 	ExtProcAddr string
 	SDSAddr     string
 	SDSSecret   string
+	OnDemandSDS bool
 	WorkDir     string
 	UID         uint32
 	GID         uint32
@@ -55,7 +56,7 @@ func Launch(cfg Config) (*Running, error) {
 		return nil, err
 	}
 	bootstrap := filepath.Join(cfg.WorkDir, "envoy.yaml")
-	if err := os.WriteFile(bootstrap, []byte(BootstrapYAML(BootstrapConfig{ListenPort: cfg.ListenPort, AdminPort: cfg.AdminPort, ExtProcAddr: cfg.ExtProcAddr, SDSAddr: cfg.SDSAddr, SDSSecret: cfg.SDSSecret})), 0o644); err != nil {
+	if err := os.WriteFile(bootstrap, []byte(BootstrapYAML(BootstrapConfig{ListenPort: cfg.ListenPort, AdminPort: cfg.AdminPort, ExtProcAddr: cfg.ExtProcAddr, SDSAddr: cfg.SDSAddr, SDSSecret: cfg.SDSSecret, OnDemandSDS: cfg.OnDemandSDS})), 0o644); err != nil {
 		return nil, err
 	}
 	cmd := exec.Command(cfg.Path, "-c", bootstrap, "--log-level", "info")
