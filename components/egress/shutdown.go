@@ -55,10 +55,11 @@ func waitForShutdown(ctx context.Context, proxy *dnsproxy.Proxy, policySrv *http
 	}
 
 	if mitm != nil {
-		iptables.RemoveTransparentHTTP(mitm.port, mitm.uid)
 		if mitm.envoy != nil {
+			iptables.RemoveTransparentHTTPForAddrs(mitm.port, mitm.uid, mitm.addrs)
 			envoyproxy.GracefulShutdown(mitm.envoy, defaultMitmShutdownTimeout)
 		} else {
+			iptables.RemoveTransparentHTTP(mitm.port, mitm.uid)
 			mitmproxy.GracefulShutdown(mitm.getRunning(), defaultMitmShutdownTimeout)
 		}
 	}

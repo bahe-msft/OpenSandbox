@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,6 +50,7 @@ type mitmTransparent struct {
 	currentGen uint64 // generation of the mitmdump currently considered live
 	port       int
 	uid        uint32
+	addrs      []netip.Addr
 	cfg        mitmproxy.Config // OnExit must NOT be set here; built per-Launch
 	nextGen    uint64           // atomic; monotonic gen counter handed to each Launch
 	restartCh  chan exitEvent
@@ -212,14 +214,15 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 	if err := mitmproxy.WaitListenPort(waitAddr, 15*time.Second); err != nil {
 		return nil, fmt.Errorf("wait listen %s: %w", waitAddr, err)
 	}
-	if err := iptables.SetupTransparentHTTP(mpPort, proxyUID); err != nil {
+	addrs, err := iptables.SetupTransparentHTTPForHosts(mpPort, proxyUID, []string{mitmHost})
+	if err != nil {
 		return nil, fmt.Errorf("iptables transparent: %w", err)
 	}
 	if err := mitmcert.ExportCA(auth); err != nil {
 		return nil, fmt.Errorf("envoy mitm CA export: %w", err)
 	}
 	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d, static MITM host=%s)", mpPort, mitmHost)
-	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID}, nil
+	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID, addrs: addrs}, nil
 }
 
 func firstCSV(s string) string {
