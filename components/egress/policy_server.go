@@ -53,6 +53,11 @@ type nftApplier interface {
 	RemoveEnforcement(context.Context) error
 }
 
+type policyRuntime struct {
+	server          *http.Server
+	credentialVault *credentialvault.Store
+}
+
 // startPolicyServer: runtime POST/GET /policy, GET /healthz. nameserverIPs are merged into every nft
 // static apply so the pod’s resolv / private DNS still works alongside user egress rules.
 func startPolicyServer(
@@ -65,7 +70,7 @@ func startPolicyServer(
 	policyFile string,
 	alwaysDeny, alwaysAllow []policy.EgressRule,
 	mitmGate *mitmproxy.HealthGate,
-) (*http.Server, error) {
+) (*policyRuntime, error) {
 	maxEgressRules := maxEgressRulesFromEnv()
 	if maxEgressRules > 0 {
 		log.Infof("policy API: max egress rules per policy (POST/PATCH) = %d (set %s=0 to disable)", maxEgressRules, constants.EnvMaxEgressRules)
@@ -157,7 +162,7 @@ func startPolicyServer(
 				log.Errorf("policy server error: %v", err)
 			}
 		})
-		return srv, nil
+		return &policyRuntime{server: srv, credentialVault: handler.credentialVault}, nil
 	}
 }
 

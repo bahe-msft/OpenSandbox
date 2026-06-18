@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/alibaba/opensandbox/egress/pkg/constants"
+	"github.com/alibaba/opensandbox/egress/pkg/envoyproxy"
 	"github.com/alibaba/opensandbox/egress/pkg/iptables"
 	"github.com/alibaba/opensandbox/egress/pkg/log"
 	"github.com/alibaba/opensandbox/egress/pkg/mitmproxy"
@@ -42,6 +43,7 @@ type exitEvent struct {
 type mitmTransparent struct {
 	mu         sync.Mutex
 	running    *mitmproxy.Running
+	envoy      *envoyproxy.Running
 	currentGen uint64 // generation of the mitmdump currently considered live
 	port       int
 	uid        uint32
@@ -49,6 +51,13 @@ type mitmTransparent struct {
 	nextGen    uint64           // atomic; monotonic gen counter handed to each Launch
 	restartCh  chan exitEvent
 	shutdownCh chan struct{} // closed by watchMitmproxy on ctx cancel; lets OnExit unblock during shutdown
+}
+
+func startTransparentHTTPProxyIfEnabled() (*mitmTransparent, error) {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv(constants.EnvHTTPProxyBackend)), "envoy") {
+		return startEnvoyTransparentIfEnabled()
+	}
+	return startMitmproxyTransparentIfEnabled()
 }
 
 func (m *mitmTransparent) getRunning() *mitmproxy.Running {
@@ -143,6 +152,39 @@ func startMitmproxyTransparentIfEnabled() (*mitmTransparent, error) {
 		restartCh:  restartCh,
 		shutdownCh: shutdownCh,
 	}, nil
+}
+
+func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
+	if !constants.IsTruthy(os.Getenv(constants.EnvMitmproxyTransparent)) {
+		return nil, nil
+	}
+	mpPort := constants.EnvIntOrDefault(constants.EnvEnvoyPort, constants.DefaultEnvoyPort)
+	adminPort := constants.EnvIntOrDefault(constants.EnvEnvoyAdminPort, constants.DefaultEnvoyAdminPort)
+	extProcAddr := envOrDefault(constants.EnvEnvoyExtProcAddr, constants.DefaultEnvoyExtProcAddr)
+	proxyUID, proxyGID, _, err := mitmproxy.LookupUser(mitmproxy.RunAsUser)
+	if err != nil {
+		return nil, fmt.Errorf("lookup user %q: %w (ensure this user exists in the image)", mitmproxy.RunAsUser, err)
+	}
+	running, err := envoyproxy.Launch(envoyproxy.Config{
+		Path:        strings.TrimSpace(os.Getenv(constants.EnvEnvoyPath)),
+		ListenPort:  mpPort,
+		AdminPort:   adminPort,
+		ExtProcAddr: extProcAddr,
+		UID:         proxyUID,
+		GID:         proxyGID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("start envoy: %w", err)
+	}
+	waitAddr := fmt.Sprintf("127.0.0.1:%d", mpPort)
+	if err := mitmproxy.WaitListenPort(waitAddr, 15*time.Second); err != nil {
+		return nil, fmt.Errorf("wait listen %s: %w", waitAddr, err)
+	}
+	if err := iptables.SetupTransparentHTTP(mpPort, proxyUID); err != nil {
+		return nil, fmt.Errorf("iptables transparent: %w", err)
+	}
+	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d)", mpPort)
+	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID}, nil
 }
 
 // watchMitmproxy monitors mitmdump for unexpected exits, logs the error, and restarts it.

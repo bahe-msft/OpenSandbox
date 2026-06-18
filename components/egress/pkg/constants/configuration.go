@@ -36,6 +36,11 @@ const (
 	EnvEgressMetricsExtraAttrs   = "OPENSANDBOX_EGRESS_METRICS_EXTRA_ATTRS"
 	EnvNameserverExempt          = "OPENSANDBOX_EGRESS_NAMESERVER_EXEMPT"
 	EnvCredentialVaultRequireTLS = "OPENSANDBOX_EGRESS_CREDENTIAL_VAULT_REQUIRE_TLS"
+	EnvHTTPProxyBackend          = "OPENSANDBOX_EGRESS_HTTP_PROXY_BACKEND"
+	EnvEnvoyPath                 = "OPENSANDBOX_EGRESS_ENVOY_PATH"
+	EnvEnvoyPort                 = "OPENSANDBOX_EGRESS_ENVOY_PORT"
+	EnvEnvoyAdminPort            = "OPENSANDBOX_EGRESS_ENVOY_ADMIN_PORT"
+	EnvEnvoyExtProcAddr          = "OPENSANDBOX_EGRESS_ENVOY_EXT_PROC_ADDR"
 
 	// MITM: mitmdump transparent; Linux + CAP_NET_ADMIN, runs as a dedicated user.
 	// Static mitm options (mode, connection_strategy, listen_host, stream_large_bodies,
@@ -62,6 +67,9 @@ const (
 const (
 	DefaultEgressServerAddr      = ":18080"
 	DefaultMitmproxyPort         = 18081
+	DefaultEnvoyPort             = 18082
+	DefaultEnvoyAdminPort        = 19000
+	DefaultEnvoyExtProcAddr      = "127.0.0.1:19001"
 	DefaultCredentialProxySocket = "/run/opensandbox/credential-proxy/active.sock"
 	ResolvNameserverCap          = 10
 	DefaultMaxEgressRules        = 4096

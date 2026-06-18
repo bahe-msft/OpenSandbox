@@ -101,6 +101,16 @@ RUN apt-get update \
         lsof \
         python3 \
         python3-pip \
+        lsb-release \
+        gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://apt.envoyproxy.io/signing.key \
+        | gpg --dearmor -o /usr/share/keyrings/envoy-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/envoy-keyring.gpg] https://apt.envoyproxy.io $(lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/envoy.list \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends envoy \
     && rm -rf /var/lib/apt/lists/*
 
 # Python mitmproxy (transparent mode): mitmdump runs as user mitmproxy; iptables skips this uid.

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/alibaba/opensandbox/egress/pkg/dnsproxy"
+	"github.com/alibaba/opensandbox/egress/pkg/envoyproxy"
 	"github.com/alibaba/opensandbox/egress/pkg/iptables"
 	"github.com/alibaba/opensandbox/egress/pkg/log"
 	"github.com/alibaba/opensandbox/egress/pkg/mitmproxy"
@@ -55,7 +56,11 @@ func waitForShutdown(ctx context.Context, proxy *dnsproxy.Proxy, policySrv *http
 
 	if mitm != nil {
 		iptables.RemoveTransparentHTTP(mitm.port, mitm.uid)
-		mitmproxy.GracefulShutdown(mitm.getRunning(), defaultMitmShutdownTimeout)
+		if mitm.envoy != nil {
+			envoyproxy.GracefulShutdown(mitm.envoy, defaultMitmShutdownTimeout)
+		} else {
+			mitmproxy.GracefulShutdown(mitm.getRunning(), defaultMitmShutdownTimeout)
+		}
 	}
 	iptables.RemoveRedirect(15353, exemptDst)
 

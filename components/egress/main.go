@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/netip"
 	"os"
 	"os/signal"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/alibaba/opensandbox/egress/pkg/constants"
 	"github.com/alibaba/opensandbox/egress/pkg/dnsproxy"
+	"github.com/alibaba/opensandbox/egress/pkg/envoyextproc"
 	"github.com/alibaba/opensandbox/egress/pkg/events"
 	"github.com/alibaba/opensandbox/egress/pkg/iptables"
 	"github.com/alibaba/opensandbox/egress/pkg/log"
@@ -117,18 +119,34 @@ func main() {
 
 	httpAddr := envOrDefault(constants.EnvEgressHTTPAddr, constants.DefaultEgressServerAddr)
 	mitmGate := mitmproxy.NewHealthGate()
-	policySrv, err := startPolicyServer(proxy, nftMgr, mode, httpAddr, os.Getenv(constants.EnvEgressToken), allowIPs, os.Getenv(constants.EnvEgressPolicyFile), alwaysDeny, alwaysAllow, mitmGate)
+	policyRuntime, err := startPolicyServer(proxy, nftMgr, mode, httpAddr, os.Getenv(constants.EnvEgressToken), allowIPs, os.Getenv(constants.EnvEgressPolicyFile), alwaysDeny, alwaysAllow, mitmGate)
 	if err != nil {
 		log.Fatalf("failed to start policy server: %v", err)
 	}
 	log.Infof("policy server listening on %s (POST /policy)", httpAddr)
 
-	mitm, err := startMitmproxyTransparentIfEnabled()
+	var extProcLis net.Listener
+	if strings.EqualFold(strings.TrimSpace(os.Getenv(constants.EnvHTTPProxyBackend)), "envoy") && constants.IsTruthy(os.Getenv(constants.EnvMitmproxyTransparent)) {
+		addr := envOrDefault(constants.EnvEnvoyExtProcAddr, constants.DefaultEnvoyExtProcAddr)
+		lis, err := net.Listen("tcp", addr)
+		if err != nil {
+			log.Fatalf("envoy ext_proc listen %s: %v", addr, err)
+		}
+		extProcLis = lis
+		safego.Go(func() {
+			if err := envoyextproc.New(policyRuntime.credentialVault).Serve(ctx, lis); err != nil {
+				log.Errorf("envoy ext_proc server error: %v", err)
+			}
+		})
+		log.Infof("envoy ext_proc server listening on %s", addr)
+	}
+
+	mitm, err := startTransparentHTTPProxyIfEnabled()
 	if err != nil {
-		log.Fatalf("mitmproxy transparent: %v", err)
+		log.Fatalf("transparent http proxy: %v", err)
 	}
 	mitmGate.MarkStackReady()
-	if mitm != nil {
+	if mitm != nil && mitm.envoy == nil {
 		mitm.watchMitmproxy(ctx, mitmGate)
 	}
 
@@ -136,7 +154,10 @@ func main() {
 		log.Errorf("startup hooks (post) error: %v", err)
 	}
 
-	waitForShutdown(ctx, proxy, policySrv, exemptDst, nftMgr, mitm)
+	waitForShutdown(ctx, proxy, policyRuntime.server, exemptDst, nftMgr, mitm)
+	if extProcLis != nil {
+		_ = extProcLis.Close()
+	}
 }
 
 func withLogger(ctx context.Context) context.Context {
