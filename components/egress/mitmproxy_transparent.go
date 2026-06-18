@@ -27,6 +27,7 @@ import (
 	"github.com/alibaba/opensandbox/egress/pkg/envoyproxy"
 	"github.com/alibaba/opensandbox/egress/pkg/iptables"
 	"github.com/alibaba/opensandbox/egress/pkg/log"
+	"github.com/alibaba/opensandbox/egress/pkg/mitmcert"
 	"github.com/alibaba/opensandbox/egress/pkg/mitmproxy"
 	"github.com/alibaba/opensandbox/internal/safego"
 )
@@ -182,6 +183,13 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 	}
 	if err := iptables.SetupTransparentHTTP(mpPort, proxyUID); err != nil {
 		return nil, fmt.Errorf("iptables transparent: %w", err)
+	}
+	auth, err := mitmcert.LoadOrCreateAuthority(strings.TrimSpace(os.Getenv(constants.EnvEnvoyMitmCADir)))
+	if err != nil {
+		return nil, fmt.Errorf("envoy mitm CA: %w", err)
+	}
+	if err := mitmcert.ExportCA(auth); err != nil {
+		return nil, fmt.Errorf("envoy mitm CA export: %w", err)
 	}
 	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d)", mpPort)
 	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID}, nil

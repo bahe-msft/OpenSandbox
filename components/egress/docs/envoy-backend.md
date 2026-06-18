@@ -11,14 +11,15 @@ Current status:
   mitmproxy for the transparent `80/443` interception listener.
 - The Go egress process starts an Envoy `ext_proc` gRPC server. It evaluates the
   existing Credential Vault active snapshot and returns request-header mutations.
+- The Go egress process can create and export an Envoy MITM root CA at the
+  existing `/opt/opensandbox/mitmproxy-ca-cert.pem` compatibility path.
 - The Docker image includes Envoy.
 
 Known gaps before this can replace mitmproxy:
 
-- Dynamic TLS MITM certificate generation is not implemented.
+- Dynamic TLS MITM leaf certificate delivery to Envoy is not implemented.
 - SDS/xDS for per-SNI certificates is not implemented.
-- CA export/install compatibility with the existing mitmproxy CA path is not
-  implemented.
+- CA export/install compatibility is implemented for the root CA only.
 - Envoy original-destination routing needs validation under Kubernetes/Kata.
 - Response-header redaction is not implemented in the Envoy path yet.
 - `ignore_hosts`/SNI pass-through compatibility is not implemented.
