@@ -38,6 +38,22 @@ func TestMintLeafSignedByAuthority(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestMintLeafForHostsIncludesAllDNSNames(t *testing.T) {
+	auth, err := createAuthority()
+	require.NoError(t, err)
+	certPEM, _, err := auth.MintLeafForHosts("dev.azure.com", []string{"dev.azure.com", "packages.microsoft.com"})
+	require.NoError(t, err)
+	block, _ := pem.Decode(certPEM)
+	require.NotNil(t, block)
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"dev.azure.com", "packages.microsoft.com"}, leaf.DNSNames)
+	pool := x509.NewCertPool()
+	pool.AddCert(auth.cert)
+	_, err = leaf.Verify(x509.VerifyOptions{DNSName: "packages.microsoft.com", Roots: pool})
+	require.NoError(t, err)
+}
+
 func TestLoadOrCreateAuthorityPersists(t *testing.T) {
 	dir := t.TempDir()
 	one, err := LoadOrCreateAuthority(dir)

@@ -15,26 +15,22 @@
 package envoyproxy
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestBootstrapYAMLIncludesMultipleDownstreamCertificates(t *testing.T) {
+func TestBootstrapYAMLUsesSDSForDownstreamCertificate(t *testing.T) {
 	yaml := BootstrapYAML(BootstrapConfig{
 		ListenPort:  18082,
 		AdminPort:   19000,
 		ExtProcAddr: "127.0.0.1:19001",
-		Certificates: []CertificateConfig{
-			{CertPath: "/tmp/dev.azure.com.crt", KeyPath: "/tmp/dev.azure.com.key"},
-			{CertPath: "/tmp/example.com.crt", KeyPath: "/tmp/example.com.key"},
-		},
+		SDSAddr:     "127.0.0.1:19002",
+		SDSSecret:   "opensandbox_downstream_mitm",
 	})
 
-	require.Equal(t, 2, strings.Count(yaml, "certificate_chain:"))
-	require.Contains(t, yaml, `filename: "/tmp/dev.azure.com.crt"`)
-	require.Contains(t, yaml, `filename: "/tmp/dev.azure.com.key"`)
-	require.Contains(t, yaml, `filename: "/tmp/example.com.crt"`)
-	require.Contains(t, yaml, `filename: "/tmp/example.com.key"`)
+	require.Contains(t, yaml, "tls_certificate_sds_secret_configs:")
+	require.Contains(t, yaml, "name: \"opensandbox_downstream_mitm\"")
+	require.Contains(t, yaml, "cluster_name: sds_cluster")
+	require.Contains(t, yaml, "port_value: 19002")
 }

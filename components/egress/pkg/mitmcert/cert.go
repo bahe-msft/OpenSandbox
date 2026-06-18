@@ -127,27 +127,63 @@ func parseAuthority(certPEM, keyPEM []byte) (*Authority, error) {
 }
 
 func (a *Authority) MintLeaf(host string) (certPEM, keyPEM []byte, err error) {
-	host = strings.TrimSpace(strings.TrimSuffix(host, "."))
-	if host == "" {
+	return a.MintLeafForHosts(host, []string{host})
+}
+
+func (a *Authority) MintLeafForHosts(commonName string, hosts []string) (certPEM, keyPEM []byte, err error) {
+	commonName = strings.TrimSpace(strings.TrimSuffix(commonName, "."))
+	if commonName == "" && len(hosts) > 0 {
+		commonName = strings.TrimSpace(strings.TrimSuffix(hosts[0], "."))
+	}
+	if commonName == "" {
 		return nil, nil, fmt.Errorf("host is required")
 	}
+	if len(hosts) == 0 {
+		hosts = []string{commonName}
+	}
+	seenDNS := map[string]struct{}{}
+	seenIP := map[string]struct{}{}
+	var dnsNames []string
+	var ipAddrs []net.IP
+	for _, host := range hosts {
+		host = strings.TrimSpace(strings.TrimSuffix(host, "."))
+		if host == "" {
+			continue
+		}
+		if ip := net.ParseIP(host); ip != nil {
+			key := ip.String()
+			if _, ok := seenIP[key]; ok {
+				continue
+			}
+			seenIP[key] = struct{}{}
+			ipAddrs = append(ipAddrs, ip)
+			continue
+		}
+		host = strings.ToLower(host)
+		if _, ok := seenDNS[host]; ok {
+			continue
+		}
+		seenDNS[host] = struct{}{}
+		dnsNames = append(dnsNames, host)
+	}
+	if len(dnsNames) == 0 && len(ipAddrs) == 0 {
+		return nil, nil, fmt.Errorf("host is required")
+	}
+
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, nil, err
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial(),
-		Subject:      pkix.Name{CommonName: host},
+		Subject:      pkix.Name{CommonName: commonName},
 		NotBefore:    time.Now().Add(-time.Minute),
 		NotAfter:     time.Now().Add(24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
-	if ip := net.ParseIP(host); ip != nil {
-		tmpl.IPAddresses = []net.IP{ip}
-	} else {
-		tmpl.DNSNames = []string{host}
-	}
+	tmpl.IPAddresses = ipAddrs
+	tmpl.DNSNames = dnsNames
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, a.cert, &key.PublicKey, a.key)
 	if err != nil {
 		return nil, nil, err

@@ -17,9 +17,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,6 +27,7 @@ import (
 
 	"github.com/alibaba/opensandbox/egress/pkg/constants"
 	"github.com/alibaba/opensandbox/egress/pkg/envoyproxy"
+	"github.com/alibaba/opensandbox/egress/pkg/envoysds"
 	"github.com/alibaba/opensandbox/egress/pkg/iptables"
 	"github.com/alibaba/opensandbox/egress/pkg/log"
 	"github.com/alibaba/opensandbox/egress/pkg/mitmcert"
@@ -53,6 +54,7 @@ type mitmTransparent struct {
 	gid         uint32
 	addrs       []netip.Addr
 	auth        *mitmcert.Authority
+	sds         *envoysds.Server
 	envoyCfg    envoyproxy.Config
 	staticHosts []string
 	mitmHosts   []string
@@ -187,20 +189,37 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return nil, err
 	}
-	certificates, err := writeEnvoyCertificates(auth, mitmHosts, workDir, proxyUID, proxyGID)
+	certPEM, keyPEM, err := auth.MintLeafForHosts(mitmHosts[0], mitmHosts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("envoy mitm SDS cert for %v: %w", mitmHosts, err)
 	}
+	sdsAddr := envOrDefault("OPENSANDBOX_EGRESS_ENVOY_SDS_ADDR", "127.0.0.1:19002")
+	sdsSecret := envOrDefault("OPENSANDBOX_EGRESS_ENVOY_SDS_SECRET", "opensandbox_downstream_mitm")
+	sds, err := envoysds.New(sdsSecret, certPEM, keyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("envoy sds: %w", err)
+	}
+	sdsLis, err := net.Listen("tcp", sdsAddr)
+	if err != nil {
+		return nil, fmt.Errorf("envoy sds listen %s: %w", sdsAddr, err)
+	}
+	safego.Go(func() {
+		if err := sds.Serve(context.Background(), sdsLis); err != nil {
+			log.Errorf("envoy sds server error: %v", err)
+		}
+	})
+	log.Infof("envoy sds server listening on %s", sdsAddr)
 
 	envoyCfg := envoyproxy.Config{
-		Path:         strings.TrimSpace(os.Getenv(constants.EnvEnvoyPath)),
-		ListenPort:   mpPort,
-		AdminPort:    adminPort,
-		ExtProcAddr:  extProcAddr,
-		WorkDir:      workDir,
-		Certificates: certificates,
-		UID:          proxyUID,
-		GID:          proxyGID,
+		Path:        strings.TrimSpace(os.Getenv(constants.EnvEnvoyPath)),
+		ListenPort:  mpPort,
+		AdminPort:   adminPort,
+		ExtProcAddr: extProcAddr,
+		SDSAddr:     sdsAddr,
+		SDSSecret:   sdsSecret,
+		WorkDir:     workDir,
+		UID:         proxyUID,
+		GID:         proxyGID,
 	}
 	running, err := envoyproxy.Launch(envoyCfg)
 	if err != nil {
@@ -218,7 +237,7 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 		return nil, fmt.Errorf("envoy mitm CA export: %w", err)
 	}
 	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d, MITM hosts=%v)", mpPort, mitmHosts)
-	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID, gid: proxyGID, addrs: addrs, auth: auth, envoyCfg: envoyCfg, staticHosts: staticHosts, mitmHosts: mitmHosts}, nil
+	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID, gid: proxyGID, addrs: addrs, auth: auth, sds: sds, envoyCfg: envoyCfg, staticHosts: staticHosts, mitmHosts: mitmHosts}, nil
 }
 
 func (m *mitmTransparent) updateEnvoyHosts(hosts []string) {
@@ -234,69 +253,29 @@ func (m *mitmTransparent) updateEnvoyHosts(hosts []string) {
 		m.mu.Unlock()
 		return
 	}
-	oldEnvoy := m.envoy
 	oldAddrs := append([]netip.Addr(nil), m.addrs...)
-	cfg := m.envoyCfg
 	m.mu.Unlock()
 
-	certificates, err := writeEnvoyCertificates(m.auth, hosts, cfg.WorkDir, m.uid, m.gid)
+	certPEM, keyPEM, err := m.auth.MintLeafForHosts(hosts[0], hosts)
 	if err != nil {
 		log.Errorf("envoy: update MITM certs for hosts %v: %v", hosts, err)
 		return
 	}
-	cfg.Certificates = certificates
-	newEnvoy, err := envoyproxy.Launch(cfg)
-	if err != nil {
-		log.Errorf("envoy: restart for MITM hosts %v: %v", hosts, err)
+	if err := m.sds.Update(certPEM, keyPEM); err != nil {
+		log.Errorf("envoy: update SDS secret for MITM hosts %v: %v", hosts, err)
 		return
 	}
-	waitAddr := fmt.Sprintf("127.0.0.1:%d", m.port)
-	if err := mitmproxy.WaitListenPort(waitAddr, 15*time.Second); err != nil {
-		envoyproxy.GracefulShutdown(newEnvoy, defaultMitmShutdownTimeout)
-		log.Errorf("envoy: wait after MITM host update %v: %v", hosts, err)
-		return
-	}
+	iptables.RemoveTransparentHTTPForAddrs(m.port, m.uid, oldAddrs)
 	newAddrs, err := iptables.SetupTransparentHTTPForHosts(m.port, m.uid, hosts)
 	if err != nil {
-		envoyproxy.GracefulShutdown(newEnvoy, defaultMitmShutdownTimeout)
 		log.Errorf("envoy: update transparent rules for MITM hosts %v: %v", hosts, err)
 		return
 	}
 	m.mu.Lock()
-	m.envoy = newEnvoy
 	m.addrs = newAddrs
-	m.envoyCfg = cfg
 	m.mitmHosts = hosts
 	m.mu.Unlock()
-	iptables.RemoveTransparentHTTPForAddrs(m.port, m.uid, oldAddrs)
-	envoyproxy.GracefulShutdown(oldEnvoy, defaultMitmShutdownTimeout)
 	log.Infof("envoy: updated MITM hosts=%v", hosts)
-}
-
-func writeEnvoyCertificates(auth *mitmcert.Authority, hosts []string, workDir string, uid, gid uint32) ([]envoyproxy.CertificateConfig, error) {
-	certificates := make([]envoyproxy.CertificateConfig, 0, len(hosts))
-	for _, host := range hosts {
-		certPEM, keyPEM, err := auth.MintLeaf(host)
-		if err != nil {
-			return nil, fmt.Errorf("envoy mitm leaf cert for %q: %w", host, err)
-		}
-		base := safeCertName(host)
-		certPath := filepath.Join(workDir, base+".crt")
-		keyPath := filepath.Join(workDir, base+".key")
-		if err := os.WriteFile(certPath, certPEM, 0o644); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
-			return nil, err
-		}
-		_ = os.Chown(certPath, int(uid), int(gid))
-		_ = os.Chown(keyPath, int(uid), int(gid))
-		certificates = append(certificates, envoyproxy.CertificateConfig{CertPath: certPath, KeyPath: keyPath})
-	}
-	if len(certificates) == 0 {
-		return nil, fmt.Errorf("envoy mitm certificates: no hosts configured")
-	}
-	return certificates, nil
 }
 
 func safeCertName(host string) string {

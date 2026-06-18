@@ -14,21 +14,14 @@
 
 package envoyproxy
 
-import (
-	"fmt"
-	"strings"
-)
-
-type CertificateConfig struct {
-	CertPath string
-	KeyPath  string
-}
+import "fmt"
 
 type BootstrapConfig struct {
-	ListenPort   int
-	AdminPort    int
-	ExtProcAddr  string
-	Certificates []CertificateConfig
+	ListenPort  int
+	AdminPort   int
+	ExtProcAddr string
+	SDSAddr     string
+	SDSSecret   string
 }
 
 func BootstrapYAML(cfg BootstrapConfig) string {
@@ -57,8 +50,16 @@ static_resources:
         typed_config:
           "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
           common_tls_context:
-            tls_certificates:
-%s
+            tls_certificate_sds_secret_configs:
+            - name: %q
+              sds_config:
+                resource_api_version: V3
+                api_config_source:
+                  api_type: GRPC
+                  transport_api_version: V3
+                  grpc_services:
+                  - envoy_grpc:
+                      cluster_name: sds_cluster
       filters:
       - name: envoy.filters.network.http_connection_manager
         typed_config:
@@ -140,6 +141,19 @@ static_resources:
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
   clusters:
+  - name: sds_cluster
+    connect_timeout: 0.25s
+    type: STATIC
+    http2_protocol_options: {}
+    load_assignment:
+      cluster_name: sds_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: %s
+                port_value: %s
   - name: ext_proc_cluster
     connect_timeout: 0.25s
     type: STATIC
@@ -181,21 +195,7 @@ static_resources:
         dns_cache_config:
           name: opensandbox_dynamic_forward_proxy_cache
           dns_lookup_family: V4_ONLY
-`, cfg.AdminPort, cfg.ListenPort, certificateYAML(cfg.Certificates), host(cfg.ExtProcAddr), port(cfg.ExtProcAddr))
-}
-
-func certificateYAML(certs []CertificateConfig) string {
-	var b strings.Builder
-	for _, cert := range certs {
-		if strings.TrimSpace(cert.CertPath) == "" || strings.TrimSpace(cert.KeyPath) == "" {
-			continue
-		}
-		b.WriteString("            - certificate_chain:\n")
-		b.WriteString(fmt.Sprintf("                filename: %q\n", cert.CertPath))
-		b.WriteString("              private_key:\n")
-		b.WriteString(fmt.Sprintf("                filename: %q\n", cert.KeyPath))
-	}
-	return strings.TrimRight(b.String(), "\n")
+`, cfg.AdminPort, cfg.ListenPort, cfg.SDSSecret, host(cfg.SDSAddr), port(cfg.SDSAddr), host(cfg.ExtProcAddr), port(cfg.ExtProcAddr))
 }
 
 func host(addr string) string {
