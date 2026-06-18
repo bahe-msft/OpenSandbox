@@ -39,6 +39,7 @@ class _CreateWorkloadContext:
     resource_requests: Dict[str, str]
     egress_mode: str
     egress_http_proxy_backend: str
+    egress_envoy_mitm_hosts: list[str]
     egress_image: Optional[str]
     egress_auth_token: Optional[str]
     credential_proxy_enabled: bool
@@ -73,6 +74,7 @@ def _build_create_workload_context(
 
     egress_mode = app_config.egress.mode if app_config.egress else EGRESS_MODE_DNS
     egress_http_proxy_backend = app_config.egress.http_proxy_backend if app_config.egress else "mitmproxy"
+    egress_envoy_mitm_hosts = app_config.egress.envoy_mitm_hosts if app_config.egress else []
     egress_image = None
     egress_auth_token = None
     credential_proxy_enabled = bool(
@@ -99,6 +101,7 @@ def _build_create_workload_context(
         resource_requests=resource_requests,
         egress_mode=egress_mode,
         egress_http_proxy_backend=egress_http_proxy_backend,
+        egress_envoy_mitm_hosts=egress_envoy_mitm_hosts,
         egress_image=egress_image,
         egress_auth_token=egress_auth_token,
         credential_proxy_enabled=credential_proxy_enabled,
