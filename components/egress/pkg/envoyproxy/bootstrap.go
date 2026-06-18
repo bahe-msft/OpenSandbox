@@ -156,6 +156,8 @@ static_resources:
       name: envoy.transport_sockets.tls
       typed_config:
         "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+        auto_sni: true
+        auto_san_validation: true
     cluster_type:
       name: envoy.clusters.dynamic_forward_proxy
       typed_config:
