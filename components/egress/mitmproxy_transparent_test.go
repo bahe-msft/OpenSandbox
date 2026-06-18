@@ -31,3 +31,13 @@ func TestSafeCertName(t *testing.T) {
 	require.Equal(t, "dev.azure.com", safeCertName("Dev.Azure.Com."))
 	require.Equal(t, "api_example.com", safeCertName("api:example.com"))
 }
+
+func TestMergeHostsNormalizesAndDeduplicates(t *testing.T) {
+	require.Equal(t,
+		[]string{"dev.azure.com", "packages.microsoft.com", "example.com"},
+		mergeHosts(
+			[]string{"dev.azure.com", "Packages.Microsoft.Com."},
+			[]string{"packages.microsoft.com", "example.com"},
+		),
+	)
+}

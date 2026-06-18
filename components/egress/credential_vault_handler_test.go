@@ -68,6 +68,15 @@ func testCredentialVaultRequest() credentialvault.CreateRequest {
 	}
 }
 
+func TestCredentialVaultExactHostsSkipsWildcards(t *testing.T) {
+	hosts := credentialVaultExactHosts(credentialvault.ActiveSnapshot{Bindings: []credentialvault.ActiveBinding{
+		{Match: credentialvault.Match{Hosts: []string{"Dev.Azure.Com.", "*.goms.io"}}},
+		{Match: credentialvault.Match{Hosts: []string{"packages.microsoft.com", "dev.azure.com"}}},
+	}})
+
+	require.Equal(t, []string{"dev.azure.com", "packages.microsoft.com"}, hosts)
+}
+
 func TestCredentialVaultActiveTCPAlwaysForbidden(t *testing.T) {
 	store := credentialvault.NewStore(nil, func() bool { return true })
 	pol := testCredentialVaultPolicy(t, `{"defaultAction":"deny","egress":[{"action":"allow","target":"code.example.com"}]}`)

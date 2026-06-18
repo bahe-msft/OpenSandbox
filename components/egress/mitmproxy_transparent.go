@@ -44,17 +44,22 @@ type exitEvent struct {
 }
 
 type mitmTransparent struct {
-	mu         sync.Mutex
-	running    *mitmproxy.Running
-	envoy      *envoyproxy.Running
-	currentGen uint64 // generation of the mitmdump currently considered live
-	port       int
-	uid        uint32
-	addrs      []netip.Addr
-	cfg        mitmproxy.Config // OnExit must NOT be set here; built per-Launch
-	nextGen    uint64           // atomic; monotonic gen counter handed to each Launch
-	restartCh  chan exitEvent
-	shutdownCh chan struct{} // closed by watchMitmproxy on ctx cancel; lets OnExit unblock during shutdown
+	mu          sync.Mutex
+	running     *mitmproxy.Running
+	envoy       *envoyproxy.Running
+	currentGen  uint64 // generation of the mitmdump currently considered live
+	port        int
+	uid         uint32
+	gid         uint32
+	addrs       []netip.Addr
+	auth        *mitmcert.Authority
+	envoyCfg    envoyproxy.Config
+	staticHosts []string
+	mitmHosts   []string
+	cfg         mitmproxy.Config // OnExit must NOT be set here; built per-Launch
+	nextGen     uint64           // atomic; monotonic gen counter handed to each Launch
+	restartCh   chan exitEvent
+	shutdownCh  chan struct{} // closed by watchMitmproxy on ctx cancel; lets OnExit unblock during shutdown
 }
 
 func startTransparentHTTPProxyIfEnabled() (*mitmTransparent, error) {
@@ -166,7 +171,8 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 	adminPort := constants.EnvIntOrDefault(constants.EnvEnvoyAdminPort, constants.DefaultEnvoyAdminPort)
 	extProcAddr := envOrDefault(constants.EnvEnvoyExtProcAddr, constants.DefaultEnvoyExtProcAddr)
 	workDir := "/tmp/opensandbox-envoy"
-	mitmHosts := csvHosts(strings.TrimSpace(os.Getenv(constants.EnvEnvoyMitmHosts)))
+	staticHosts := csvHosts(strings.TrimSpace(os.Getenv(constants.EnvEnvoyMitmHosts)))
+	mitmHosts := append([]string(nil), staticHosts...)
 	if len(mitmHosts) == 0 {
 		mitmHosts = []string{"dev.azure.com"}
 	}
@@ -186,7 +192,7 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 		return nil, err
 	}
 
-	running, err := envoyproxy.Launch(envoyproxy.Config{
+	envoyCfg := envoyproxy.Config{
 		Path:         strings.TrimSpace(os.Getenv(constants.EnvEnvoyPath)),
 		ListenPort:   mpPort,
 		AdminPort:    adminPort,
@@ -195,7 +201,8 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 		Certificates: certificates,
 		UID:          proxyUID,
 		GID:          proxyGID,
-	})
+	}
+	running, err := envoyproxy.Launch(envoyCfg)
 	if err != nil {
 		return nil, fmt.Errorf("start envoy: %w", err)
 	}
@@ -211,7 +218,59 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 		return nil, fmt.Errorf("envoy mitm CA export: %w", err)
 	}
 	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d, MITM hosts=%v)", mpPort, mitmHosts)
-	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID, addrs: addrs}, nil
+	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID, gid: proxyGID, addrs: addrs, auth: auth, envoyCfg: envoyCfg, staticHosts: staticHosts, mitmHosts: mitmHosts}, nil
+}
+
+func (m *mitmTransparent) updateEnvoyHosts(hosts []string) {
+	if m == nil || m.envoy == nil || m.auth == nil {
+		return
+	}
+	hosts = mergeHosts(m.staticHosts, hosts)
+	if len(hosts) == 0 {
+		hosts = []string{"dev.azure.com"}
+	}
+	m.mu.Lock()
+	if sameStrings(m.mitmHosts, hosts) {
+		m.mu.Unlock()
+		return
+	}
+	oldEnvoy := m.envoy
+	oldAddrs := append([]netip.Addr(nil), m.addrs...)
+	cfg := m.envoyCfg
+	m.mu.Unlock()
+
+	certificates, err := writeEnvoyCertificates(m.auth, hosts, cfg.WorkDir, m.uid, m.gid)
+	if err != nil {
+		log.Errorf("envoy: update MITM certs for hosts %v: %v", hosts, err)
+		return
+	}
+	cfg.Certificates = certificates
+	newEnvoy, err := envoyproxy.Launch(cfg)
+	if err != nil {
+		log.Errorf("envoy: restart for MITM hosts %v: %v", hosts, err)
+		return
+	}
+	waitAddr := fmt.Sprintf("127.0.0.1:%d", m.port)
+	if err := mitmproxy.WaitListenPort(waitAddr, 15*time.Second); err != nil {
+		envoyproxy.GracefulShutdown(newEnvoy, defaultMitmShutdownTimeout)
+		log.Errorf("envoy: wait after MITM host update %v: %v", hosts, err)
+		return
+	}
+	newAddrs, err := iptables.SetupTransparentHTTPForHosts(m.port, m.uid, hosts)
+	if err != nil {
+		envoyproxy.GracefulShutdown(newEnvoy, defaultMitmShutdownTimeout)
+		log.Errorf("envoy: update transparent rules for MITM hosts %v: %v", hosts, err)
+		return
+	}
+	m.mu.Lock()
+	m.envoy = newEnvoy
+	m.addrs = newAddrs
+	m.envoyCfg = cfg
+	m.mitmHosts = hosts
+	m.mu.Unlock()
+	iptables.RemoveTransparentHTTPForAddrs(m.port, m.uid, oldAddrs)
+	envoyproxy.GracefulShutdown(oldEnvoy, defaultMitmShutdownTimeout)
+	log.Infof("envoy: updated MITM hosts=%v", hosts)
 }
 
 func writeEnvoyCertificates(auth *mitmcert.Authority, hosts []string, workDir string, uid, gid uint32) ([]envoyproxy.CertificateConfig, error) {
@@ -276,6 +335,37 @@ func csvHosts(s string) []string {
 		}
 	}
 	return hosts
+}
+
+func mergeHosts(groups ...[]string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, group := range groups {
+		for _, host := range group {
+			host = strings.TrimSpace(strings.TrimSuffix(strings.ToLower(host), "."))
+			if host == "" {
+				continue
+			}
+			if _, ok := seen[host]; ok {
+				continue
+			}
+			seen[host] = struct{}{}
+			out = append(out, host)
+		}
+	}
+	return out
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // watchMitmproxy monitors mitmdump for unexpected exits, logs the error, and restarts it.

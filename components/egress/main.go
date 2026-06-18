@@ -145,6 +145,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("transparent http proxy: %v", err)
 	}
+	if mitm != nil && mitm.envoy != nil {
+		policyRuntime.setCredentialVaultHostChangeCallback(mitm.updateEnvoyHosts)
+	}
 	mitmGate.MarkStackReady()
 	if mitm != nil && mitm.envoy == nil {
 		mitm.watchMitmproxy(ctx, mitmGate)
