@@ -166,9 +166,9 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 	adminPort := constants.EnvIntOrDefault(constants.EnvEnvoyAdminPort, constants.DefaultEnvoyAdminPort)
 	extProcAddr := envOrDefault(constants.EnvEnvoyExtProcAddr, constants.DefaultEnvoyExtProcAddr)
 	workDir := "/tmp/opensandbox-envoy"
-	mitmHost := firstCSV(strings.TrimSpace(os.Getenv(constants.EnvEnvoyMitmHosts)))
-	if mitmHost == "" {
-		mitmHost = "dev.azure.com"
+	mitmHosts := csvHosts(strings.TrimSpace(os.Getenv(constants.EnvEnvoyMitmHosts)))
+	if len(mitmHosts) == 0 {
+		mitmHosts = []string{"dev.azure.com"}
 	}
 	proxyUID, proxyGID, _, err := mitmproxy.LookupUser(mitmproxy.RunAsUser)
 	if err != nil {
@@ -178,34 +178,23 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("envoy mitm CA: %w", err)
 	}
-	certPEM, keyPEM, err := auth.MintLeaf(mitmHost)
-	if err != nil {
-		return nil, fmt.Errorf("envoy mitm leaf cert for %q: %w", mitmHost, err)
-	}
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return nil, err
 	}
-	certPath := filepath.Join(workDir, "downstream.crt")
-	keyPath := filepath.Join(workDir, "downstream.key")
-	if err := os.WriteFile(certPath, certPEM, 0o644); err != nil {
+	certificates, err := writeEnvoyCertificates(auth, mitmHosts, workDir, proxyUID, proxyGID)
+	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
-		return nil, err
-	}
-	_ = os.Chown(certPath, int(proxyUID), int(proxyGID))
-	_ = os.Chown(keyPath, int(proxyUID), int(proxyGID))
 
 	running, err := envoyproxy.Launch(envoyproxy.Config{
-		Path:        strings.TrimSpace(os.Getenv(constants.EnvEnvoyPath)),
-		ListenPort:  mpPort,
-		AdminPort:   adminPort,
-		ExtProcAddr: extProcAddr,
-		WorkDir:     workDir,
-		CertPath:    certPath,
-		KeyPath:     keyPath,
-		UID:         proxyUID,
-		GID:         proxyGID,
+		Path:         strings.TrimSpace(os.Getenv(constants.EnvEnvoyPath)),
+		ListenPort:   mpPort,
+		AdminPort:    adminPort,
+		ExtProcAddr:  extProcAddr,
+		WorkDir:      workDir,
+		Certificates: certificates,
+		UID:          proxyUID,
+		GID:          proxyGID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start envoy: %w", err)
@@ -214,25 +203,79 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 	if err := mitmproxy.WaitListenPort(waitAddr, 15*time.Second); err != nil {
 		return nil, fmt.Errorf("wait listen %s: %w", waitAddr, err)
 	}
-	addrs, err := iptables.SetupTransparentHTTPForHosts(mpPort, proxyUID, []string{mitmHost})
+	addrs, err := iptables.SetupTransparentHTTPForHosts(mpPort, proxyUID, mitmHosts)
 	if err != nil {
 		return nil, fmt.Errorf("iptables transparent: %w", err)
 	}
 	if err := mitmcert.ExportCA(auth); err != nil {
 		return nil, fmt.Errorf("envoy mitm CA export: %w", err)
 	}
-	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d, static MITM host=%s)", mpPort, mitmHost)
+	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d, MITM hosts=%v)", mpPort, mitmHosts)
 	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID, addrs: addrs}, nil
 }
 
-func firstCSV(s string) string {
-	for _, part := range strings.Split(s, ",") {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			return part
+func writeEnvoyCertificates(auth *mitmcert.Authority, hosts []string, workDir string, uid, gid uint32) ([]envoyproxy.CertificateConfig, error) {
+	certificates := make([]envoyproxy.CertificateConfig, 0, len(hosts))
+	for _, host := range hosts {
+		certPEM, keyPEM, err := auth.MintLeaf(host)
+		if err != nil {
+			return nil, fmt.Errorf("envoy mitm leaf cert for %q: %w", host, err)
+		}
+		base := safeCertName(host)
+		certPath := filepath.Join(workDir, base+".crt")
+		keyPath := filepath.Join(workDir, base+".key")
+		if err := os.WriteFile(certPath, certPEM, 0o644); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+			return nil, err
+		}
+		_ = os.Chown(certPath, int(uid), int(gid))
+		_ = os.Chown(keyPath, int(uid), int(gid))
+		certificates = append(certificates, envoyproxy.CertificateConfig{CertPath: certPath, KeyPath: keyPath})
+	}
+	if len(certificates) == 0 {
+		return nil, fmt.Errorf("envoy mitm certificates: no hosts configured")
+	}
+	return certificates, nil
+}
+
+func safeCertName(host string) string {
+	host = strings.ToLower(strings.TrimSpace(strings.TrimSuffix(host, ".")))
+	var b strings.Builder
+	for _, r := range host {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '.', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
 		}
 	}
-	return ""
+	if b.Len() == 0 {
+		return "default"
+	}
+	return b.String()
+}
+
+func csvHosts(s string) []string {
+	seen := map[string]struct{}{}
+	var hosts []string
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(strings.TrimSuffix(part, "."))
+		if part != "" {
+			part = strings.ToLower(part)
+			if _, ok := seen[part]; ok {
+				continue
+			}
+			seen[part] = struct{}{}
+			hosts = append(hosts, part)
+		}
+	}
+	return hosts
 }
 
 // watchMitmproxy monitors mitmdump for unexpected exits, logs the error, and restarts it.

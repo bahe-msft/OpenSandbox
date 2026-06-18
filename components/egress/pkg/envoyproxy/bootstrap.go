@@ -14,14 +14,21 @@
 
 package envoyproxy
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
+
+type CertificateConfig struct {
+	CertPath string
+	KeyPath  string
+}
 
 type BootstrapConfig struct {
-	ListenPort  int
-	AdminPort   int
-	ExtProcAddr string
-	CertPath    string
-	KeyPath     string
+	ListenPort   int
+	AdminPort    int
+	ExtProcAddr  string
+	Certificates []CertificateConfig
 }
 
 func BootstrapYAML(cfg BootstrapConfig) string {
@@ -51,10 +58,7 @@ static_resources:
           "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
           common_tls_context:
             tls_certificates:
-            - certificate_chain:
-                filename: %q
-              private_key:
-                filename: %q
+%s
       filters:
       - name: envoy.filters.network.http_connection_manager
         typed_config:
@@ -177,7 +181,21 @@ static_resources:
         dns_cache_config:
           name: opensandbox_dynamic_forward_proxy_cache
           dns_lookup_family: V4_ONLY
-`, cfg.AdminPort, cfg.ListenPort, cfg.CertPath, cfg.KeyPath, host(cfg.ExtProcAddr), port(cfg.ExtProcAddr))
+`, cfg.AdminPort, cfg.ListenPort, certificateYAML(cfg.Certificates), host(cfg.ExtProcAddr), port(cfg.ExtProcAddr))
+}
+
+func certificateYAML(certs []CertificateConfig) string {
+	var b strings.Builder
+	for _, cert := range certs {
+		if strings.TrimSpace(cert.CertPath) == "" || strings.TrimSpace(cert.KeyPath) == "" {
+			continue
+		}
+		b.WriteString("            - certificate_chain:\n")
+		b.WriteString(fmt.Sprintf("                filename: %q\n", cert.CertPath))
+		b.WriteString("              private_key:\n")
+		b.WriteString(fmt.Sprintf("                filename: %q\n", cert.KeyPath))
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func host(addr string) string {

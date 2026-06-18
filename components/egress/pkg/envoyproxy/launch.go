@@ -27,16 +27,15 @@ import (
 )
 
 type Config struct {
-	Path        string
-	ListenPort  int
-	AdminPort   int
-	ExtProcAddr string
-	WorkDir     string
-	CertPath    string
-	KeyPath     string
-	UID         uint32
-	GID         uint32
-	OnExit      func(error)
+	Path         string
+	ListenPort   int
+	AdminPort    int
+	ExtProcAddr  string
+	WorkDir      string
+	Certificates []CertificateConfig
+	UID          uint32
+	GID          uint32
+	OnExit       func(error)
 }
 
 type Running struct {
@@ -55,7 +54,7 @@ func Launch(cfg Config) (*Running, error) {
 		return nil, err
 	}
 	bootstrap := filepath.Join(cfg.WorkDir, "envoy.yaml")
-	if err := os.WriteFile(bootstrap, []byte(BootstrapYAML(BootstrapConfig{ListenPort: cfg.ListenPort, AdminPort: cfg.AdminPort, ExtProcAddr: cfg.ExtProcAddr, CertPath: cfg.CertPath, KeyPath: cfg.KeyPath})), 0o644); err != nil {
+	if err := os.WriteFile(bootstrap, []byte(BootstrapYAML(BootstrapConfig{ListenPort: cfg.ListenPort, AdminPort: cfg.AdminPort, ExtProcAddr: cfg.ExtProcAddr, Certificates: cfg.Certificates})), 0o644); err != nil {
 		return nil, err
 	}
 	cmd := exec.Command(cfg.Path, "-c", bootstrap, "--log-level", "info")
