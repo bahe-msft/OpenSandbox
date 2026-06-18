@@ -37,4 +37,4 @@ jobs:
             --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -t "$IMAGE" \
             --push \
-            .
+            server
