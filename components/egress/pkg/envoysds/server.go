@@ -125,13 +125,6 @@ func (s *Server) StreamSecrets(stream secretv3.SecretDiscoveryService_StreamSecr
 				errCh <- err
 				return
 			}
-			resp, err := s.response(s.version.Load())
-			if err == nil {
-				select {
-				case updates <- resp:
-				default:
-				}
-			}
 		}
 	}()
 
