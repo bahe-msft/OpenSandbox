@@ -16,6 +16,8 @@
 mode:
   - transparent
 
+http2: false
+
 # mitm default changed from lazy to eager in mitmproxy 10+. We pin
 # lazy explicitly: upstream connections are deferred until the full
 # request arrives, avoiding unnecessary upstream opens for blocked
