@@ -38,6 +38,7 @@ class _CreateWorkloadContext:
     resource_limits: Dict[str, str]
     resource_requests: Dict[str, str]
     egress_mode: str
+    egress_http_proxy_backend: str
     egress_image: Optional[str]
     egress_auth_token: Optional[str]
     credential_proxy_enabled: bool
@@ -71,6 +72,7 @@ def _build_create_workload_context(
         annotations[SANDBOX_SECURE_ACCESS_TOKEN_METADATA_KEY] = secure_access_token
 
     egress_mode = app_config.egress.mode if app_config.egress else EGRESS_MODE_DNS
+    egress_http_proxy_backend = app_config.egress.http_proxy_backend if app_config.egress else "mitmproxy"
     egress_image = None
     egress_auth_token = None
     credential_proxy_enabled = bool(
@@ -96,6 +98,7 @@ def _build_create_workload_context(
         resource_limits=resource_limits,
         resource_requests=resource_requests,
         egress_mode=egress_mode,
+        egress_http_proxy_backend=egress_http_proxy_backend,
         egress_image=egress_image,
         egress_auth_token=egress_auth_token,
         credential_proxy_enabled=credential_proxy_enabled,

@@ -138,6 +138,7 @@ class AgentSandboxProvider(WorkloadProvider):
         annotations: Optional[Dict[str, str]] = None,
         egress_auth_token: Optional[str] = None,
         egress_mode: str = EGRESS_MODE_DNS,
+        egress_http_proxy_backend: str = "mitmproxy",
         credential_proxy_enabled: bool = False,
         resource_requests: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
@@ -294,6 +295,7 @@ class AgentSandboxProvider(WorkloadProvider):
             egress_image=egress_image,
             egress_auth_token=egress_auth_token,
             egress_mode=egress_mode,
+            egress_http_proxy_backend=egress_http_proxy_backend,
             credential_proxy_enabled=credential_proxy_enabled,
         )
 
