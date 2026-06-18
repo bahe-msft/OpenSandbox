@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -162,15 +163,45 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 	mpPort := constants.EnvIntOrDefault(constants.EnvEnvoyPort, constants.DefaultEnvoyPort)
 	adminPort := constants.EnvIntOrDefault(constants.EnvEnvoyAdminPort, constants.DefaultEnvoyAdminPort)
 	extProcAddr := envOrDefault(constants.EnvEnvoyExtProcAddr, constants.DefaultEnvoyExtProcAddr)
+	workDir := "/tmp/opensandbox-envoy"
+	mitmHost := firstCSV(strings.TrimSpace(os.Getenv(constants.EnvEnvoyMitmHosts)))
+	if mitmHost == "" {
+		mitmHost = "dev.azure.com"
+	}
 	proxyUID, proxyGID, _, err := mitmproxy.LookupUser(mitmproxy.RunAsUser)
 	if err != nil {
 		return nil, fmt.Errorf("lookup user %q: %w (ensure this user exists in the image)", mitmproxy.RunAsUser, err)
 	}
+	auth, err := mitmcert.LoadOrCreateAuthority(strings.TrimSpace(os.Getenv(constants.EnvEnvoyMitmCADir)))
+	if err != nil {
+		return nil, fmt.Errorf("envoy mitm CA: %w", err)
+	}
+	certPEM, keyPEM, err := auth.MintLeaf(mitmHost)
+	if err != nil {
+		return nil, fmt.Errorf("envoy mitm leaf cert for %q: %w", mitmHost, err)
+	}
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		return nil, err
+	}
+	certPath := filepath.Join(workDir, "downstream.crt")
+	keyPath := filepath.Join(workDir, "downstream.key")
+	if err := os.WriteFile(certPath, certPEM, 0o644); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+		return nil, err
+	}
+	_ = os.Chown(certPath, int(proxyUID), int(proxyGID))
+	_ = os.Chown(keyPath, int(proxyUID), int(proxyGID))
+
 	running, err := envoyproxy.Launch(envoyproxy.Config{
 		Path:        strings.TrimSpace(os.Getenv(constants.EnvEnvoyPath)),
 		ListenPort:  mpPort,
 		AdminPort:   adminPort,
 		ExtProcAddr: extProcAddr,
+		WorkDir:     workDir,
+		CertPath:    certPath,
+		KeyPath:     keyPath,
 		UID:         proxyUID,
 		GID:         proxyGID,
 	})
@@ -184,15 +215,21 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 	if err := iptables.SetupTransparentHTTP(mpPort, proxyUID); err != nil {
 		return nil, fmt.Errorf("iptables transparent: %w", err)
 	}
-	auth, err := mitmcert.LoadOrCreateAuthority(strings.TrimSpace(os.Getenv(constants.EnvEnvoyMitmCADir)))
-	if err != nil {
-		return nil, fmt.Errorf("envoy mitm CA: %w", err)
-	}
 	if err := mitmcert.ExportCA(auth); err != nil {
 		return nil, fmt.Errorf("envoy mitm CA export: %w", err)
 	}
-	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d)", mpPort)
+	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d, static MITM host=%s)", mpPort, mitmHost)
 	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID}, nil
+}
+
+func firstCSV(s string) string {
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			return part
+		}
+	}
+	return ""
 }
 
 // watchMitmproxy monitors mitmdump for unexpected exits, logs the error, and restarts it.

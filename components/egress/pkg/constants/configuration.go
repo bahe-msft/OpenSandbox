@@ -42,6 +42,7 @@ const (
 	EnvEnvoyAdminPort            = "OPENSANDBOX_EGRESS_ENVOY_ADMIN_PORT"
 	EnvEnvoyExtProcAddr          = "OPENSANDBOX_EGRESS_ENVOY_EXT_PROC_ADDR"
 	EnvEnvoyMitmCADir            = "OPENSANDBOX_EGRESS_ENVOY_MITM_CA_DIR"
+	EnvEnvoyMitmHosts            = "OPENSANDBOX_EGRESS_ENVOY_MITM_HOSTS"
 
 	// MITM: mitmdump transparent; Linux + CAP_NET_ADMIN, runs as a dedicated user.
 	// Static mitm options (mode, connection_strategy, listen_host, stream_large_bodies,

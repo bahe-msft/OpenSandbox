@@ -20,6 +20,8 @@ type BootstrapConfig struct {
 	ListenPort  int
 	AdminPort   int
 	ExtProcAddr string
+	CertPath    string
+	KeyPath     string
 }
 
 func BootstrapYAML(cfg BootstrapConfig) string {
@@ -41,6 +43,58 @@ static_resources:
       typed_config:
         "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
     filter_chains:
+    - filter_chain_match:
+        transport_protocol: tls
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+          common_tls_context:
+            tls_certificates:
+            - certificate_chain:
+                filename: %q
+              private_key:
+                filename: %q
+      filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: opensandbox_egress_tls
+          route_config:
+            name: opensandbox_egress_tls_routes
+            virtual_hosts:
+            - name: all_tls
+              domains: ["*"]
+              routes:
+              - match: { prefix: "/" }
+                route:
+                  cluster: dynamic_forward_proxy_cluster
+                  timeout: 0s
+          http_filters:
+          - name: envoy.filters.http.ext_proc
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
+              grpc_service:
+                envoy_grpc:
+                  cluster_name: ext_proc_cluster
+                timeout: 5s
+              message_timeout: 5s
+              processing_mode:
+                request_header_mode: SEND
+                response_header_mode: SKIP
+                request_body_mode: NONE
+                response_body_mode: NONE
+                request_trailer_mode: SKIP
+                response_trailer_mode: SKIP
+          - name: envoy.filters.http.dynamic_forward_proxy
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
+              dns_cache_config:
+                name: opensandbox_dynamic_forward_proxy_cache
+                dns_lookup_family: V4_ONLY
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
     - filters:
       - name: envoy.filters.network.http_connection_manager
         typed_config:
@@ -98,6 +152,10 @@ static_resources:
   - name: dynamic_forward_proxy_cluster
     connect_timeout: 5s
     lb_policy: CLUSTER_PROVIDED
+    transport_socket:
+      name: envoy.transport_sockets.tls
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
     cluster_type:
       name: envoy.clusters.dynamic_forward_proxy
       typed_config:
@@ -105,7 +163,7 @@ static_resources:
         dns_cache_config:
           name: opensandbox_dynamic_forward_proxy_cache
           dns_lookup_family: V4_ONLY
-`, cfg.AdminPort, cfg.ListenPort, host(cfg.ExtProcAddr), port(cfg.ExtProcAddr))
+`, cfg.AdminPort, cfg.ListenPort, cfg.CertPath, cfg.KeyPath, host(cfg.ExtProcAddr), port(cfg.ExtProcAddr))
 }
 
 func host(addr string) string {
