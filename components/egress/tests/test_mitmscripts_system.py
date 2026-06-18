@@ -196,7 +196,7 @@ class SystemAddonRedactionTest(unittest.TestCase):
             ["secret-token"],
         )
 
-        system.request(flow)
+        system.requestheaders(flow)
 
         self.assertEqual("secret-token", flow.request.headers.get("Private-Token"))
         self.assertNotIn("secret-token", "\n".join(system.ctx.log.messages))
@@ -228,7 +228,7 @@ class SystemAddonRedactionTest(unittest.TestCase):
             ["old-secret"],
         )
 
-        system.request(flow)
+        system.requestheaders(flow)
         system._load_active_vault = lambda: system.ActiveVault(2, [], ["new-secret"])
         flow.response.headers["x-token-echo"] = "old-secret"
         system.responseheaders(flow)

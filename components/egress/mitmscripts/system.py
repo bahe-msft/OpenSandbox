@@ -237,7 +237,7 @@ def _select_binding(flow: http.HTTPFlow, vault: ActiveVault) -> dict[str, Any] |
     return selected[0]
 
 
-def request(flow: http.HTTPFlow) -> None:
+def requestheaders(flow: http.HTTPFlow) -> None:
     vault = _load_active_vault()
     if vault is None:
         return
