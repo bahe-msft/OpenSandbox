@@ -26,7 +26,11 @@ type BootstrapConfig struct {
 }
 
 func BootstrapYAML(cfg BootstrapConfig) string {
-	return fmt.Sprintf(`admin:
+	return fmt.Sprintf(`node:
+  id: opensandbox-egress
+  cluster: opensandbox-egress
+
+admin:
   address:
     socket_address:
       address: 127.0.0.1
