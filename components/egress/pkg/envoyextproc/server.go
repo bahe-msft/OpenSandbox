@@ -91,9 +91,10 @@ func (s *Server) handleRequestHeaders(req *extprocv3.HttpHeaders) *extprocv3.Hea
 		return &extprocv3.HeadersResponse{Response: &extprocv3.CommonResponse{HeaderMutation: mutation}}
 	}
 	for _, h := range binding.Headers {
-		mutation.RemoveHeaders = append(mutation.RemoveHeaders, h.Name)
+		name := strings.ToLower(h.Name)
 		mutation.SetHeaders = append(mutation.SetHeaders, &corev3.HeaderValueOption{
-			Header: &corev3.HeaderValue{Key: h.Name, Value: h.Value},
+			Header:       &corev3.HeaderValue{Key: name, RawValue: []byte(h.Value)},
+			AppendAction: corev3.HeaderValueOption_OVERWRITE_IF_EXISTS_OR_ADD,
 		})
 	}
 	if len(binding.Headers) > 0 {

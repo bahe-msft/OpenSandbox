@@ -156,12 +156,20 @@ static_resources:
       name: envoy.transport_sockets.tls
       typed_config:
         "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+        common_tls_context:
+          validation_context:
+            trusted_ca:
+              filename: /etc/ssl/certs/ca-certificates.crt
     typed_extension_protocol_options:
       envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
         "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
         upstream_http_protocol_options:
           auto_sni: true
           auto_san_validation: true
+        explicit_http_config:
+          http_protocol_options:
+            header_key_format:
+              proper_case_words: {}
     cluster_type:
       name: envoy.clusters.dynamic_forward_proxy
       typed_config:

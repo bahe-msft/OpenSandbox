@@ -49,8 +49,9 @@ func TestHandleRequestHeadersInjectsCredential(t *testing.T) {
 	}}})
 
 	mutation := resp.GetResponse().GetHeaderMutation()
-	require.Contains(t, mutation.RemoveHeaders, "Authorization")
+	require.Empty(t, mutation.RemoveHeaders)
 	require.Len(t, mutation.SetHeaders, 1)
-	require.Equal(t, "Authorization", mutation.SetHeaders[0].Header.Key)
-	require.Equal(t, "Bearer secret", mutation.SetHeaders[0].Header.Value)
+	require.Equal(t, "authorization", mutation.SetHeaders[0].Header.Key)
+	require.Equal(t, []byte("Bearer secret"), mutation.SetHeaders[0].Header.RawValue)
+	require.Equal(t, corev3.HeaderValueOption_OVERWRITE_IF_EXISTS_OR_ADD, mutation.SetHeaders[0].AppendAction)
 }
