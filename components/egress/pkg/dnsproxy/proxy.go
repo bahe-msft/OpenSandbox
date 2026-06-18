@@ -236,36 +236,22 @@ func (p *Proxy) forward(r *dns.Msg) (*dns.Msg, error) {
 	for _, upstream := range list {
 		query := r.Copy()
 		if query.IsEdns0() == nil {
-			query.SetEdns0(dns.DefaultMsgSize, false)
+			query.SetEdns0(4096, false)
 		}
-		resp, _, err := p.exchangeUpstream(query, upstream, "udp")
+		c := &dns.Client{
+			Timeout: p.upstreamExchangeTimeout,
+			Dialer:  p.dialerForUpstream(upstream),
+			UDPSize: 4096,
+		}
+		resp, _, err := c.Exchange(query, upstream)
 		if err != nil {
-			if isUDPBufferError(err) {
-				log.Warnf("[dns] upstream %s udp exchange error: %v; retrying over tcp", upstream, err)
-				resp, _, err = p.exchangeUpstream(query, upstream, "tcp")
-			}
-			if err != nil {
-				lastErr = err
-				log.Warnf("[dns] upstream %s exchange error: %v", upstream, err)
-				continue
-			}
+			lastErr = err
+			log.Warnf("[dns] upstream %s exchange error: %v", upstream, err)
+			continue
 		}
 		if resp == nil {
 			lastErr = fmt.Errorf("nil response from %s", upstream)
 			continue
-		}
-		if resp.Truncated {
-			log.Warnf("[dns] upstream %s returned truncated udp response; retrying over tcp", upstream)
-			resp, _, err = p.exchangeUpstream(query, upstream, "tcp")
-			if err != nil {
-				lastErr = err
-				log.Warnf("[dns] upstream %s tcp exchange error after truncated udp response: %v", upstream, err)
-				continue
-			}
-			if resp == nil {
-				lastErr = fmt.Errorf("nil tcp response from %s", upstream)
-				continue
-			}
 		}
 		if tryNext, reason := p.shouldFailoverAfterResponse(resp); tryNext {
 			lastErr = fmt.Errorf("%s from %s", reason, upstream)
@@ -278,20 +264,6 @@ func (p *Proxy) forward(r *dns.Msg) (*dns.Msg, error) {
 		return nil, lastErr
 	}
 	return nil, fmt.Errorf("no upstream resolvers configured")
-}
-
-func (p *Proxy) exchangeUpstream(r *dns.Msg, upstream, net string) (*dns.Msg, time.Duration, error) {
-	c := &dns.Client{
-		Net:     net,
-		UDPSize: dns.DefaultMsgSize,
-		Timeout: p.upstreamExchangeTimeout,
-		Dialer:  p.dialerForUpstream(upstream),
-	}
-	return c.Exchange(r, upstream)
-}
-
-func isUDPBufferError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "buffer size too small")
 }
 
 // shouldFailoverAfterResponse: treat NXDOMAIN and NOERROR as final (no retry). Other rcodes may

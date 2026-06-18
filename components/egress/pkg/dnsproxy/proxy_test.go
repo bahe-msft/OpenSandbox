@@ -15,7 +15,6 @@
 package dnsproxy
 
 import (
-	"errors"
 	"net"
 	"testing"
 	"time"
@@ -83,39 +82,33 @@ func TestExtractResolvedIPs_EmptyOrNil(t *testing.T) {
 	require.Nil(t, extractResolvedIPs(msg), "CNAME only: expected nil")
 }
 
-func TestForwardRetriesTCPAfterTruncatedUDP(t *testing.T) {
-	udpConn, err := net.ListenPacket("udp", "127.0.0.1:0")
+func TestForwardAddsEDNS0BufferSize(t *testing.T) {
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = udpConn.Close() })
+	t.Cleanup(func() { _ = conn.Close() })
 
-	addr := udpConn.LocalAddr().String()
-	tcpLn, err := net.Listen("tcp", addr)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = tcpLn.Close() })
+	seen := make(chan uint16, 1)
+	server := &dns.Server{
+		PacketConn: conn,
+		Handler: dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+			opt := r.IsEdns0()
+			require.NotNil(t, opt)
+			seen <- opt.UDPSize()
 
-	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
-		resp := new(dns.Msg)
-		resp.SetReply(r)
-		if _, ok := w.RemoteAddr().(*net.UDPAddr); ok {
-			resp.Truncated = true
+			resp := new(dns.Msg)
+			resp.SetReply(r)
+			resp.Answer = []dns.RR{
+				&dns.A{Hdr: dns.RR_Header{Name: "example.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: net.ParseIP("1.2.3.4")},
+			}
 			_ = w.WriteMsg(resp)
-			return
-		}
-		resp.Answer = []dns.RR{
-			&dns.A{Hdr: dns.RR_Header{Name: "example.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: net.ParseIP("1.2.3.4")},
-		}
-		_ = w.WriteMsg(resp)
-	})
-
-	udpServer := &dns.Server{PacketConn: udpConn, Handler: handler}
-	tcpServer := &dns.Server{Listener: tcpLn, Handler: handler}
-	go func() { _ = udpServer.ActivateAndServe() }()
-	go func() { _ = tcpServer.ActivateAndServe() }()
-	t.Cleanup(func() { _ = udpServer.Shutdown(); _ = tcpServer.Shutdown() })
+		}),
+	}
+	go func() { _ = server.ActivateAndServe() }()
+	t.Cleanup(func() { _ = server.Shutdown() })
 
 	proxy := &Proxy{
-		upstreams:               []string{addr},
-		activeUpstreams:         []string{addr},
+		upstreams:               []string{conn.LocalAddr().String()},
+		activeUpstreams:         []string{conn.LocalAddr().String()},
 		upstreamExchangeTimeout: time.Second,
 	}
 	query := new(dns.Msg)
@@ -123,15 +116,8 @@ func TestForwardRetriesTCPAfterTruncatedUDP(t *testing.T) {
 
 	resp, err := proxy.forward(query)
 	require.NoError(t, err)
-	require.False(t, resp.Truncated)
 	require.Len(t, resp.Answer, 1)
-	require.Equal(t, "1.2.3.4", resp.Answer[0].(*dns.A).A.String())
-}
-
-func TestIsUDPBufferError(t *testing.T) {
-	require.True(t, isUDPBufferError(errors.New("dns: buffer size too small")))
-	require.False(t, isUDPBufferError(nil))
-	require.False(t, isUDPBufferError(&net.DNSError{Err: "server misbehaving"}))
+	require.Equal(t, uint16(4096), <-seen)
 }
 
 func TestSetOnResolved(t *testing.T) {
