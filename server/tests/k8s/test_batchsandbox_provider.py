@@ -498,6 +498,31 @@ spec:
             "app.py",
         ]
 
+    def test_create_workload_installs_mitm_ca_before_entrypoint(self, mock_k8s_client):
+        provider = BatchSandboxProvider(mock_k8s_client)
+        mock_k8s_client.create_custom_object.return_value = {
+            "metadata": {"name": "sandbox-test", "uid": "uid"}
+        }
+
+        provider.create_workload(
+            sandbox_id="test-id",
+            namespace="test-ns",
+            image_spec=ImageSpec(uri="python:3.11"),
+            entrypoint=["/usr/bin/python", "app.py"],
+            env={"OPENSANDBOX_EGRESS_MITMPROXY_TRANSPARENT": "true"},
+            resource_limits={},
+            labels={},
+            expires_at=datetime(2025, 12, 31, tzinfo=timezone.utc),
+            execd_image="execd:latest",
+        )
+
+        body = mock_k8s_client.create_custom_object.call_args.kwargs["body"]
+        command = body["spec"]["template"]["spec"]["containers"][0]["command"]
+        assert command[:2] == ["/bin/sh", "-c"]
+        assert "/opt/opensandbox/mitmproxy-ca-cert.pem" in command[2]
+        assert "update-ca-trust" in command[2]
+        assert "exec /opt/opensandbox/bootstrap.sh /usr/bin/python app.py" in command[2]
+
     def test_create_workload_converts_env_to_list(self, mock_k8s_client):
         provider = BatchSandboxProvider(mock_k8s_client)
         mock_k8s_client.create_custom_object.return_value = {

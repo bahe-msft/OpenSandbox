@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import shlex
 from typing import Any, Callable, Dict, Optional
 
 from fastapi import HTTPException, status
@@ -25,7 +26,7 @@ from kubernetes.client import (
 )
 
 from opensandbox_server.api.schema import ImageSpec
-from opensandbox_server.services.constants import SandboxErrorCodes
+from opensandbox_server.services.constants import OPENSANDBOX_EGRESS_MITMPROXY_TRANSPARENT, SandboxErrorCodes
 from opensandbox_server.services.helpers import parse_gpu_request
 from opensandbox_server.services.k8s.egress_helper import (
     build_security_context_for_sandbox_container,
@@ -186,16 +187,45 @@ def _build_main_container(
         security_context_dict = build_security_context_for_sandbox_container(True)
         security_context = build_security_context_from_dict(security_context_dict)
 
+    command = ["/opt/opensandbox/bootstrap.sh"] + entrypoint
+    if env.get(OPENSANDBOX_EGRESS_MITMPROXY_TRANSPARENT, "").lower() == "true":
+        command = _wrap_entrypoint_with_ca_trust(command)
+
     return V1Container(
         name="sandbox",
         image=image_spec.uri,
         image_pull_policy=image_pull_policy,
-        command=["/opt/opensandbox/bootstrap.sh"] + entrypoint,
+        command=command,
         env=env_vars if env_vars else None,
         resources=resources,
         volume_mounts=volume_mounts,
         security_context=security_context,
     )
+
+
+def _wrap_entrypoint_with_ca_trust(command: list[str]) -> list[str]:
+    quoted = " ".join(shlex.quote(part) for part in command)
+    script = f"""
+set -e
+ca=/opt/opensandbox/mitmproxy-ca-cert.pem
+for i in $(seq 1 30); do
+  [ -s "$ca" ] && break
+  sleep 1
+done
+if [ -s "$ca" ]; then
+  if command -v update-ca-trust >/dev/null 2>&1; then
+    mkdir -p /etc/pki/ca-trust/source/anchors
+    cp "$ca" /etc/pki/ca-trust/source/anchors/opensandbox-egress-mitm.pem
+    update-ca-trust || true
+  elif command -v update-ca-certificates >/dev/null 2>&1; then
+    mkdir -p /usr/local/share/ca-certificates
+    cp "$ca" /usr/local/share/ca-certificates/opensandbox-egress-mitm.crt
+    update-ca-certificates || true
+  fi
+fi
+exec {quoted}
+""".strip()
+    return ["/bin/sh", "-c", script]
 
 
 def _container_to_dict(container: V1Container) -> Dict[str, Any]:
