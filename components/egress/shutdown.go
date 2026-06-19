@@ -58,9 +58,8 @@ func waitForShutdown(ctx context.Context, proxy *dnsproxy.Proxy, policySrv *http
 		if mitm.envoy != nil {
 			mitm.mu.Lock()
 			envoy := mitm.envoy
-			addrs := append([]netip.Addr(nil), mitm.addrs...)
 			mitm.mu.Unlock()
-			iptables.RemoveTransparentHTTPForAddrs(mitm.port, mitm.uid, addrs)
+			iptables.RemoveTransparentHTTP(mitm.port, mitm.uid)
 			envoyproxy.GracefulShutdown(envoy, defaultMitmShutdownTimeout)
 		} else {
 			iptables.RemoveTransparentHTTP(mitm.port, mitm.uid)

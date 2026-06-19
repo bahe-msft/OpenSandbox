@@ -42,6 +42,7 @@ import (
 
 type policyUpdater interface {
 	CurrentPolicy() *policy.NetworkPolicy
+	EffectivePolicy() *policy.NetworkPolicy
 	UpdatePolicy(*policy.NetworkPolicy)
 	UpdateAlwaysRules(alwaysDeny, alwaysAllow []policy.EgressRule)
 }

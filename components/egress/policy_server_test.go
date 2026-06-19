@@ -40,6 +40,10 @@ func (s *stubProxy) CurrentPolicy() *policy.NetworkPolicy {
 	return s.updated
 }
 
+func (s *stubProxy) EffectivePolicy() *policy.NetworkPolicy {
+	return s.updated
+}
+
 func (s *stubProxy) UpdatePolicy(p *policy.NetworkPolicy) {
 	s.updated = p
 }

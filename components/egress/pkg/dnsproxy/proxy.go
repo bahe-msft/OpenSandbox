@@ -326,6 +326,13 @@ func (p *Proxy) CurrentPolicy() *policy.NetworkPolicy {
 	return p.userPolicy
 }
 
+func (p *Proxy) EffectivePolicy() *policy.NetworkPolicy {
+	p.policyMu.RLock()
+	defer p.policyMu.RUnlock()
+
+	return p.effectivePolicy
+}
+
 // SetOnResolved registers the dns+nft path (nil in dns-only). Invoked on the same goroutine as serveDNS, before WriteMsg.
 func (p *Proxy) SetOnResolved(fn func(domain string, ips []nftables.ResolvedIP)) {
 	p.onResolved = fn

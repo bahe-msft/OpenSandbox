@@ -38,6 +38,7 @@ type Server struct {
 	secretName string
 	version    atomic.Uint64
 	mint       func(string) (certPEM, keyPEM []byte, err error)
+	allow      func(string) bool
 
 	mu      sync.RWMutex
 	secret  *tlsv3.Secret
@@ -58,6 +59,12 @@ func New(secretName string, certPEM, keyPEM []byte) (*Server, error) {
 func (s *Server) SetMintFunc(fn func(string) ([]byte, []byte, error)) {
 	s.mu.Lock()
 	s.mint = fn
+	s.mu.Unlock()
+}
+
+func (s *Server) SetAllowFunc(fn func(string) bool) {
+	s.mu.Lock()
+	s.allow = fn
 	s.mu.Unlock()
 }
 
@@ -192,7 +199,11 @@ func (s *Server) DeltaSecrets(stream secretv3.SecretDiscoveryService_DeltaSecret
 func (s *Server) deltaResource(name string) (*discoveryv3.Resource, error) {
 	s.mu.RLock()
 	mint := s.mint
+	allow := s.allow
 	s.mu.RUnlock()
+	if allow != nil && !allow(name) {
+		return nil, fmt.Errorf("SDS secret %q is not allowed by egress policy", name)
+	}
 	if mint == nil {
 		return nil, fmt.Errorf("on-demand minting is not configured")
 	}

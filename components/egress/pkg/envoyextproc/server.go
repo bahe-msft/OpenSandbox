@@ -22,6 +22,7 @@ import (
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
+	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"google.golang.org/grpc"
 
 	"github.com/alibaba/opensandbox/egress/pkg/credentialvault"
@@ -29,11 +30,16 @@ import (
 )
 
 type Server struct {
-	store *credentialvault.Store
+	store     *credentialvault.Store
+	allowHost func(string) bool
 }
 
-func New(store *credentialvault.Store) *Server {
-	return &Server{store: store}
+func New(store *credentialvault.Store, allowHost ...func(string) bool) *Server {
+	s := &Server{store: store}
+	if len(allowHost) > 0 {
+		s.allowHost = allowHost[0]
+	}
+	return s
 }
 
 func (s *Server) Serve(ctx context.Context, lis net.Listener) error {
@@ -62,9 +68,7 @@ func (s *Server) Process(stream extprocv3.ExternalProcessor_ProcessServer) error
 		resp := &extprocv3.ProcessingResponse{}
 		switch typed := req.Request.(type) {
 		case *extprocv3.ProcessingRequest_RequestHeaders:
-			resp.Response = &extprocv3.ProcessingResponse_RequestHeaders{
-				RequestHeaders: s.handleRequestHeaders(typed.RequestHeaders),
-			}
+			resp = s.handleRequestHeaders(typed.RequestHeaders)
 		default:
 			resp.Response = &extprocv3.ProcessingResponse_RequestHeaders{
 				RequestHeaders: &extprocv3.HeadersResponse{},
@@ -76,19 +80,30 @@ func (s *Server) Process(stream extprocv3.ExternalProcessor_ProcessServer) error
 	}
 }
 
-func (s *Server) handleRequestHeaders(req *extprocv3.HttpHeaders) *extprocv3.HeadersResponse {
+func (s *Server) handleRequestHeaders(req *extprocv3.HttpHeaders) *extprocv3.ProcessingResponse {
 	mutation := &extprocv3.HeaderMutation{}
+	empty := func() *extprocv3.ProcessingResponse {
+		return &extprocv3.ProcessingResponse{Response: &extprocv3.ProcessingResponse_RequestHeaders{RequestHeaders: &extprocv3.HeadersResponse{Response: &extprocv3.CommonResponse{HeaderMutation: mutation}}}}
+	}
 	if s.store == nil {
-		return &extprocv3.HeadersResponse{Response: &extprocv3.CommonResponse{HeaderMutation: mutation}}
+		return empty()
 	}
 	snapshot, err := s.store.ActiveSnapshot()
 	if err != nil {
-		return &extprocv3.HeadersResponse{Response: &extprocv3.CommonResponse{HeaderMutation: mutation}}
+		return empty()
 	}
 	headers := headersToMap(req.GetHeaders().GetHeaders())
-	binding := selectBinding(parseRequestInfo(headers), snapshot)
+	info := parseRequestInfo(headers)
+	binding := selectBinding(info, snapshot)
 	if binding == nil {
-		return &extprocv3.HeadersResponse{Response: &extprocv3.CommonResponse{HeaderMutation: mutation}}
+		if s.allowHost != nil && !s.allowHost(info.host) {
+			return &extprocv3.ProcessingResponse{Response: &extprocv3.ProcessingResponse_ImmediateResponse{ImmediateResponse: &extprocv3.ImmediateResponse{
+				Status:  &typev3.HttpStatus{Code: typev3.StatusCode_Forbidden},
+				Body:    []byte("egress denied\n"),
+				Details: "opensandbox_egress_denied",
+			}}}
+		}
+		return empty()
 	}
 	for _, h := range binding.Headers {
 		name := strings.ToLower(h.Name)
@@ -99,9 +114,9 @@ func (s *Server) handleRequestHeaders(req *extprocv3.HttpHeaders) *extprocv3.Hea
 	}
 	if len(binding.Headers) > 0 {
 		log.Infof("envoy credential proxy: injected binding=%s revision=%d host=%s method=%s headers=%s",
-			binding.Name, snapshot.Revision, parseRequestInfo(headers).host, parseRequestInfo(headers).method, headerNames(binding.Headers))
+			binding.Name, snapshot.Revision, info.host, info.method, headerNames(binding.Headers))
 	}
-	return &extprocv3.HeadersResponse{Response: &extprocv3.CommonResponse{HeaderMutation: mutation}}
+	return &extprocv3.ProcessingResponse{Response: &extprocv3.ProcessingResponse_RequestHeaders{RequestHeaders: &extprocv3.HeadersResponse{Response: &extprocv3.CommonResponse{HeaderMutation: mutation}}}}
 }
 
 func headersToMap(headers []*corev3.HeaderValue) map[string]string {

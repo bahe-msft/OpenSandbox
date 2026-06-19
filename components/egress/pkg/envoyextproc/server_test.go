@@ -48,10 +48,36 @@ func TestHandleRequestHeadersInjectsCredential(t *testing.T) {
 		{Key: ":path", Value: "/v1/projects"},
 	}}})
 
-	mutation := resp.GetResponse().GetHeaderMutation()
+	mutation := resp.GetRequestHeaders().GetResponse().GetHeaderMutation()
 	require.Empty(t, mutation.RemoveHeaders)
 	require.Len(t, mutation.SetHeaders, 1)
 	require.Equal(t, "authorization", mutation.SetHeaders[0].Header.Key)
 	require.Equal(t, []byte("Bearer secret"), mutation.SetHeaders[0].Header.RawValue)
 	require.Equal(t, corev3.HeaderValueOption_OVERWRITE_IF_EXISTS_OR_ADD, mutation.SetHeaders[0].AppendAction)
+}
+
+func TestHandleRequestHeadersDeniesDisallowedHost(t *testing.T) {
+	store := credentialvault.NewStore(mitmproxy.NewHealthGate(), func() bool { return true })
+	pol, err := policy.ParsePolicy(`{"defaultAction":"deny","egress":[{"action":"allow","target":"api.example.com"}]}`)
+	require.NoError(t, err)
+	_, err = store.Create(credentialvault.CreateRequest{
+		Credentials: []credentialvault.Credential{{Name: "token", Source: credentialvault.InlineCredentialSource{Value: "secret"}}},
+		Bindings: []credentialvault.Binding{{
+			Name:  "api",
+			Match: credentialvault.Match{Hosts: []string{"api.example.com"}},
+			Auth:  credentialvault.Auth{Type: "bearer", Credential: "token"},
+		}},
+	}, pol)
+	require.NoError(t, err)
+
+	server := New(store, func(host string) bool { return host == "api.example.com" })
+	resp := server.handleRequestHeaders(&extprocv3.HttpHeaders{Headers: &corev3.HeaderMap{Headers: []*corev3.HeaderValue{
+		{Key: ":scheme", Value: "https"},
+		{Key: ":authority", Value: "blocked.example.com"},
+		{Key: ":method", Value: "GET"},
+		{Key: ":path", Value: "/"},
+	}}})
+
+	require.NotNil(t, resp.GetImmediateResponse())
+	require.Contains(t, string(resp.GetImmediateResponse().Body), "egress denied")
 }

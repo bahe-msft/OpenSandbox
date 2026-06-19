@@ -133,8 +133,12 @@ func main() {
 			log.Fatalf("envoy ext_proc listen %s: %v", addr, err)
 		}
 		extProcLis = lis
+		allowHost := func(host string) bool {
+			effective := proxy.EffectivePolicy()
+			return effective != nil && effective.Evaluate(host) == policy.ActionAllow
+		}
 		safego.Go(func() {
-			if err := envoyextproc.New(policyRuntime.credentialVault).Serve(ctx, lis); err != nil {
+			if err := envoyextproc.New(policyRuntime.credentialVault, allowHost).Serve(ctx, lis); err != nil {
 				log.Errorf("envoy ext_proc server error: %v", err)
 			}
 		})
@@ -146,6 +150,10 @@ func main() {
 		log.Fatalf("transparent http proxy: %v", err)
 	}
 	if mitm != nil && mitm.envoy != nil {
+		mitm.setAllowHost(func(host string) bool {
+			effective := proxy.EffectivePolicy()
+			return effective != nil && effective.Evaluate(host) == policy.ActionAllow
+		})
 		policyRuntime.setCredentialVaultHostChangeCallback(mitm.updateEnvoyHosts)
 	}
 	mitmGate.MarkStackReady()

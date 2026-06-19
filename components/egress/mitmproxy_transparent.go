@@ -233,19 +233,25 @@ func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
 	if err := mitmproxy.WaitListenPort(waitAddr, 15*time.Second); err != nil {
 		return nil, fmt.Errorf("wait listen %s: %w", waitAddr, err)
 	}
-	addrs, err := iptables.SetupTransparentHTTPForHosts(mpPort, proxyUID, mitmHosts)
-	if err != nil {
+	if err := iptables.SetupTransparentHTTP(mpPort, proxyUID); err != nil {
 		return nil, fmt.Errorf("iptables transparent: %w", err)
 	}
 	if err := mitmcert.ExportCA(auth); err != nil {
 		return nil, fmt.Errorf("envoy mitm CA export: %w", err)
 	}
-	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d, MITM hosts=%v)", mpPort, mitmHosts)
-	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID, gid: proxyGID, addrs: addrs, auth: auth, sds: sds, envoyCfg: envoyCfg, staticHosts: staticHosts, mitmHosts: mitmHosts}, nil
+	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d, on-demand MITM enabled, default MITM hosts=%v)", mpPort, mitmHosts)
+	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID, gid: proxyGID, auth: auth, sds: sds, envoyCfg: envoyCfg, staticHosts: staticHosts, mitmHosts: mitmHosts}, nil
+}
+
+func (m *mitmTransparent) setAllowHost(fn func(string) bool) {
+	if m == nil || m.sds == nil {
+		return
+	}
+	m.sds.SetAllowFunc(fn)
 }
 
 func (m *mitmTransparent) updateEnvoyHosts(hosts []string) {
-	if m == nil || m.envoy == nil || m.auth == nil {
+	if m == nil || m.envoy == nil || m.auth == nil || m.sds == nil {
 		return
 	}
 	hosts = mergeHosts(m.staticHosts, hosts)
@@ -257,29 +263,21 @@ func (m *mitmTransparent) updateEnvoyHosts(hosts []string) {
 		m.mu.Unlock()
 		return
 	}
-	oldAddrs := append([]netip.Addr(nil), m.addrs...)
 	m.mu.Unlock()
 
 	certPEM, keyPEM, err := m.auth.MintLeafForHosts(hosts[0], hosts)
 	if err != nil {
-		log.Errorf("envoy: update MITM certs for hosts %v: %v", hosts, err)
+		log.Errorf("envoy: update default SDS cert for hosts %v: %v", hosts, err)
 		return
 	}
 	if err := m.sds.Update(certPEM, keyPEM); err != nil {
-		log.Errorf("envoy: update SDS secret for MITM hosts %v: %v", hosts, err)
-		return
-	}
-	iptables.RemoveTransparentHTTPForAddrs(m.port, m.uid, oldAddrs)
-	newAddrs, err := iptables.SetupTransparentHTTPForHosts(m.port, m.uid, hosts)
-	if err != nil {
-		log.Errorf("envoy: update transparent rules for MITM hosts %v: %v", hosts, err)
+		log.Errorf("envoy: update default SDS secret for hosts %v: %v", hosts, err)
 		return
 	}
 	m.mu.Lock()
-	m.addrs = newAddrs
 	m.mitmHosts = hosts
 	m.mu.Unlock()
-	log.Infof("envoy: updated MITM hosts=%v", hosts)
+	log.Infof("envoy: updated default MITM hosts=%v", hosts)
 }
 
 func safeCertName(host string) string {

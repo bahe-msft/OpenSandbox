@@ -61,6 +61,18 @@ func TestDeltaResourceMintsRequestedSecretName(t *testing.T) {
 	require.Equal(t, []byte("key-dev.azure.com"), secret.GetTlsCertificate().GetPrivateKey().GetInlineBytes())
 }
 
+func TestDeltaResourceRejectsDisallowedSecretName(t *testing.T) {
+	srv, err := New("default", []byte("cert-default"), []byte("key-default"))
+	require.NoError(t, err)
+	srv.SetAllowFunc(func(name string) bool { return name == "allowed.example.com" })
+	srv.SetMintFunc(func(name string) ([]byte, []byte, error) {
+		return []byte("cert-" + name), []byte("key-" + name), nil
+	})
+
+	_, err = srv.deltaResource("blocked.example.com")
+	require.ErrorContains(t, err, "not allowed")
+}
+
 var _ secretDeltaStream = (*fakeDeltaStream)(nil)
 
 type secretDeltaStream interface {
