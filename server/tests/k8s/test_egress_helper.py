@@ -20,6 +20,8 @@ import pytest
 from opensandbox_server.api.schema import NetworkPolicy, NetworkRule
 from opensandbox_server.config import EGRESS_MODE_DNS, EGRESS_MODE_DNS_NFT
 from opensandbox_server.services.constants import (
+    EGRESS_ENVOY_MITM_HOSTS_ENV,
+    EGRESS_HTTP_PROXY_BACKEND_ENV,
     EGRESS_MODE_ENV,
     EGRESS_RULES_ENV,
     OPEN_SANDBOX_EGRESS_AUTH_HEADER,
@@ -43,6 +45,8 @@ def _egress_container(
     egress_auth_token: Optional[str] = None,
     egress_mode: str = EGRESS_MODE_DNS,
     credential_proxy_enabled: bool = False,
+    egress_http_proxy_backend: str = "mitmproxy",
+    egress_envoy_mitm_hosts: Optional[list[str]] = None,
 ) -> dict:
     """Sidecar dict produced by ``apply_egress_to_spec``."""
     containers: list = []
@@ -52,6 +56,8 @@ def _egress_container(
         egress_image,
         egress_auth_token=egress_auth_token,
         egress_mode=egress_mode,
+        egress_http_proxy_backend=egress_http_proxy_backend,
+        egress_envoy_mitm_hosts=egress_envoy_mitm_hosts,
         credential_proxy_enabled=credential_proxy_enabled,
     )
     return containers[0]
@@ -126,6 +132,18 @@ class TestEgressSidecarViaApply:
                 "mountPath": OPENSANDBOX_RUNTIME_MOUNT_PATH,
             }
         ]
+
+    def test_contains_envoy_mitm_hosts_when_configured(self):
+        container = _egress_container(
+            "opensandbox/egress:v1.1.1",
+            NetworkPolicy(default_action="deny", egress=[NetworkRule(action="allow", target="dev.azure.com")]),
+            egress_http_proxy_backend="envoy",
+            egress_envoy_mitm_hosts=["dev.azure.com", "packages.microsoft.com"],
+        )
+
+        env_by_name = {env["name"]: env["value"] for env in container["env"]}
+        assert env_by_name[EGRESS_HTTP_PROXY_BACKEND_ENV] == "envoy"
+        assert env_by_name[EGRESS_ENVOY_MITM_HOSTS_ENV] == "dev.azure.com,packages.microsoft.com"
 
     def test_contains_egress_token_when_provided(self):
         egress_image = "opensandbox/egress:v1.1.1"

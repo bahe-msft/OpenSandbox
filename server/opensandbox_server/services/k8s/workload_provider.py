@@ -52,6 +52,8 @@ class WorkloadProvider(ABC):
         annotations: Optional[Dict[str, str]] = None,
         egress_auth_token: Optional[str] = None,
         egress_mode: str = EGRESS_MODE_DNS,
+        egress_http_proxy_backend: str = "mitmproxy",
+        egress_envoy_mitm_hosts: Optional[List[str]] = None,
         credential_proxy_enabled: bool = False,
         resource_requests: Optional[Dict[str, str]] = None,
         egress_env: Optional[Dict[str, Optional[str]]] = None,

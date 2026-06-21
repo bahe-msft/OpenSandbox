@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional
 from opensandbox_server.api.schema import NetworkPolicy
 from opensandbox_server.config import EGRESS_MODE_DNS
 from opensandbox_server.services.constants import (
+    EGRESS_ENVOY_MITM_HOSTS_ENV,
+    EGRESS_HTTP_PROXY_BACKEND_ENV,
     EGRESS_MODE_ENV,
     EGRESS_RULES_ENV,
     OPEN_SANDBOX_EGRESS_AUTH_HEADER,
@@ -75,6 +77,8 @@ def apply_egress_to_spec(
     egress_image: Optional[str],
     egress_auth_token: Optional[str] = None,
     egress_mode: str = EGRESS_MODE_DNS,
+    egress_http_proxy_backend: str = "mitmproxy",
+    egress_envoy_mitm_hosts: Optional[List[str]] = None,
     credential_proxy_enabled: bool = False,
     extra_env: Optional[Dict[str, Optional[str]]] = None,
 ) -> None:
@@ -90,9 +94,14 @@ def apply_egress_to_spec(
     env: List[Dict[str, str]] = [
         {"name": EGRESS_RULES_ENV, "value": policy_payload},
         {"name": EGRESS_MODE_ENV, "value": egress_mode},
+        {"name": EGRESS_HTTP_PROXY_BACKEND_ENV, "value": egress_http_proxy_backend},
     ]
     if credential_proxy_enabled:
         env.append({"name": OPENSANDBOX_EGRESS_MITMPROXY_TRANSPARENT, "value": "true"})
+    if egress_http_proxy_backend == "envoy" and egress_envoy_mitm_hosts:
+        hosts = [host.strip() for host in egress_envoy_mitm_hosts if host.strip()]
+        if hosts:
+            env.append({"name": EGRESS_ENVOY_MITM_HOSTS_ENV, "value": ",".join(hosts)})
     if egress_auth_token:
         env.append({"name": OPENSANDBOX_EGRESS_TOKEN, "value": egress_auth_token})
     if extra_env:

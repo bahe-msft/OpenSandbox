@@ -42,6 +42,7 @@ import (
 
 type policyUpdater interface {
 	CurrentPolicy() *policy.NetworkPolicy
+	EffectivePolicy() *policy.NetworkPolicy
 	UpdatePolicy(*policy.NetworkPolicy)
 	UpdateAlwaysRules(alwaysDeny, alwaysAllow []policy.EgressRule)
 }
@@ -51,6 +52,21 @@ type nftApplier interface {
 	ApplyStatic(context.Context, *policy.NetworkPolicy) error
 	AddResolvedIPs(context.Context, []nftables.ResolvedIP) error
 	RemoveEnforcement(context.Context) error
+}
+
+type policyRuntime struct {
+	server          *http.Server
+	credentialVault *credentialvault.Store
+	handler         *policyServer
+}
+
+func (r *policyRuntime) setCredentialVaultHostChangeCallback(cb func([]string)) {
+	if r == nil || r.handler == nil {
+		return
+	}
+	r.handler.credentialVaultChangeMu.Lock()
+	r.handler.credentialVaultHostChange = cb
+	r.handler.credentialVaultChangeMu.Unlock()
 }
 
 // startPolicyServer: runtime POST/GET /policy, GET /healthz. nameserverIPs are merged into every nft
@@ -65,7 +81,7 @@ func startPolicyServer(
 	policyFile string,
 	alwaysDeny, alwaysAllow []policy.EgressRule,
 	mitmGate *mitmproxy.HealthGate,
-) (*http.Server, error) {
+) (*policyRuntime, error) {
 	maxEgressRules := maxEgressRulesFromEnv()
 	if maxEgressRules > 0 {
 		log.Infof("policy API: max egress rules per policy (POST/PATCH) = %d (set %s=0 to disable)", maxEgressRules, constants.EnvMaxEgressRules)
@@ -157,7 +173,7 @@ func startPolicyServer(
 				log.Errorf("policy server error: %v", err)
 			}
 		})
-		return srv, nil
+		return &policyRuntime{server: srv, credentialVault: handler.credentialVault, handler: handler}, nil
 	}
 }
 
@@ -180,6 +196,8 @@ type policyServer struct {
 	credentialVault           *credentialvault.Store
 	mitmGate                  *mitmproxy.HealthGate
 	credentialVaultRequireTLS bool
+	credentialVaultChangeMu   sync.RWMutex
+	credentialVaultHostChange func([]string)
 }
 
 type policyStatusResponse struct {
@@ -310,6 +328,7 @@ func (s *policyServer) handleCredentialVaultPost(w http.ResponseWriter, r *http.
 		credentialvault.WriteError(w, err)
 		return
 	}
+	s.notifyCredentialVaultHostChange()
 	writeJSON(w, http.StatusCreated, state)
 }
 
@@ -332,6 +351,7 @@ func (s *policyServer) handleCredentialVaultPatch(w http.ResponseWriter, r *http
 		credentialvault.WriteError(w, err)
 		return
 	}
+	s.notifyCredentialVaultHostChange()
 	writeJSON(w, http.StatusOK, state)
 }
 
@@ -348,7 +368,43 @@ func (s *policyServer) handleCredentialVaultDelete(w http.ResponseWriter, r *htt
 		credentialvault.WriteError(w, err)
 		return
 	}
+	s.notifyCredentialVaultHostChange()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *policyServer) notifyCredentialVaultHostChange() {
+	s.credentialVaultChangeMu.RLock()
+	cb := s.credentialVaultHostChange
+	s.credentialVaultChangeMu.RUnlock()
+	if cb == nil {
+		return
+	}
+	snapshot, err := s.credentialVault.ActiveSnapshot()
+	if err != nil {
+		cb(nil)
+		return
+	}
+	cb(credentialVaultExactHosts(snapshot))
+}
+
+func credentialVaultExactHosts(snapshot credentialvault.ActiveSnapshot) []string {
+	seen := map[string]struct{}{}
+	var hosts []string
+	for _, binding := range snapshot.Bindings {
+		for _, host := range binding.Match.Hosts {
+			host = strings.TrimSpace(strings.TrimSuffix(strings.ToLower(host), "."))
+			if host == "" || strings.Contains(host, "*") {
+				continue
+			}
+			if _, ok := seen[host]; ok {
+				continue
+			}
+			seen[host] = struct{}{}
+			hosts = append(hosts, host)
+		}
+	}
+	sort.Strings(hosts)
+	return hosts
 }
 
 func (s *policyServer) handleCredentialVaultCredentials(w http.ResponseWriter) {

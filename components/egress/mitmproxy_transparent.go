@@ -17,6 +17,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
@@ -24,8 +26,11 @@ import (
 	"time"
 
 	"github.com/alibaba/opensandbox/egress/pkg/constants"
+	"github.com/alibaba/opensandbox/egress/pkg/envoyproxy"
+	"github.com/alibaba/opensandbox/egress/pkg/envoysds"
 	"github.com/alibaba/opensandbox/egress/pkg/iptables"
 	"github.com/alibaba/opensandbox/egress/pkg/log"
+	"github.com/alibaba/opensandbox/egress/pkg/mitmcert"
 	"github.com/alibaba/opensandbox/egress/pkg/mitmproxy"
 	"github.com/alibaba/opensandbox/internal/safego"
 )
@@ -40,15 +45,30 @@ type exitEvent struct {
 }
 
 type mitmTransparent struct {
-	mu         sync.Mutex
-	running    *mitmproxy.Running
-	currentGen uint64 // generation of the mitmdump currently considered live
-	port       int
-	uid        uint32
-	cfg        mitmproxy.Config // OnExit must NOT be set here; built per-Launch
-	nextGen    uint64           // atomic; monotonic gen counter handed to each Launch
-	restartCh  chan exitEvent
-	shutdownCh chan struct{} // closed by watchMitmproxy on ctx cancel; lets OnExit unblock during shutdown
+	mu          sync.Mutex
+	running     *mitmproxy.Running
+	envoy       *envoyproxy.Running
+	currentGen  uint64 // generation of the mitmdump currently considered live
+	port        int
+	uid         uint32
+	gid         uint32
+	addrs       []netip.Addr
+	auth        *mitmcert.Authority
+	sds         *envoysds.Server
+	envoyCfg    envoyproxy.Config
+	staticHosts []string
+	mitmHosts   []string
+	cfg         mitmproxy.Config // OnExit must NOT be set here; built per-Launch
+	nextGen     uint64           // atomic; monotonic gen counter handed to each Launch
+	restartCh   chan exitEvent
+	shutdownCh  chan struct{} // closed by watchMitmproxy on ctx cancel; lets OnExit unblock during shutdown
+}
+
+func startTransparentHTTPProxyIfEnabled() (*mitmTransparent, error) {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv(constants.EnvHTTPProxyBackend)), "envoy") {
+		return startEnvoyTransparentIfEnabled()
+	}
+	return startMitmproxyTransparentIfEnabled()
 }
 
 func (m *mitmTransparent) getRunning() *mitmproxy.Running {
@@ -143,6 +163,190 @@ func startMitmproxyTransparentIfEnabled() (*mitmTransparent, error) {
 		restartCh:  restartCh,
 		shutdownCh: shutdownCh,
 	}, nil
+}
+
+func startEnvoyTransparentIfEnabled() (*mitmTransparent, error) {
+	if !constants.IsTruthy(os.Getenv(constants.EnvMitmproxyTransparent)) {
+		return nil, nil
+	}
+	mpPort := constants.EnvIntOrDefault(constants.EnvEnvoyPort, constants.DefaultEnvoyPort)
+	adminPort := constants.EnvIntOrDefault(constants.EnvEnvoyAdminPort, constants.DefaultEnvoyAdminPort)
+	extProcAddr := envOrDefault(constants.EnvEnvoyExtProcAddr, constants.DefaultEnvoyExtProcAddr)
+	workDir := "/tmp/opensandbox-envoy"
+	staticHosts := csvHosts(strings.TrimSpace(os.Getenv(constants.EnvEnvoyMitmHosts)))
+	mitmHosts := append([]string(nil), staticHosts...)
+	if len(mitmHosts) == 0 {
+		mitmHosts = []string{"dev.azure.com"}
+	}
+	proxyUID, proxyGID, _, err := mitmproxy.LookupUser(mitmproxy.RunAsUser)
+	if err != nil {
+		return nil, fmt.Errorf("lookup user %q: %w (ensure this user exists in the image)", mitmproxy.RunAsUser, err)
+	}
+	auth, err := mitmcert.LoadOrCreateAuthority(strings.TrimSpace(os.Getenv(constants.EnvEnvoyMitmCADir)))
+	if err != nil {
+		return nil, fmt.Errorf("envoy mitm CA: %w", err)
+	}
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		return nil, err
+	}
+	certPEM, keyPEM, err := auth.MintLeafForHosts(mitmHosts[0], mitmHosts)
+	if err != nil {
+		return nil, fmt.Errorf("envoy mitm SDS cert for %v: %w", mitmHosts, err)
+	}
+	sdsAddr := envOrDefault(constants.EnvEnvoySDSAddr, constants.DefaultEnvoySDSAddr)
+	sdsSecret := envOrDefault(constants.EnvEnvoySDSSecret, constants.DefaultEnvoySDSSecret)
+	sds, err := envoysds.New(sdsSecret, certPEM, keyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("envoy sds: %w", err)
+	}
+	sds.SetMintFunc(func(name string) ([]byte, []byte, error) {
+		return auth.MintLeaf(name)
+	})
+	sdsLis, err := net.Listen("tcp", sdsAddr)
+	if err != nil {
+		return nil, fmt.Errorf("envoy sds listen %s: %w", sdsAddr, err)
+	}
+	safego.Go(func() {
+		if err := sds.Serve(context.Background(), sdsLis); err != nil {
+			log.Errorf("envoy sds server error: %v", err)
+		}
+	})
+	log.Infof("envoy sds server listening on %s", sdsAddr)
+
+	envoyCfg := envoyproxy.Config{
+		Path:        strings.TrimSpace(os.Getenv(constants.EnvEnvoyPath)),
+		ListenPort:  mpPort,
+		AdminPort:   adminPort,
+		ExtProcAddr: extProcAddr,
+		SDSAddr:     sdsAddr,
+		SDSSecret:   sdsSecret,
+		OnDemandSDS: envBoolDefaultTrue(constants.EnvEnvoyOnDemandSDS),
+		WorkDir:     workDir,
+		UID:         proxyUID,
+		GID:         proxyGID,
+	}
+	waitAddr := fmt.Sprintf("127.0.0.1:%d", mpPort)
+	running, err := envoyproxy.Launch(envoyCfg)
+	if err != nil {
+		return nil, fmt.Errorf("start envoy: %w", err)
+	}
+	if err := mitmproxy.WaitListenPort(waitAddr, 15*time.Second); err != nil {
+		return nil, fmt.Errorf("wait listen %s: %w", waitAddr, err)
+	}
+	if err := iptables.SetupTransparentHTTP(mpPort, proxyUID); err != nil {
+		return nil, fmt.Errorf("iptables transparent: %w", err)
+	}
+	if err := mitmcert.ExportCA(auth); err != nil {
+		return nil, fmt.Errorf("envoy mitm CA export: %w", err)
+	}
+	log.Infof("envoy: transparent intercept active (OUTPUT tcp 80,443 -> %d, on-demand MITM enabled, default MITM hosts=%v)", mpPort, mitmHosts)
+	return &mitmTransparent{envoy: running, port: mpPort, uid: proxyUID, gid: proxyGID, auth: auth, sds: sds, envoyCfg: envoyCfg, staticHosts: staticHosts, mitmHosts: mitmHosts}, nil
+}
+
+func (m *mitmTransparent) setAllowHost(fn func(string) bool) {
+	if m == nil || m.sds == nil {
+		return
+	}
+	m.sds.SetAllowFunc(fn)
+}
+
+func (m *mitmTransparent) updateEnvoyHosts(hosts []string) {
+	if m == nil || m.envoy == nil || m.auth == nil || m.sds == nil {
+		return
+	}
+	hosts = mergeHosts(m.staticHosts, hosts)
+	if len(hosts) == 0 {
+		hosts = []string{"dev.azure.com"}
+	}
+	m.mu.Lock()
+	if sameStrings(m.mitmHosts, hosts) {
+		m.mu.Unlock()
+		return
+	}
+	m.mu.Unlock()
+
+	certPEM, keyPEM, err := m.auth.MintLeafForHosts(hosts[0], hosts)
+	if err != nil {
+		log.Errorf("envoy: update default SDS cert for hosts %v: %v", hosts, err)
+		return
+	}
+	if err := m.sds.Update(certPEM, keyPEM); err != nil {
+		log.Errorf("envoy: update default SDS secret for hosts %v: %v", hosts, err)
+		return
+	}
+	m.mu.Lock()
+	m.mitmHosts = hosts
+	m.mu.Unlock()
+	log.Infof("envoy: updated default MITM hosts=%v", hosts)
+}
+
+func safeCertName(host string) string {
+	host = strings.ToLower(strings.TrimSpace(strings.TrimSuffix(host, ".")))
+	var b strings.Builder
+	for _, r := range host {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '.', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "default"
+	}
+	return b.String()
+}
+
+func csvHosts(s string) []string {
+	seen := map[string]struct{}{}
+	var hosts []string
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(strings.TrimSuffix(part, "."))
+		if part != "" {
+			part = strings.ToLower(part)
+			if _, ok := seen[part]; ok {
+				continue
+			}
+			seen[part] = struct{}{}
+			hosts = append(hosts, part)
+		}
+	}
+	return hosts
+}
+
+func mergeHosts(groups ...[]string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, group := range groups {
+		for _, host := range group {
+			host = strings.TrimSpace(strings.TrimSuffix(strings.ToLower(host), "."))
+			if host == "" {
+				continue
+			}
+			if _, ok := seen[host]; ok {
+				continue
+			}
+			seen[host] = struct{}{}
+			out = append(out, host)
+		}
+	}
+	return out
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // watchMitmproxy monitors mitmdump for unexpected exits, logs the error, and restarts it.

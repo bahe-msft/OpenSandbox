@@ -75,6 +75,8 @@ RUN cd /workspace/components/internal && \
               -X 'github.com/alibaba/opensandbox/internal/version.GitCommit=${GIT_COMMIT}'" \
     -o /out/opensandbox-supervisor ./cmd/supervisor
 
+FROM envoyproxy/envoy:v1.38-latest AS envoy
+
 FROM debian:bookworm-slim
 
 # iptables is needed for DNS REDIRECT; ca-certificates for TLS to upstream resolvers
@@ -101,7 +103,11 @@ RUN apt-get update \
         lsof \
         python3 \
         python3-pip \
+        lsb-release \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=envoy /usr/local/bin/envoy /usr/local/bin/envoy
+RUN envoy --version
 
 # Python mitmproxy (transparent mode): mitmdump runs as user mitmproxy; iptables skips this uid.
 # /var/lib/mitmproxy is mitm's home, used as the confdir (CA + config.yaml live under .mitmproxy/).

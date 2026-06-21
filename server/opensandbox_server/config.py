@@ -703,6 +703,17 @@ class EgressConfig(BaseModel):
         default=EGRESS_MODE_DNS,
         description="Egress enforcement passed to the sidecar as OPENSANDBOX_EGRESS_MODE (dns or dns+nft).",
     )
+    http_proxy_backend: Literal["mitmproxy", "envoy"] = Field(
+        default="mitmproxy",
+        description="HTTP(S) transparent proxy backend passed to the egress sidecar.",
+    )
+    envoy_mitm_hosts: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Hostnames for which the Envoy backend should generate downstream MITM certificates "
+            "and install host-scoped transparent redirects."
+        ),
+    )
     disable_ipv6: bool = Field(
         default=DEFAULT_EGRESS_DISABLE_IPV6,
         description=(
