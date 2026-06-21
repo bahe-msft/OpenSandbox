@@ -145,6 +145,16 @@ sandbox = await Sandbox.create(
 | Cluster CIDR exposure | Not exposed to users | Must be exposed to users |
 | Use case | Platform-wide default isolation, recommended | Whitelist mode, fine-grained control |
 
+## Runtime Compatibility
+
+Both Approach 1 (`deny.always` via egress sidecar) and Approach 2 (per-sandbox `network_policy`) depend on the egress sidecar, which uses an iptables `nat` table REDIRECT rule for DNS interception. This works with `runc` (default) and all Kata Containers variants (`kata-qemu`, `kata-clh`, `kata-fc`), but **not with gVisor** — gVisor's netstack does not implement the `nat` table.
+
+If you need both gVisor's syscall isolation and FQDN egress control:
+- Use `kata-qemu` instead — it provides comparable security isolation and supports the egress sidecar.
+- Alternatively, use a CNI-level FQDN policy (e.g., Cilium `toFQDNs`) for network isolation alongside gVisor.
+
+See the [Compatibility Matrix](../guides/secure-container.md#compatibility-matrix) in the Secure Container Runtime Guide for the full feature support table.
+
 ## Recommendations
 
 1. **Default full isolation**: use `deny.always` to block the cluster's internal CIDR ranges as the platform's default security baseline.

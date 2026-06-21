@@ -78,6 +78,7 @@ from opensandbox_server.services.sandbox_service import SandboxService
 from opensandbox_server.services.validators import (
     ensure_entrypoint,
     ensure_egress_configured,
+    ensure_egress_runtime_compatible,
     ensure_future_expiration,
     ensure_metadata_labels,
     ensure_platform_valid,
@@ -254,10 +255,12 @@ class KubernetesSandboxService(K8sDiagnosticsMixin, SandboxService, ExtensionSer
     def _ensure_network_policy_support(self, request: CreateSandboxRequest) -> None:
         """
         Validate that network policy can be honored under the current runtime config.
-        
-        This validates that egress.image is configured when network_policy is provided.
+
+        This validates that egress.image is configured when network_policy is provided,
+        and that the secure runtime supports the iptables nat table needed by the sidecar.
         """
         ensure_egress_configured(request.network_policy, self.app_config.egress)
+        ensure_egress_runtime_compatible(request.network_policy, self.app_config.secure_runtime)
 
     def _ensure_image_auth_support(self, request: CreateSandboxRequest) -> None:
         """
@@ -423,16 +426,16 @@ class KubernetesSandboxService(K8sDiagnosticsMixin, SandboxService, ExtensionSer
         sandbox_id = self.generate_sandbox_id()
 
         created_at = datetime.now(timezone.utc)
-        context = _build_create_workload_context(
-            app_config=self.app_config,
-            request=request,
-            sandbox_id=sandbox_id,
-            created_at=created_at,
-            egress_token_factory=generate_egress_token,
-            secure_access_token_factory=generate_secure_access_token,
-        )
-        
+
         try:
+            context = _build_create_workload_context(
+                app_config=self.app_config,
+                request=request,
+                sandbox_id=sandbox_id,
+                created_at=created_at,
+                egress_token_factory=generate_egress_token,
+                secure_access_token_factory=generate_secure_access_token,
+            )
             apply_access_renew_extend_seconds_to_mapping(context.annotations, request.extensions)
             apply_extensions_to_annotations(context.annotations, request.extensions)
 
@@ -453,7 +456,7 @@ class KubernetesSandboxService(K8sDiagnosticsMixin, SandboxService, ExtensionSer
                 namespace=self.namespace,
                 image_spec=request.image,
                 entrypoint=request.entrypoint,
-                env=request.env or {},
+                env=context.sandbox_env,
                 resource_limits=context.resource_limits,
                 resource_requests=context.resource_requests or None,
                 labels=context.labels,
@@ -468,6 +471,7 @@ class KubernetesSandboxService(K8sDiagnosticsMixin, SandboxService, ExtensionSer
                 egress_http_proxy_backend=context.egress_http_proxy_backend,
                 egress_envoy_mitm_hosts=context.egress_envoy_mitm_hosts,
                 credential_proxy_enabled=context.credential_proxy_enabled,
+                egress_env=context.egress_env,
                 volumes=request.volumes,
                 platform=request.platform,
             )

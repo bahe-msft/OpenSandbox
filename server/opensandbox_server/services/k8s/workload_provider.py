@@ -56,6 +56,7 @@ class WorkloadProvider(ABC):
         egress_envoy_mitm_hosts: Optional[List[str]] = None,
         credential_proxy_enabled: bool = False,
         resource_requests: Optional[Dict[str, str]] = None,
+        egress_env: Optional[Dict[str, Optional[str]]] = None,
     ) -> Dict[str, Any]:
         """
         Create a new workload resource.

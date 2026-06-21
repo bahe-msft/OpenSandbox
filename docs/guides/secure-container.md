@@ -719,6 +719,26 @@ sudo containerd config dump
 sudo systemctl restart containerd
 ```
 
+#### 5. Egress Sidecar Incompatible with gVisor
+
+**Error**: Sandbox pods CrashLoopBackOff with egress container log:
+```
+iptables: Failed to initialize nft: Protocol not supported
+```
+Or with iptables-legacy:
+```
+iptables v1.8.9 (legacy): can't initialize iptables table 'nat': Table does not exist (do you need to insmod?)
+```
+
+**Cause**: gVisor's netstack implements the `filter` and `mangle` iptables tables but does not implement the `nat` table. The egress sidecar uses a REDIRECT rule in the `nat` table to intercept DNS queries (port 53 → 15353), so it cannot start under gVisor. This is an upstream gVisor limitation ([gvisor#170](https://github.com/google/gvisor/issues/170)).
+
+**Solution**:
+- Use `secure_runtime.type = "kata"` with `k8s_runtime_class = "kata-qemu"` — Kata provides a full Linux kernel per pod, so the `nat` table is available and the egress sidecar works unchanged.
+- Use a CNI-level FQDN policy (e.g., Cilium `toFQDNs`) instead of the egress sidecar for network isolation under gVisor.
+- Remove `network_policy` from sandbox creation requests if egress control is not required.
+
+> **Note**: The server validates this combination at request time and returns HTTP 400 with a clear error message when `secure_runtime.type = "gvisor"` and `network_policy` are used together.
+
 ### Compatibility Matrix
 
 | Feature | runc | gVisor | Kata (QEMU) | Kata (CLH) | Kata (FC) |
@@ -729,6 +749,7 @@ sudo systemctl restart containerd
 | Privileged Mode | Yes | No | Yes | Yes | No |
 | Docker Volume | Yes | Yes | Yes | Yes | Yes |
 | Systemd | Yes | No | Yes | Yes | No |
+| iptables `nat` table (egress sidecar) | Yes | **No** | Yes | Yes | Yes |
 
 ### Getting Help
 

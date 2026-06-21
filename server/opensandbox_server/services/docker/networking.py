@@ -28,7 +28,7 @@ import socket
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from docker.errors import DockerException, NotFound as DockerNotFound
 from fastapi import HTTPException, status
@@ -53,7 +53,7 @@ from opensandbox_server.services.endpoint_auth import (
     build_egress_auth_headers,
     merge_endpoint_headers,
 )
-from opensandbox_server.services.validators import ensure_egress_configured
+from opensandbox_server.services.validators import ensure_egress_configured, ensure_egress_runtime_compatible
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +139,7 @@ class DockerNetworkingMixin:
 
         # Common validation: egress.image must be configured
         ensure_egress_configured(request.network_policy, self.app_config.egress)
+        ensure_egress_runtime_compatible(request.network_policy, self.app_config.secure_runtime)
 
     def _ensure_secure_access_support(self, request) -> None:
         """Validate that secure access can be honored under the current Docker runtime."""
@@ -370,6 +371,7 @@ class DockerNetworkingMixin:
         egress_api_host_port: Optional[int] = None,
         runtime_volume_name: Optional[str] = None,
         credential_proxy_enabled: bool = False,
+        extra_env: Optional[Dict[str, Optional[str]]] = None,
     ):
         sidecar_name = f"sandbox-egress-{sandbox_id}"
         sidecar_labels = {
@@ -392,6 +394,12 @@ class DockerNetworkingMixin:
         ]
         if credential_proxy_enabled:
             sidecar_env.append(f"{OPENSANDBOX_EGRESS_MITMPROXY_TRANSPARENT}=true")
+
+        if extra_env:
+            skip_keys = {OPENSANDBOX_EGRESS_MITMPROXY_TRANSPARENT} if credential_proxy_enabled else set()
+            for key, value in extra_env.items():
+                if key not in skip_keys and value is not None:
+                    sidecar_env.append(f"{key}={value}")
 
         sidecar_port_bindings: dict[str, tuple[str, int]] = {
             "44772": ("0.0.0.0", host_execd_port),
