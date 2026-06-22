@@ -277,6 +277,13 @@ internal sealed class SandboxesAdapter : ISandboxes
         return element.ValueKind == JsonValueKind.Null ? null : ParseIsoDate(fieldName, element);
     }
 
+    private static IReadOnlyDictionary<string, string>? ParseStringMap(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Object
+            ? property.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? string.Empty)
+            : null;
+    }
+
     private static SandboxInfo ParseSandboxInfo(JsonElement element)
     {
         var status = element.GetProperty("status");
@@ -300,9 +307,8 @@ internal sealed class SandboxesAdapter : ISandboxes
                 ? JsonSerializer.Deserialize<PlatformSpec>(platform.GetRawText(), JsonOptions)
                 : null,
             Entrypoint = element.GetProperty("entrypoint").EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToList(),
-            Metadata = element.TryGetProperty("metadata", out var metadata) && metadata.ValueKind == JsonValueKind.Object
-                ? metadata.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? string.Empty)
-                : null,
+            Metadata = ParseStringMap(element, "metadata"),
+            Extensions = ParseStringMap(element, "extensions"),
             Status = new SandboxStatus
             {
                 State = status.GetProperty("state").GetString() ?? throw new SandboxApiException("Missing status.state in response"),
@@ -332,9 +338,8 @@ internal sealed class SandboxesAdapter : ISandboxes
             Platform = element.TryGetProperty("platform", out var platform) && platform.ValueKind == JsonValueKind.Object
                 ? JsonSerializer.Deserialize<PlatformSpec>(platform.GetRawText(), JsonOptions)
                 : null,
-            Metadata = element.TryGetProperty("metadata", out var metadata) && metadata.ValueKind == JsonValueKind.Object
-                ? metadata.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? string.Empty)
-                : null,
+            Metadata = ParseStringMap(element, "metadata"),
+            Extensions = ParseStringMap(element, "extensions"),
             CreatedAt = ParseIsoDate("createdAt", element.GetProperty("createdAt")),
             ExpiresAt = element.TryGetProperty("expiresAt", out var expiresAtElement)
                 ? ParseOptionalIsoDate("expiresAt", expiresAtElement)
