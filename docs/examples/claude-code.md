@@ -38,7 +38,7 @@ uv run python examples/claude-code/main.py
 
 The script installs the Claude CLI (`npm i -g @anthropic-ai/claude-code@latest`) at runtime (Node.js is already in the code-interpreter image), then sends a simple request `claude "Compute 1+1=?."`. Auth is passed via `ANTHROPIC_AUTH_TOKEN`, and you can override endpoint/model with `ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL`.
 
-![Claude Code screenshot](https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/main/examples/claude-code/screenshot.jpg)
+![Claude Code screenshot](../public/images/claude-code-screenshot.jpg)
 
 ## Environment Variables
 

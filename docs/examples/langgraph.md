@@ -41,7 +41,7 @@ uv run python examples/langgraph/main.py
 The workflow writes files, executes a job, retries with a fallback command on failure (default
 `python` vs `python3`), then summarizes results with Claude and cleans up the sandbox instance.
 
-![LangGraph + OpenSandbox screenshot](https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/main/examples/langgraph/screenshot.jpg)
+![LangGraph + OpenSandbox screenshot](../public/images/langgraph-screenshot.jpg)
 
 ## Environment Variables
 

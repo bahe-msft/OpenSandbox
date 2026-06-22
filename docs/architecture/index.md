@@ -11,7 +11,7 @@ This document describes the current repository architecture and the main boundar
 
 ## Architecture Overview
 
-![OpenSandbox Architecture](/images/architecture-overview.svg)
+![OpenSandbox Architecture](../public/images/architecture-overview.svg)
 
 OpenSandbox is organized around six practical surfaces:
 

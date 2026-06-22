@@ -150,7 +150,7 @@ Snapshot image retention is registry-managed. Deleting a `SandboxSnapshot` remov
 
 ## Getting Started
 
-![Deploy Example](/images/deploy-example.gif)
+![Deploy Example](../public/images/deploy-example.gif)
 
 ### Prerequisites
 - go version v1.24.0+

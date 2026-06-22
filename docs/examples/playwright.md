@@ -49,7 +49,7 @@ uv run python examples/playwright/main.py
 
 The script launches Chromium in headless mode to access the target URL, prints title/body snippets, and saves a full-page screenshot to `/home/playwright/screenshot.png` inside the sandbox. It also downloads the screenshot to the local working directory as `./screenshot.png`. Uses the prebuilt Playwright image by default.
 
-![Playwright screenshot](https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/main/examples/playwright/screenshot.png)
+![Playwright screenshot](../public/images/playwright-screenshot.png)
 
 ## References
 

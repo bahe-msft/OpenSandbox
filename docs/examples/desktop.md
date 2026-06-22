@@ -53,10 +53,10 @@ The script starts the desktop stack (Xvfb + XFCE + x11vnc) and also launches noV
 
 The sandbox stays alive for 5 minutes by default; interrupt sooner with Ctrl+C. Uses the prebuilt desktop image by default.
 
-![Desktop shell](https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/main/examples/desktop/screenshot_shell.jpg)
-![noVNC connect](https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/main/examples/desktop/screenshot_connect.jpg)
-![noVNC password](https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/main/examples/desktop/screenshot_password.jpg)
-![Desktop UI](https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/main/examples/desktop/screenshot_desktop.jpg)
+![Desktop shell](../public/images/desktop-screenshot-shell.jpg)
+![noVNC connect](../public/images/desktop-screenshot-connect.jpg)
+![noVNC password](../public/images/desktop-screenshot-password.jpg)
+![Desktop UI](../public/images/desktop-screenshot-desktop.jpg)
 
 ## Environment Variables
 

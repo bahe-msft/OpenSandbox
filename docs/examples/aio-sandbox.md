@@ -73,6 +73,8 @@ AIO portal endpoint: 127.0.0.1:56123
 Screenshot saved to sandbox_screenshot.png
 ```
 
+![AIO Sandbox screenshot](../public/images/aio-sandbox-screenshot.png)
+
 ## More examples
 
 For more examples of using the AIO Sandbox, refer to agent-infra/sandbox [examples](https://github.com/agent-infra/sandbox/tree/main/examples).

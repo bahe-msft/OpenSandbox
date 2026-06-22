@@ -29,7 +29,7 @@ uv run python examples/rl-training/main.py
 
 The script provisions a sandbox, installs RL dependencies, trains a DQN agent on CartPole, saves a checkpoint, and prints the JSON training summary.
 
-![RL training screenshot](https://raw.githubusercontent.com/opensandbox-group/OpenSandbox/main/examples/rl-training/screenshot.jpg)
+![RL training screenshot](../public/images/rl-training-screenshot.jpg)
 
 ## Environment Variables
 

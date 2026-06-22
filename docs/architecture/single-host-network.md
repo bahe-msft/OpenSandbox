@@ -7,7 +7,7 @@ description: How execd's reverse proxy gives every sandbox access to all HTTP/We
 
 Detailed routing for a single-host deployment: how execd’s proxy gives every sandbox access to HTTP and WebSocket ports through one exposed host port.
 
-![Single-host sandbox routing](/images/single_host_network.png)
+![Single-host sandbox routing](../public/images/single_host_network.png)
 
 ## Single-host routing model
 - Every sandbox container starts `execd` listening on container port `44772`. `execd` bundles a lightweight reverse proxy that intercepts requests with the `/proxy/{port}` prefix and forwards them to `127.0.0.1:{port}` inside the same container.
