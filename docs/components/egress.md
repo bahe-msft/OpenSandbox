@@ -40,6 +40,7 @@ The egress control is implemented as a **Sidecar** that shares the network names
 - **Runtime**: Docker or Kubernetes.
 - **Capabilities**: `CAP_NET_ADMIN` (for the sidecar container only).
 - **Kernel**: Linux kernel with `iptables` support.
+- **Service mesh**: OpenSandbox egress is not currently supported inside pods that already have a transparent service-mesh sidecar (for example Istio/Envoy injection). Both layers rewrite outbound traffic in the same network namespace and can conflict.
 
 ## Configuration
 
@@ -82,6 +83,32 @@ Format: one domain per line (supports wildcards like `*.example.com`). Lines sta
 Rule precedence: `deny.always` > `allow.always` > user policy (API/env).
 
 Always-rules are hot-reloaded: the sidecar polls the files once per minute and applies changes without restart.
+
+### Service Mesh Compatibility
+
+::: warning Not Supported with Transparent Mesh Sidecars
+OpenSandbox egress is designed to be the only transparent outbound interception layer inside the sandbox pod. Deployments that automatically inject a service-mesh sidecar such as Istio/Envoy into the same pod are not currently supported for egress-sidecar features.
+:::
+
+Why this conflicts today:
+
+- OpenSandbox egress installs `iptables`/`nft` redirect rules in the shared pod network namespace so DNS and optional HTTPS MITM traffic flow through the egress sidecar.
+- Service meshes such as Istio also redirect outbound traffic in that same namespace, usually to Envoy.
+- When both are present, the redirect order becomes deployment-dependent and can produce double interception, broken TLS, or traffic that bypasses the expected Credential Vault / egress-policy path.
+
+This matters for:
+
+- per-sandbox `networkPolicy` / `network_policy` enforcement
+- transparent mitmproxy mode
+- Credential Vault / Credential Proxy
+
+Recommended operator choices today:
+
+1. Exclude OpenSandbox sandbox pods from automatic mesh sidecar injection when they need the egress sidecar.
+2. If mesh injection is mandatory, do not rely on the OpenSandbox egress sidecar for outbound control in those pods; instead use a platform-level mechanism such as a CNI/network-policy solution.
+3. Treat mesh-injected sandboxes as a separate runtime profile and document that Credential Vault and transparent egress interception are unavailable there until first-class coexistence support is implemented.
+
+See also [Credential Vault](/guides/credential-vault) and [Network Isolation](/architecture/network-isolation).
 
 ### Runtime HTTP API
 

@@ -19,6 +19,7 @@ Credential Vault is OpenSandbox's outbound credential broker for sandboxed agent
 - Server config sets `[egress].image`.
 - Sandbox create request includes an outbound network policy.
 - Sandbox create request enables Credential Proxy.
+- Sandbox pods are not running with an additional transparent service-mesh sidecar (for example Istio/Envoy injection) in the same network namespace. Credential Vault currently assumes the OpenSandbox egress sidecar is the only transparent outbound interception layer in the pod.
 - The sandbox image has the tools you want to run. For Claude Code, use an image
   with Node.js and npm, such as the OpenSandbox code-interpreter image.
 
@@ -45,6 +46,18 @@ At a high level:
 The active vault used by the MITM process is served over a local Unix domain
 socket inside the sidecar. The sandbox workload cannot fetch this active state
 over the normal server proxy path.
+
+## Service Mesh Compatibility
+
+Credential Vault depends on the egress sidecar's transparent redirect and MITM path. If the sandbox pod is also injected with a transparent service-mesh sidecar such as Istio/Envoy, both layers will try to intercept outbound traffic in the same network namespace. OpenSandbox does not currently support that combination for Credential Vault.
+
+Use one of these operator patterns instead:
+
+- disable mesh sidecar injection for sandbox pods that need Credential Vault
+- keep mesh injection enabled, but do not enable `credentialProxy` / Credential Vault for those pods
+- move outbound policy and credential handling to a platform mechanism outside the sandbox pod if mesh injection is mandatory
+
+For the underlying egress-sidecar limitation, see [Egress](/components/egress#service-mesh-compatibility).
 
 Credential bindings are intentionally precise. Prefer a default-deny egress
 policy and a narrow path match, for example `/v1/*` for Anthropic API calls.
