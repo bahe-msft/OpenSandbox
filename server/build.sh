@@ -16,7 +16,7 @@
 set -ex
 
 TAG=${TAG:-latest}
-GHCR_REPO=${GHCR_REPO:-}
+GHCR_REPO=${GHCR_REPO:?GHCR_REPO must be set when publishing images}
 BUILD_METADATA_FILE=${BUILD_METADATA_FILE:-build/server-image-metadata.json}
 mkdir -p "$(dirname "${BUILD_METADATA_FILE}")"
 
@@ -28,16 +28,10 @@ docker buildx inspect --bootstrap
 
 docker buildx ls
 
-IMAGE_TAGS=(-t opensandbox/server:${TAG} -t sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server:${TAG})
+IMAGE_TAGS=(-t "${GHCR_REPO}/server:${TAG}")
 LATEST_TAGS=()
-if [[ -n "${GHCR_REPO}" ]]; then
-  IMAGE_TAGS+=(-t "${GHCR_REPO}/server:${TAG}")
-fi
 if [[ "${TAG}" == v* ]]; then
-  LATEST_TAGS+=(-t opensandbox/server:latest -t sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/server:latest)
-  if [[ -n "${GHCR_REPO}" ]]; then
-    LATEST_TAGS+=(-t "${GHCR_REPO}/server:latest")
-  fi
+  LATEST_TAGS+=(-t "${GHCR_REPO}/server:latest")
 fi
 
 docker buildx build \
