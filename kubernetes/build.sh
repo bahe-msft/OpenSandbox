@@ -36,9 +36,6 @@ BUILD_ARGS+=(--build-arg "COMMIT_ID=$(git rev-parse --short HEAD)")
 BUILD_ARGS+=(--build-arg "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)")
 mkdir -p "$(dirname "${BUILD_METADATA_FILE}")"
 
-DOCKERHUB_REPO="opensandbox"
-ACR_REPO="sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox"
-
 # Component specific settings
 DOCKERFILE="Dockerfile"
 if [ "$COMPONENT" == "controller" ]; then
@@ -68,10 +65,8 @@ echo "========================================="
 PLATFORMS="linux/amd64,linux/arm64"
 
 if [ "$PUSH" == "true" ]; then
-    IMAGE_TAGS=(-t "${DOCKERHUB_REPO}/${IMAGE_NAME}:${TAG}" -t "${ACR_REPO}/${IMAGE_NAME}:${TAG}")
-    if [[ -n "${GHCR_REPO}" ]]; then
-        IMAGE_TAGS+=(-t "${GHCR_REPO}/${IMAGE_NAME}:${TAG}")
-    fi
+    : "${GHCR_REPO:?GHCR_REPO must be set when publishing images}"
+    IMAGE_TAGS=(-t "${GHCR_REPO}/${IMAGE_NAME}:${TAG}")
 
     # Build and push to registry
     docker buildx build \
@@ -86,11 +81,7 @@ if [ "$PUSH" == "true" ]; then
     
     echo "========================================="
     echo "Successfully built and pushed:"
-    echo "  ${DOCKERHUB_REPO}/${IMAGE_NAME}:${TAG}"
-    echo "  ${ACR_REPO}/${IMAGE_NAME}:${TAG}"
-    if [[ -n "${GHCR_REPO}" ]]; then
-        echo "  ${GHCR_REPO}/${IMAGE_NAME}:${TAG}"
-    fi
+    echo "  ${GHCR_REPO}/${IMAGE_NAME}:${TAG}"
     echo "========================================="
 else
     # Build only (for local testing)
