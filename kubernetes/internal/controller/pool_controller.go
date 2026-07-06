@@ -110,6 +110,7 @@ type PoolReconciler struct {
 // +kubebuilder:rbac:groups=sandbox.opensandbox.io,resources=pools/finalizers,verbs=update
 // +kubebuilder:rbac:groups=sandbox.opensandbox.io,resources=batchsandboxes,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods/exec,verbs=create
 // +kubebuilder:rbac:groups=core,resources=pods/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;list;watch;create;update;patch;delete
@@ -544,6 +545,15 @@ func (r *PoolReconciler) doRelease(ctx context.Context, pool *sandboxv1alpha1.Po
 	if len(allRecycled) > 0 {
 		r.Recorder.Eventf(pool, corev1.EventTypeNormal, EventReasonPodRecycled, "Recycled %d pod(s): %v", len(allRecycled), allRecycled)
 	}
+	timedOutPods, err := rotateEgressTokenForPods(ctx, r.Client, pool.Namespace, pods, succeedMap)
+	if err != nil {
+		return toDeletePods, err
+	}
+	if len(timedOutPods) > 0 {
+		toDeletePods = append(toDeletePods, timedOutPods...)
+		succeedMap = removePodsFromRecycleMap(succeedMap, timedOutPods)
+		r.Recorder.Eventf(pool, corev1.EventTypeWarning, EventReasonFailedRecyclePod, "Deleting %d pod(s) whose egress token rotation did not propagate: %v", len(timedOutPods), timedOutPods)
+	}
 
 	// 2. Compute latest released pods per sandbox (merge current + recycle-succeeded).
 	// Also collect orphan pods whose sandboxes no longer exist.
@@ -906,6 +916,9 @@ func (r *PoolReconciler) createPoolPod(ctx context.Context, pool *sandboxv1alpha
 	pod.GenerateName = pool.Name + "-"
 	pod.Labels[LabelPoolName] = pool.Name
 	pod.Labels[LabelPoolRevision] = updateRevision
+	if err := ensurePoolPodEgressToken(ctx, r.Client, pool, pod); err != nil {
+		return err
+	}
 	if err := ctrl.SetControllerReference(pool, pod, r.Scheme); err != nil {
 		return err
 	}

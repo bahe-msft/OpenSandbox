@@ -28,6 +28,7 @@ const (
 	EnvEgressMode                = "OPENSANDBOX_EGRESS_MODE"
 	EnvEgressHTTPAddr            = "OPENSANDBOX_EGRESS_HTTP_ADDR"
 	EnvEgressToken               = "OPENSANDBOX_EGRESS_TOKEN"
+	EnvEgressTokenFile           = "OPENSANDBOX_EGRESS_TOKEN_FILE"
 	EnvCredentialProxySocket     = "OPENSANDBOX_CREDENTIAL_PROXY_SOCKET"
 	EnvEgressRules               = "OPENSANDBOX_EGRESS_RULES"
 	EnvEgressPolicyFile          = "OPENSANDBOX_EGRESS_POLICY_FILE"

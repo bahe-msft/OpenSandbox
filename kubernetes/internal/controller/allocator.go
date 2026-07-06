@@ -278,6 +278,13 @@ func (syncer *annoAllocationSyncer) SetAllocation(ctx context.Context, sandbox *
 		anno = make(map[string]string)
 	}
 	anno[AnnoAllocStatusKey] = string(js)
+	egressAuthToken, err := egressTokenForAllocatedPods(ctx, syncer.client, sandbox.Namespace, allocation.Pods)
+	if err != nil {
+		return err
+	}
+	if egressAuthToken != "" {
+		anno[AnnoOpenSandboxEgressAuthTokenKey] = egressAuthToken
+	}
 	sandbox.SetAnnotations(anno)
 
 	needAddFinalizer := !controllerutil.ContainsFinalizer(sandbox, FinalizerPoolAllocation)
@@ -285,10 +292,14 @@ func (syncer *annoAllocationSyncer) SetAllocation(ctx context.Context, sandbox *
 		sandbox.SetFinalizers(append(sandbox.GetFinalizers(), FinalizerPoolAllocation))
 	}
 
+	patchAnnotations := map[string]string{
+		AnnoAllocStatusKey: string(js),
+	}
+	if egressAuthToken != "" {
+		patchAnnotations[AnnoOpenSandboxEgressAuthTokenKey] = egressAuthToken
+	}
 	meta := map[string]any{
-		"annotations": map[string]string{
-			AnnoAllocStatusKey: string(js),
-		},
+		"annotations": patchAnnotations,
 	}
 	if needAddFinalizer {
 		meta["finalizers"] = sandbox.GetFinalizers()
