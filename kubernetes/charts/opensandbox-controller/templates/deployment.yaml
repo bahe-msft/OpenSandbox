@@ -66,6 +66,9 @@ spec:
         {{- if .Values.controller.snapshot.imageCommitterImage }}
         - --image-committer-image={{ .Values.controller.snapshot.imageCommitterImage }}
         {{- end }}
+        {{- if .Values.controller.snapshot.imageCommitterServiceAccount }}
+        - --image-committer-service-account={{ .Values.controller.snapshot.imageCommitterServiceAccount }}
+        {{- end }}
         {{- if .Values.controller.snapshot.containerdSocketPath }}
         - --containerd-socket-path={{ .Values.controller.snapshot.containerdSocketPath }}
         {{- end }}

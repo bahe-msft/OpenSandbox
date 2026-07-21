@@ -70,6 +70,7 @@ opensandbox-controller:
       registry: my-registry/snapshots
       registryInsecure: false
       snapshotPushSecret: registry-snapshot-push-secret
+      imageCommitterServiceAccount: snapshot-committer
       resumePullSecret: registry-pull-secret
 
 opensandbox-server:

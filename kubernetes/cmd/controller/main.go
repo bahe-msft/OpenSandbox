@@ -202,7 +202,10 @@ func main() {
 
 	// Image committer
 	var imageCommitterImage string
-	flag.StringVar(&imageCommitterImage, "image-committer-image", "image-committer:dev", "The image used for commit operations (contains nerdctl tool).")
+	flag.StringVar(&imageCommitterImage, "image-committer-image", "image-committer:dev", "The image used for commit operations.")
+
+	var imageCommitterServiceAccount string
+	flag.StringVar(&imageCommitterServiceAccount, "image-committer-service-account", "", "K8s ServiceAccount assigned to image-committer commit Jobs.")
 
 	var containerdSocketPath string
 	flag.StringVar(&containerdSocketPath, "containerd-socket-path", controller.ContainerdSocketPath, "Containerd socket path")
@@ -455,16 +458,17 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.SandboxSnapshotReconciler{
-		Client:                   mgr.GetClient(),
-		Scheme:                   mgr.GetScheme(),
-		Recorder:                 mgr.GetEventRecorderFor("sandboxsnapshot-controller"),
-		ImageCommitterImage:      imageCommitterImage,
-		ContainerdSocketPath:     containerdSocketPath,
-		CommitJobTimeout:         commitJobTimeout,
-		SnapshotRegistry:         snapshotRegistry,
-		SnapshotRegistryInsecure: snapshotRegistryInsecure,
-		SnapshotPushSecret:       snapshotPushSecret,
-		ImageCommitterPullSecret: imageCommitterPullSecret,
+		Client:                       mgr.GetClient(),
+		Scheme:                       mgr.GetScheme(),
+		Recorder:                     mgr.GetEventRecorderFor("sandboxsnapshot-controller"),
+		ImageCommitterImage:          imageCommitterImage,
+		ContainerdSocketPath:         containerdSocketPath,
+		CommitJobTimeout:             commitJobTimeout,
+		SnapshotRegistry:             snapshotRegistry,
+		SnapshotRegistryInsecure:     snapshotRegistryInsecure,
+		SnapshotPushSecret:           snapshotPushSecret,
+		ImageCommitterPullSecret:     imageCommitterPullSecret,
+		ImageCommitterServiceAccount: imageCommitterServiceAccount,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SandboxSnapshot")
 		os.Exit(1)

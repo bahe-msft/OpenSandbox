@@ -51,9 +51,13 @@ const (
 	// ContainerdSocketPath is the default containerd socket path
 	ContainerdSocketPath = "/var/run/containerd/containerd.sock"
 
-	// ContainerdFIFODir is shared with the host so nerdctl exec's I/O FIFOs are
-	// visible to the host-side containerd shim.
+	// ContainerdFIFODir is available to image-committer implementations that
+	// use containerd task exec with FIFO-backed process I/O.
 	ContainerdFIFODir = "/run/containerd/fifo"
+
+	// ImageCommitterAPIVersion is the executable contract passed to commit and
+	// unpause Jobs.
+	ImageCommitterAPIVersion = "v1"
 
 	// LabelSandboxSnapshotName is the label key for sandbox snapshot name
 	LabelSandboxSnapshotName = "sandbox.opensandbox.io/sandbox-snapshot-name"
@@ -68,10 +72,10 @@ type SandboxSnapshotReconciler struct {
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
 
-	// ImageCommitterImage is the image for image-committer (uses nerdctl to commit/push container images)
+	// ImageCommitterImage is the image used for commit and unpause Jobs.
 	ImageCommitterImage string
 
-	// ContainerdSocketPath is containerd socket path for image-committer (nerdctl --address)
+	// ContainerdSocketPath is the host containerd socket mounted into image-committer Jobs.
 	ContainerdSocketPath string
 
 	// CommitJobTimeout is the timeout for commit jobs (default: 10 minutes)
@@ -86,6 +90,10 @@ type SandboxSnapshotReconciler struct {
 	// ImageCommitterPullSecret is the K8s Secret name used to pull the image-committer image in commit Jobs.
 	// Required when imageCommitterImage lives in a private registry.
 	ImageCommitterPullSecret string
+
+	// ImageCommitterServiceAccount is assigned to commit Jobs so an
+	// implementation can consume admission-injected workload identity.
+	ImageCommitterServiceAccount string
 
 	// SnapshotRegistryInsecure controls whether image-committer uses insecure registry mode.
 	SnapshotRegistryInsecure bool

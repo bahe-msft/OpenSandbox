@@ -56,6 +56,8 @@ CONTROLLER_IMG ?= controller:dev
 TASK_EXECUTOR_IMG ?= task-executor:dev
 # IMAGE_COMMITTER_IMG defines the image for the image-committer service.
 IMAGE_COMMITTER_IMG ?= image-committer:dev
+# IMAGE_COMMITTER_SERVICE_ACCOUNT is assigned to image-committer commit Jobs.
+IMAGE_COMMITTER_SERVICE_ACCOUNT ?=
 # SNAPSHOT_REGISTRY defines the OCI registry used by the controller for snapshot images.
 SNAPSHOT_REGISTRY ?= docker-registry.default.svc.cluster.local:5000
 
@@ -375,6 +377,7 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 	$(KUSTOMIZE) build config/default | \
 		sed 's|--snapshot-registry=docker-registry.default.svc.cluster.local:5000|--snapshot-registry=$(SNAPSHOT_REGISTRY)|' | \
 		sed 's|--image-committer-image=image-committer:dev|--image-committer-image=$(IMAGE_COMMITTER_IMG)|' | \
+		sed 's|--image-committer-service-account=|--image-committer-service-account=$(IMAGE_COMMITTER_SERVICE_ACCOUNT)|' | \
 		sed 's|--image-committer-pull-secret=|--image-committer-pull-secret=$(IMAGE_COMMITTER_PULL_SECRET)|' | \
 		$(KUBECTL) apply -f -
 
