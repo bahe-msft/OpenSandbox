@@ -72,7 +72,7 @@ func TestCredentialVaultActiveTCPAlwaysForbidden(t *testing.T) {
 	_, err := store.Create(testCredentialVaultRequest(), pol)
 	require.NoError(t, err)
 	srv := &policyServer{
-		token:           "public-egress-token",
+		tokenSource:     staticEgressTokenSource{token: "public-egress-token"},
 		credentialVault: store,
 	}
 
@@ -93,7 +93,7 @@ func TestCredentialVaultActiveUnixSocketReturnsSnapshot(t *testing.T) {
 	_, err := store.Create(testCredentialVaultRequest(), pol)
 	require.NoError(t, err)
 	srv := &policyServer{
-		token:           "public-egress-token",
+		tokenSource:     staticEgressTokenSource{token: "public-egress-token"},
 		credentialVault: store,
 	}
 

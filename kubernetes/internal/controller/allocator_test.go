@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/golang/mock/gomock"
@@ -341,10 +342,12 @@ func TestClearPoolAllocation(t *testing.T) {
 
 // newTestSyncer creates an annoAllocationSyncer backed by a fake k8s client
 // with the given sandbox pre-created.
-func newTestSyncer(sandbox *sandboxv1alpha1.BatchSandbox) (*annoAllocationSyncer, *sandboxv1alpha1.BatchSandbox) {
+func newTestSyncer(sandbox *sandboxv1alpha1.BatchSandbox, objs ...client.Object) (*annoAllocationSyncer, *sandboxv1alpha1.BatchSandbox) {
 	scheme := runtime.NewScheme()
 	_ = sandboxv1alpha1.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox).Build()
+	_ = corev1.AddToScheme(scheme)
+	allObjs := append([]client.Object{sandbox}, objs...)
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(allObjs...).Build()
 	return &annoAllocationSyncer{client: fakeClient}, sandbox
 }
 
@@ -358,6 +361,35 @@ func TestSetAllocation_AddsFinalizer(t *testing.T) {
 	err := syncer.SetAllocation(context.Background(), sbx, &SandboxAllocation{Pods: []string{"pod1"}})
 	assert.NoError(t, err)
 	assert.Contains(t, sbx.Finalizers, FinalizerPoolAllocation)
+}
+
+func TestSetAllocation_CopiesEgressTokenFromAllocatedPod(t *testing.T) {
+	sandbox := &sandboxv1alpha1.BatchSandbox{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "sbx1",
+			Namespace:   "default",
+			Annotations: map[string]string{AnnoOpenSandboxEgressAuthTokenKey: "server-token"},
+		},
+		Spec: sandboxv1alpha1.BatchSandboxSpec{PoolRef: "pool1"},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "default"},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Name: ContainerNameEgress,
+			Env:  []corev1.EnvVar{{Name: EnvOpenSandboxEgressToken, Value: "pod-token"}},
+		}}},
+	}
+	syncer, sbx := newTestSyncer(sandbox, pod)
+
+	err := syncer.SetAllocation(context.Background(), sbx, &SandboxAllocation{Pods: []string{"pod1"}})
+	assert.NoError(t, err)
+	assert.Equal(t, "pod-token", sbx.Annotations[AnnoOpenSandboxEgressAuthTokenKey])
+
+	updated := &sandboxv1alpha1.BatchSandbox{}
+	err = syncer.client.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "sbx1"}, updated)
+	assert.NoError(t, err)
+	assert.Equal(t, "pod-token", updated.Annotations[AnnoOpenSandboxEgressAuthTokenKey])
+	assert.JSONEq(t, `{"pods":["pod1"]}`, updated.Annotations[AnnoAllocStatusKey])
 }
 
 func TestSetReleased_FinalizerBehavior(t *testing.T) {

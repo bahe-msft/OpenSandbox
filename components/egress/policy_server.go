@@ -60,7 +60,7 @@ func startPolicyServer(
 	nft nftApplier,
 	enforcementMode string,
 	addr string,
-	token string,
+	tokenSource egressTokenSource,
 	nameserverIPs []netip.Addr,
 	policyFile string,
 	alwaysDeny, alwaysAllow []policy.EgressRule,
@@ -75,7 +75,7 @@ func startPolicyServer(
 	handler := &policyServer{
 		proxy:            proxy,
 		nft:              nft,
-		token:            token,
+		tokenSource:      tokenSource,
 		enforcementMode:  enforcementMode,
 		nameserverIPs:    nameserverIPs,
 		policyFile:       strings.TrimSpace(policyFile),
@@ -84,7 +84,9 @@ func startPolicyServer(
 		stopAlwaysReload: make(chan struct{}),
 		mitmGate:         mitmGate,
 	}
-	handler.credentialVault = credentialvault.NewStore(mitmGate, func() bool { return strings.TrimSpace(token) != "" })
+	handler.credentialVault = credentialvault.NewStore(mitmGate, func() bool {
+		return tokenSource != nil && tokenSource.Token() != ""
+	})
 	handler.credentialVaultRequireTLS = constants.IsTruthy(os.Getenv(constants.EnvCredentialVaultRequireTLS))
 	handler.setAlwaysRules(alwaysDeny, alwaysAllow)
 
@@ -165,7 +167,7 @@ type policyServer struct {
 	proxy           policyUpdater
 	nft             nftApplier
 	server          *http.Server
-	token           string
+	tokenSource     egressTokenSource
 	enforcementMode string
 	nameserverIPs   []netip.Addr
 	policyFile      string     // if set, successful /policy changes persist (truncate+write+fsync)
@@ -748,17 +750,21 @@ func (s *policyServer) validateCredentialVaultPolicyUpdate(pol *policy.NetworkPo
 }
 
 func (s *policyServer) authorize(r *http.Request) bool {
-	if s.token == "" {
+	if s.tokenSource == nil || !s.tokenSource.Configured() {
 		return true
+	}
+	token := s.tokenSource.Token()
+	if token == "" {
+		return false
 	}
 	provided := r.Header.Get(constants.EgressAuthTokenHeader)
 	if provided == "" {
 		return false
 	}
-	if len(provided) != len(s.token) {
+	if len(provided) != len(token) {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(provided), []byte(s.token)) == 1
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1
 }
 
 func credentialVaultWriteTransportAllowed(r *http.Request) bool {
