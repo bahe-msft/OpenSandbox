@@ -228,7 +228,7 @@ controller:
     registry: <registry>.azurecr.io/opensandbox-snapshots
 ```
 
-The ACR variant uses `azidentity.NewWorkloadIdentityCredential`, then exchanges the Azure access token for an ACR refresh token. OpenSandbox sets only `serviceAccountName`; cluster admission must inject the Azure Workload Identity environment and projected token. In a standard AKS setup, ensure commit Job Pods receive the `azure.workload.identity/use: "true"` label before the Azure webhook runs.
+The ACR variant uses `azidentity.NewDefaultAzureCredential`, then exchanges the Azure access token for an ACR refresh token. In AKS, configure Workload Identity so the default chain selects the webhook-injected credential; if it is unavailable, the chain may try other supported sources such as managed identity. OpenSandbox sets only `serviceAccountName`; cluster admission must inject the Azure Workload Identity environment and projected token. In a standard AKS setup, ensure commit Job Pods receive the `azure.workload.identity/use: "true"` label before the Azure webhook runs.
 
 The ServiceAccount must exist in every sandbox namespace. `--snapshot-push-secret` is not required for the ACR commit Job, but resumed Pods still need working ACR pull authentication through `--resume-pull-secret`, kubelet managed identity, or another cluster image-pull configuration.
 

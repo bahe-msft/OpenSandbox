@@ -35,9 +35,9 @@ import (
 // resulting token audience (https://management.azure.com/).
 const azureContainerRegistryScope = "https://management.azure.com//.default"
 
-// ACRCredentialProvider exchanges an Azure Workload Identity access token for
-// an ACR refresh token. The image committer does not read ServiceAccount tokens
-// directly; azidentity consumes the webhook-injected environment and token.
+// ACRCredentialProvider exchanges an azidentity access token for an ACR
+// refresh token. The image committer does not read identity tokens directly;
+// azidentity selects and consumes the available credential source.
 type ACRCredentialProvider struct {
 	credential       azcore.TokenCredential
 	tenantID         string
@@ -45,11 +45,11 @@ type ACRCredentialProvider struct {
 	exchangeEndpoint func(registryHost string) string
 }
 
-// NewACRCredentialProvider creates a provider using azidentity's Workload
-// Identity credential. The Azure Workload Identity webhook injects the
-// environment and projected token consumed by this credential.
+// NewACRCredentialProvider creates a provider using azidentity's default
+// credential chain. In Kubernetes, Workload Identity is preferred when its
+// webhook-injected environment and projected token are available.
 func NewACRCredentialProvider() (*ACRCredentialProvider, error) {
-	credential, err := azidentity.NewWorkloadIdentityCredential(nil)
+	credential, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("create Azure credential: %w", err)
 	}
