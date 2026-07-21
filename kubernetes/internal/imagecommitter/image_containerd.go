@@ -75,14 +75,14 @@ func (b *ContainerdImageBuilder) Commit(ctx context.Context, container ResolvedC
 		return LocalImage{}, fmt.Errorf("decode source config for container %s: %w", container.ID, err)
 	}
 
-	manifestMediaType, configMediaType, layerMediaType := commitMediaTypes(baseManifest.MediaType)
+	mediaTypes := commitMediaTypes(baseManifest.MediaType)
 	diffDesc, err := rootfs.CreateDiff(
 		leaseCtx,
 		container.SnapshotKey,
 		b.client.SnapshotService(container.Snapshotter),
 		b.client.DiffService(),
 		diff.WithReference(fmt.Sprintf("opensandbox-commit-%s-%d", container.ID, time.Now().UnixNano())),
-		diff.WithMediaType(layerMediaType),
+		diff.WithMediaType(mediaTypes.Diff),
 	)
 	if err != nil {
 		return LocalImage{}, fmt.Errorf("create writable snapshot diff for container %s: %w", container.ID, err)
@@ -102,7 +102,7 @@ func (b *ContainerdImageBuilder) Commit(ctx context.Context, container ResolvedC
 	// The comparer can report an OCI layer descriptor even when the source image
 	// uses Docker media types. The bytes are compatible; the manifest descriptor
 	// must use the selected image format.
-	diffDesc.MediaType = layerMediaType
+	diffDesc.MediaType = mediaTypes.Layer
 
 	now := time.Now().UTC()
 	imageConfig.Created = &now
@@ -117,7 +117,7 @@ func (b *ContainerdImageBuilder) Commit(ctx context.Context, container ResolvedC
 		return LocalImage{}, fmt.Errorf("encode committed image config: %w", err)
 	}
 	configDesc := ocispec.Descriptor{
-		MediaType: configMediaType,
+		MediaType: mediaTypes.Config,
 		Digest:    digest.FromBytes(newConfigData),
 		Size:      int64(len(newConfigData)),
 	}
@@ -135,7 +135,7 @@ func (b *ContainerdImageBuilder) Commit(ctx context.Context, container ResolvedC
 	layers = append(layers, diffDesc)
 	newManifest := ocispec.Manifest{
 		Versioned:    baseManifest.Versioned,
-		MediaType:    manifestMediaType,
+		MediaType:    mediaTypes.Manifest,
 		ArtifactType: baseManifest.ArtifactType,
 		Config:       configDesc,
 		Layers:       layers,
@@ -147,7 +147,7 @@ func (b *ContainerdImageBuilder) Commit(ctx context.Context, container ResolvedC
 		return LocalImage{}, fmt.Errorf("encode committed image manifest: %w", err)
 	}
 	manifestDesc := ocispec.Descriptor{
-		MediaType: manifestMediaType,
+		MediaType: mediaTypes.Manifest,
 		Digest:    digest.FromBytes(newManifestData),
 		Size:      int64(len(newManifestData)),
 	}
@@ -179,9 +179,30 @@ func (b *ContainerdImageBuilder) Commit(ctx context.Context, container ResolvedC
 	return LocalImage{Reference: target, Target: manifestDesc}, nil
 }
 
-func commitMediaTypes(baseManifestMediaType string) (manifest, config, layer string) {
+type commitMediaTypeSet struct {
+	Manifest string
+	Config   string
+	Layer    string
+	Diff     string
+}
+
+func commitMediaTypes(baseManifestMediaType string) commitMediaTypeSet {
+	// containerd's diff service accepts the OCI compression media type. Docker
+	// schema 2 uses the same gzip bytes with a different descriptor media type,
+	// so request an OCI diff and relabel the resulting descriptor when writing a
+	// Docker manifest.
 	if baseManifestMediaType == images.MediaTypeDockerSchema2Manifest {
-		return images.MediaTypeDockerSchema2Manifest, images.MediaTypeDockerSchema2Config, images.MediaTypeDockerSchema2LayerGzip
+		return commitMediaTypeSet{
+			Manifest: images.MediaTypeDockerSchema2Manifest,
+			Config:   images.MediaTypeDockerSchema2Config,
+			Layer:    images.MediaTypeDockerSchema2LayerGzip,
+			Diff:     ocispec.MediaTypeImageLayerGzip,
+		}
 	}
-	return ocispec.MediaTypeImageManifest, ocispec.MediaTypeImageConfig, ocispec.MediaTypeImageLayerGzip
+	return commitMediaTypeSet{
+		Manifest: ocispec.MediaTypeImageManifest,
+		Config:   ocispec.MediaTypeImageConfig,
+		Layer:    ocispec.MediaTypeImageLayerGzip,
+		Diff:     ocispec.MediaTypeImageLayerGzip,
+	}
 }
