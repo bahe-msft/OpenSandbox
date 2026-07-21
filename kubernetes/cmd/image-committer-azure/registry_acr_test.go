@@ -1,4 +1,4 @@
-// Copyright 2025 Alibaba Group Holding Ltd.
+// Copyright 2026 Alibaba Group Holding Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package imagecommitter
+package main
 
 import (
 	"context"
@@ -58,7 +58,7 @@ func TestACRCredentialProviderExchangesAzureToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := &ACRCredentialProvider{
+	provider := &acrCredentialProvider{
 		credential: fakeAzureCredential{token: azcore.AccessToken{Token: accessToken, ExpiresOn: time.Now().Add(time.Hour)}},
 		client:     server.Client(),
 		exchangeEndpoint: func(string) string {
@@ -78,7 +78,7 @@ func TestACRCredentialProviderExchangesAzureToken(t *testing.T) {
 }
 
 func TestACRCredentialProviderRejectsNonACRHost(t *testing.T) {
-	provider := &ACRCredentialProvider{credential: fakeAzureCredential{}}
+	provider := &acrCredentialProvider{credential: fakeAzureCredential{}}
 	if _, err := provider.Credential(context.Background(), "attacker.example.com"); err == nil {
 		t.Fatal("non-ACR host should be rejected before obtaining or sending a token")
 	}
@@ -106,7 +106,7 @@ func TestACRCredentialProviderIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAzureCLICredential failed: %v", err)
 	}
-	provider := &ACRCredentialProvider{credential: azureCredential}
+	provider := &acrCredentialProvider{credential: azureCredential}
 	credential, err := provider.Credential(context.Background(), registryHost)
 	if err != nil {
 		t.Fatalf("Credential failed: %v", err)

@@ -1,4 +1,4 @@
-// Copyright 2025 Alibaba Group Holding Ltd.
+// Copyright 2026 Alibaba Group Holding Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package imagecommitter
+package main
 
 import (
 	"context"
@@ -29,56 +29,58 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+
+	"github.com/alibaba/OpenSandbox/sandbox-k8s/internal/imagecommitter"
 )
 
 // The double slash preserves ARM's trailing-slash resource identifier in the
 // resulting token audience (https://management.azure.com/).
 const azureContainerRegistryScope = "https://management.azure.com//.default"
 
-// ACRCredentialProvider exchanges an azidentity access token for an ACR
+// acrCredentialProvider exchanges an azidentity access token for an ACR
 // refresh token. The image committer does not read identity tokens directly;
 // azidentity selects and consumes the available credential source.
-type ACRCredentialProvider struct {
+type acrCredentialProvider struct {
 	credential       azcore.TokenCredential
 	tenantID         string
 	client           *http.Client
 	exchangeEndpoint func(registryHost string) string
 }
 
-// NewACRCredentialProvider creates a provider using azidentity's default
+// newACRCredentialProvider creates a provider using azidentity's default
 // credential chain. In Kubernetes, Workload Identity is preferred when its
 // webhook-injected environment and projected token are available.
-func NewACRCredentialProvider() (*ACRCredentialProvider, error) {
+func newACRCredentialProvider() (*acrCredentialProvider, error) {
 	credential, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("create Azure credential: %w", err)
 	}
-	return &ACRCredentialProvider{
+	return &acrCredentialProvider{
 		credential: credential,
 		tenantID:   strings.TrimSpace(os.Getenv("AZURE_TENANT_ID")),
 		client:     &http.Client{Timeout: 30 * time.Second},
 	}, nil
 }
 
-func (p *ACRCredentialProvider) Credential(ctx context.Context, registryHost string) (RegistryCredential, error) {
+func (p *acrCredentialProvider) Credential(ctx context.Context, registryHost string) (imagecommitter.RegistryCredential, error) {
 	if p == nil || p.credential == nil {
-		return RegistryCredential{}, fmt.Errorf("Azure credential is not configured")
+		return imagecommitter.RegistryCredential{}, fmt.Errorf("Azure credential is not configured")
 	}
 	exchangeEndpoint, err := p.acrExchangeEndpoint(registryHost)
 	if err != nil {
-		return RegistryCredential{}, err
+		return imagecommitter.RegistryCredential{}, err
 	}
 	accessToken, err := p.credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{azureContainerRegistryScope},
 	})
 	if err != nil {
-		return RegistryCredential{}, fmt.Errorf("get Azure access token: %w", err)
+		return imagecommitter.RegistryCredential{}, fmt.Errorf("get Azure access token: %w", err)
 	}
 	tenantID := p.tenantID
 	if tenantID == "" {
 		tenantID, err = tenantIDFromJWT(accessToken.Token)
 		if err != nil {
-			return RegistryCredential{}, fmt.Errorf("determine Azure tenant: %w", err)
+			return imagecommitter.RegistryCredential{}, fmt.Errorf("determine Azure tenant: %w", err)
 		}
 	}
 
@@ -90,34 +92,34 @@ func (p *ACRCredentialProvider) Credential(ctx context.Context, registryHost str
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, exchangeEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return RegistryCredential{}, fmt.Errorf("create ACR token exchange request: %w", err)
+		return imagecommitter.RegistryCredential{}, fmt.Errorf("create ACR token exchange request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := p.httpClient().Do(request)
 	if err != nil {
-		return RegistryCredential{}, fmt.Errorf("exchange Azure token with ACR %s: %w", registryHost, err)
+		return imagecommitter.RegistryCredential{}, fmt.Errorf("exchange Azure token with ACR %s: %w", registryHost, err)
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
-		return RegistryCredential{}, fmt.Errorf("read ACR token exchange response: %w", err)
+		return imagecommitter.RegistryCredential{}, fmt.Errorf("read ACR token exchange response: %w", err)
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return RegistryCredential{}, fmt.Errorf("ACR token exchange for %s returned %s: %s", registryHost, response.Status, strings.TrimSpace(string(body)))
+		return imagecommitter.RegistryCredential{}, fmt.Errorf("ACR token exchange for %s returned %s: %s", registryHost, response.Status, strings.TrimSpace(string(body)))
 	}
 	var result struct {
 		RefreshToken string `json:"refresh_token"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return RegistryCredential{}, fmt.Errorf("decode ACR token exchange response: %w", err)
+		return imagecommitter.RegistryCredential{}, fmt.Errorf("decode ACR token exchange response: %w", err)
 	}
 	if result.RefreshToken == "" {
-		return RegistryCredential{}, fmt.Errorf("ACR token exchange for %s returned an empty refresh token", registryHost)
+		return imagecommitter.RegistryCredential{}, fmt.Errorf("ACR token exchange for %s returned an empty refresh token", registryHost)
 	}
-	return RegistryCredential{RefreshToken: result.RefreshToken}, nil
+	return imagecommitter.RegistryCredential{RefreshToken: result.RefreshToken}, nil
 }
 
-func (p *ACRCredentialProvider) acrExchangeEndpoint(registryHost string) (string, error) {
+func (p *acrCredentialProvider) acrExchangeEndpoint(registryHost string) (string, error) {
 	if p.exchangeEndpoint != nil {
 		return p.exchangeEndpoint(registryHost), nil
 	}
@@ -138,7 +140,7 @@ func isAzureContainerRegistryHost(registryHost string) bool {
 	return false
 }
 
-func (p *ACRCredentialProvider) httpClient() *http.Client {
+func (p *acrCredentialProvider) httpClient() *http.Client {
 	if p.client != nil {
 		return p.client
 	}

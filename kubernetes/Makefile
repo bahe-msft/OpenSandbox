@@ -56,8 +56,8 @@ CONTROLLER_IMG ?= controller:dev
 TASK_EXECUTOR_IMG ?= task-executor:dev
 # IMAGE_COMMITTER_IMG defines the image for the default image-committer service.
 IMAGE_COMMITTER_IMG ?= image-committer:dev
-# IMAGE_COMMITTER_ACR_IMG defines the image variant that authenticates with ACR through azidentity.
-IMAGE_COMMITTER_ACR_IMG ?= image-committer-acr:dev
+# IMAGE_COMMITTER_AZURE_IMG defines the Azure image variant that authenticates with ACR through azidentity.
+IMAGE_COMMITTER_AZURE_IMG ?= image-committer-azure:dev
 # IMAGE_COMMITTER_SERVICE_ACCOUNT is assigned to image-committer commit Jobs.
 IMAGE_COMMITTER_SERVICE_ACCOUNT ?=
 # SNAPSHOT_REGISTRY defines the OCI registry used by the controller for snapshot images.
@@ -307,17 +307,17 @@ docker-build-task-executor: ## Build docker image with task-executor.
 docker-build-image-committer: ## Build docker image for image commit operations.
 	$(CONTAINER_TOOL) build $(DOCKER_BUILD_ARGS) -f Dockerfile.image-committer -t ${IMAGE_COMMITTER_IMG} .
 
-.PHONY: docker-build-image-committer-acr
-docker-build-image-committer-acr: ## Build image-committer with the azidentity ACR credential provider.
-	$(CONTAINER_TOOL) build $(DOCKER_BUILD_ARGS) --build-arg IMAGE_COMMITTER_CREDENTIAL_PROVIDER=acr -f Dockerfile.image-committer -t ${IMAGE_COMMITTER_ACR_IMG} .
+.PHONY: docker-build-image-committer-azure
+docker-build-image-committer-azure: ## Build the distroless Azure image-committer with azidentity ACR authentication.
+	$(CONTAINER_TOOL) build $(DOCKER_BUILD_ARGS) -f Dockerfile.image-committer-azure -t ${IMAGE_COMMITTER_AZURE_IMG} .
 
 .PHONY: docker-push-image-committer
 docker-push-image-committer: ## Push docker image for image-committer.
 	$(CONTAINER_TOOL) push ${IMAGE_COMMITTER_IMG}
 
-.PHONY: docker-push-image-committer-acr
-docker-push-image-committer-acr: ## Push image-committer with the azidentity ACR credential provider.
-	$(CONTAINER_TOOL) push ${IMAGE_COMMITTER_ACR_IMG}
+.PHONY: docker-push-image-committer-azure
+docker-push-image-committer-azure: ## Push the Azure image-committer.
+	$(CONTAINER_TOOL) push ${IMAGE_COMMITTER_AZURE_IMG}
 
 .PHONY: docker-push
 # docker-push: ## Push docker image with the manager.

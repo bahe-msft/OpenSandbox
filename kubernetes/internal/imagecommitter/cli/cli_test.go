@@ -1,4 +1,4 @@
-// Copyright 2025 Alibaba Group Holding Ltd.
+// Copyright 2026 Alibaba Group Holding Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package cli
 
 import (
 	"encoding/json"
@@ -74,24 +74,6 @@ func TestParseOperationRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-func TestNewCredentialProviderDefaultsToDockerConfig(t *testing.T) {
-	t.Setenv("IMAGE_COMMITTER_CREDENTIAL_PROVIDER", "")
-	provider, err := newCredentialProvider()
-	if err != nil {
-		t.Fatalf("newCredentialProvider failed: %v", err)
-	}
-	if _, ok := provider.(imagecommitter.DockerConfigCredentialProvider); !ok {
-		t.Fatalf("provider type = %T", provider)
-	}
-}
-
-func TestNewCredentialProviderRejectsUnknownProvider(t *testing.T) {
-	t.Setenv("IMAGE_COMMITTER_CREDENTIAL_PROVIDER", "unknown")
-	if _, err := newCredentialProvider(); err == nil {
-		t.Fatal("unknown provider should fail")
-	}
-}
-
 func TestValidateAPIVersion(t *testing.T) {
 	if err := validateAPIVersion(""); err != nil {
 		t.Fatalf("empty version should use v1 compatibility: %v", err)
@@ -105,15 +87,13 @@ func TestValidateAPIVersion(t *testing.T) {
 }
 
 func TestWriteResult(t *testing.T) {
-	original := terminationMessagePath
-	t.Cleanup(func() { terminationMessagePath = original })
-	terminationMessagePath = filepath.Join(t.TempDir(), "termination.log")
+	terminationMessagePath := filepath.Join(t.TempDir(), "termination.log")
 
 	want := imagecommitter.Result{Containers: []imagecommitter.ContainerResult{
 		{Name: "main", Image: "registry.example.com/main:snap", Digest: "sha256:main"},
 		{Name: "sidecar", Image: "registry.example.com/sidecar:snap", Digest: "sha256:sidecar"},
 	}}
-	if err := writeResult(want); err != nil {
+	if err := writeResult(terminationMessagePath, want); err != nil {
 		t.Fatalf("writeResult failed: %v", err)
 	}
 	data, err := os.ReadFile(terminationMessagePath)
@@ -132,13 +112,13 @@ func TestWriteResult(t *testing.T) {
 func TestShouldUseInsecureRegistry(t *testing.T) {
 	t.Run("explicit false overrides heuristic", func(t *testing.T) {
 		t.Setenv("SNAPSHOT_REGISTRY_INSECURE", "false")
-		if shouldUseInsecureRegistry("registry.local/snapshot:test") {
+		if shouldUseInsecureRegistry("registry.local/snapshot:test", os.Stderr) {
 			t.Fatal("explicit false should disable insecure transport")
 		}
 	})
 	t.Run("private host heuristic", func(t *testing.T) {
 		t.Setenv("SNAPSHOT_REGISTRY_INSECURE", "")
-		if !shouldUseInsecureRegistry("10.0.0.2:5000/snapshot:test") {
+		if !shouldUseInsecureRegistry("10.0.0.2:5000/snapshot:test", os.Stderr) {
 			t.Fatal("private registry should use compatibility heuristic")
 		}
 	})

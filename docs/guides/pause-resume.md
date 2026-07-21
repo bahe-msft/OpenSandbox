@@ -211,11 +211,11 @@ kubectl create secret docker-registry registry-pull-secret \
 
 ### Using ACR with Azure Workload Identity
 
-The optional ACR image-committer variant uses `azidentity` instead of the Docker config push credential. Build it with:
+The optional `cmd/image-committer-azure` CLI uses `azidentity` instead of the Docker config push credential. It is packaged in a separate distroless image while preserving `/usr/local/bin/image-committer` and the same commit/unpause arguments. Build it with:
 
 ```bash
-make docker-build-image-committer-acr \
-  IMAGE_COMMITTER_ACR_IMG=<registry>/opensandbox/image-committer-acr:<tag>
+make docker-build-image-committer-azure \
+  IMAGE_COMMITTER_AZURE_IMG=<registry>/opensandbox/image-committer-azure:<tag>
 ```
 
 Configure the controller with that image and a ServiceAccount associated with an Azure identity that has `AcrPush` on the snapshot registry:
@@ -223,7 +223,7 @@ Configure the controller with that image and a ServiceAccount associated with an
 ```yaml
 controller:
   snapshot:
-    imageCommitterImage: <registry>/opensandbox/image-committer-acr:<tag>
+    imageCommitterImage: <registry>/opensandbox/image-committer-azure:<tag>
     imageCommitterServiceAccount: snapshot-committer
     registry: <registry>.azurecr.io/opensandbox-snapshots
 ```

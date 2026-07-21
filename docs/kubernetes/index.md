@@ -146,7 +146,7 @@ The snapshot controller supports the following command-line flags:
 
 These flags are configured at controller startup. The built-in image committer uses containerd APIs directly. Any custom `image-committer-image` must implement the documented commit and unpause command contract and must be trusted: commit Jobs mount the host containerd socket on the source node, so the image effectively has node-level runtime access. Pin the image by digest or enforce a trusted registry/admission policy in production.
 
-`--image-committer-service-account` is optional. When set, the named ServiceAccount must exist in each sandbox namespace. Cluster admission can use it to inject workload identity for custom registry credential providers. The optional `image-committer-acr` build variant uses `azidentity` to exchange that identity for ACR push credentials; see the [pause/resume guide](/guides/pause-resume#using-acr-with-azure-workload-identity).
+`--image-committer-service-account` is optional. When set, the named ServiceAccount must exist in each sandbox namespace. Cluster admission can use it to inject workload identity for custom registry credential providers. The optional distroless `image-committer-azure` build variant uses `azidentity` to exchange that identity for ACR push credentials; see the [pause/resume guide](/guides/pause-resume#using-acr-with-azure-workload-identity).
 
 ### Quick Setup
 
