@@ -209,6 +209,29 @@ kubectl create secret docker-registry registry-pull-secret \
   --namespace=<sandbox-namespace>
 ```
 
+### Using ACR with Azure Workload Identity
+
+The optional ACR image-committer variant uses `azidentity` instead of the Docker config push credential. Build it with:
+
+```bash
+make docker-build-image-committer-acr \
+  IMAGE_COMMITTER_ACR_IMG=<registry>/opensandbox/image-committer-acr:<tag>
+```
+
+Configure the controller with that image and a ServiceAccount associated with an Azure identity that has `AcrPush` on the snapshot registry:
+
+```yaml
+controller:
+  snapshot:
+    imageCommitterImage: <registry>/opensandbox/image-committer-acr:<tag>
+    imageCommitterServiceAccount: snapshot-committer
+    registry: <registry>.azurecr.io/opensandbox-snapshots
+```
+
+The ACR variant uses `azidentity.NewWorkloadIdentityCredential`, then exchanges the Azure access token for an ACR refresh token. OpenSandbox sets only `serviceAccountName`; cluster admission must inject the Azure Workload Identity environment and projected token. In a standard AKS setup, ensure commit Job Pods receive the `azure.workload.identity/use: "true"` label before the Azure webhook runs.
+
+The ServiceAccount must exist in every sandbox namespace. `--snapshot-push-secret` is not required for the ACR commit Job, but resumed Pods still need working ACR pull authentication through `--resume-pull-secret`, kubelet managed identity, or another cluster image-pull configuration.
+
 ### Using a private `registry:2` (development)
 
 For development with a cluster-internal `registry:2` deployment:

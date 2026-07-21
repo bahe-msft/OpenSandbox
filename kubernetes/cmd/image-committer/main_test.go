@@ -74,6 +74,24 @@ func TestParseOperationRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestNewCredentialProviderDefaultsToDockerConfig(t *testing.T) {
+	t.Setenv("IMAGE_COMMITTER_CREDENTIAL_PROVIDER", "")
+	provider, err := newCredentialProvider()
+	if err != nil {
+		t.Fatalf("newCredentialProvider failed: %v", err)
+	}
+	if _, ok := provider.(imagecommitter.DockerConfigCredentialProvider); !ok {
+		t.Fatalf("provider type = %T", provider)
+	}
+}
+
+func TestNewCredentialProviderRejectsUnknownProvider(t *testing.T) {
+	t.Setenv("IMAGE_COMMITTER_CREDENTIAL_PROVIDER", "unknown")
+	if _, err := newCredentialProvider(); err == nil {
+		t.Fatal("unknown provider should fail")
+	}
+}
+
 func TestValidateAPIVersion(t *testing.T) {
 	if err := validateAPIVersion(""); err != nil {
 		t.Fatalf("empty version should use v1 compatibility: %v", err)

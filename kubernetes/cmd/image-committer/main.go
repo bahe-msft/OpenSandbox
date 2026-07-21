@@ -80,9 +80,13 @@ func run(ctx context.Context, args []string) error {
 	// implementation detail and is not part of the executable contract.
 	orchestrator.PreparationCommand = []string{"sync"}
 	orchestrator.Builder = imagecommitter.NewContainerdImageBuilder(client)
+	credentialProvider, err := newCredentialProvider()
+	if err != nil {
+		return err
+	}
 	orchestrator.Pusher = imagecommitter.NewContainerdImagePusher(
 		client,
-		imagecommitter.DockerConfigCredentialProvider{Path: registryConfigPath, ErrorOutput: os.Stderr},
+		credentialProvider,
 		shouldUseInsecureRegistry,
 	)
 	result, err := orchestrator.Commit(ctx, commitRequest)
@@ -146,6 +150,17 @@ func writeResult(result imagecommitter.Result) error {
 		return err
 	}
 	return os.WriteFile(terminationMessagePath, append(data, '\n'), 0o644)
+}
+
+func newCredentialProvider() (imagecommitter.CredentialProvider, error) {
+	switch provider := strings.ToLower(strings.TrimSpace(os.Getenv("IMAGE_COMMITTER_CREDENTIAL_PROVIDER"))); provider {
+	case "", "docker-config":
+		return imagecommitter.DockerConfigCredentialProvider{Path: registryConfigPath, ErrorOutput: os.Stderr}, nil
+	case "acr":
+		return imagecommitter.NewACRCredentialProvider()
+	default:
+		return nil, fmt.Errorf("unsupported IMAGE_COMMITTER_CREDENTIAL_PROVIDER %q", provider)
+	}
 }
 
 func validateAPIVersion(version string) error {
