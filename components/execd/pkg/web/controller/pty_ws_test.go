@@ -35,13 +35,14 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/runtime"
 	"github.com/alibaba/opensandbox/execd/pkg/web/model"
 )
 
 // buildPTYRouter assembles a minimal Gin router with only the /pty routes,
 // avoiding any import cycle with pkg/web.
-func buildPTYRouter() *gin.Engine {
+func buildPTYRouter(tracker *activity.Tracker) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -57,7 +58,7 @@ func buildPTYRouter() *gin.Engine {
 		pty.DELETE("/:sessionId", func(ctx *gin.Context) {
 			NewPTYController(ctx).DeletePTYSession()
 		})
-		pty.GET("/:sessionId/ws", PTYSessionWebSocket)
+		pty.GET("/:sessionId/ws", PTYSessionWebSocket(tracker))
 	}
 	return r
 }
@@ -66,9 +67,12 @@ func buildPTYRouter() *gin.Engine {
 func newPTYTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	prev := codeRunner
-	codeRunner = runtime.NewController("", "")
+	tracker := activity.NewTracker()
+	controller, err := runtime.NewController("", "", tracker)
+	require.NoError(t, err)
+	codeRunner = controller
 	t.Cleanup(func() { codeRunner = prev })
-	return httptest.NewServer(buildPTYRouter())
+	return httptest.NewServer(buildPTYRouter(tracker))
 }
 
 // wsDialPTY dials a WebSocket URL; accepts an optional extra query string.

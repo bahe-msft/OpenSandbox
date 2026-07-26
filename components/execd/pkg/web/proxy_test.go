@@ -19,11 +19,46 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
+
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 )
+
+func TestProxyMiddlewareRecordsWebSocketHandshakeBeforeDisconnect(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		require.NoError(t, err)
+		defer conn.Close()
+		_, _, _ = conn.ReadMessage()
+	}))
+	defer backend.Close()
+
+	backendURL, err := url.Parse(backend.URL)
+	require.NoError(t, err)
+	_, port, err := net.SplitHostPort(backendURL.Host)
+	require.NoError(t, err)
+
+	tracker := activity.NewTracker()
+	router := gin.New()
+	router.Use(ProxyMiddleware(tracker))
+	proxyServer := httptest.NewServer(router)
+	defer proxyServer.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http") + "/proxy/" + port + "/ws"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	require.EqualValues(t, 1, tracker.Snapshot().Revision)
+	require.NoError(t, conn.WriteMessage(websocket.TextMessage, []byte("close")))
+}
 
 func TestProxyMiddlewareReturnsSidecarForbiddenForActiveVault(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -40,7 +75,7 @@ func TestProxyMiddlewareReturnsSidecarForbiddenForActiveVault(t *testing.T) {
 	require.NoError(t, err)
 
 	router := gin.New()
-	router.Use(ProxyMiddleware())
+	router.Use(ProxyMiddleware(activity.NewTracker()))
 	proxyServer := httptest.NewServer(router)
 	defer proxyServer.Close()
 

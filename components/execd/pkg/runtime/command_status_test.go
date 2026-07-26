@@ -26,14 +26,14 @@ import (
 )
 
 func TestGetCommandStatus_NotFound(t *testing.T) {
-	c := NewController("", "")
+	c := newTestController("", "")
 
 	_, err := c.GetCommandStatus("missing")
 	require.Error(t, err, "expected error for missing session")
 }
 
 func TestGetCommandStatus_Running(t *testing.T) {
-	c := NewController("", "")
+	c := newTestController("", "")
 
 	var session string
 	req := &ExecuteCodeRequest{
@@ -77,7 +77,7 @@ func TestGetCommandStatus_Running(t *testing.T) {
 }
 
 func TestSeekBackgroundCommandOutput_Completed(t *testing.T) {
-	c := NewController("", "")
+	c := newTestController("", "")
 
 	tmpDir := t.TempDir()
 	session := "sess-done"
@@ -109,7 +109,7 @@ func TestSeekBackgroundCommandOutput_Completed(t *testing.T) {
 }
 
 func TestSeekBackgroundCommandOutput_WithRunBackgroundCommand(t *testing.T) {
-	c := NewController("", "")
+	c := newTestController("", "")
 
 	expected := "line1\nline2\n"
 	var session string

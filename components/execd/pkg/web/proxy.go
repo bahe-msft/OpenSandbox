@@ -24,10 +24,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/log"
 )
 
-func ProxyMiddleware() gin.HandlerFunc {
+func ProxyMiddleware(tracker *activity.Tracker) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !strings.HasPrefix(c.Request.URL.Path, "/proxy/") {
 			c.Next()
@@ -62,6 +63,15 @@ func ProxyMiddleware() gin.HandlerFunc {
 		proxy := httputil.NewSingleHostReverseProxy(target)
 		// Flush SSE chunks promptly; a small interval avoids buffering breaks chunked streams.
 		proxy.FlushInterval = 200 * time.Millisecond
+		proxy.ModifyResponse = func(resp *http.Response) error {
+			// ReverseProxy keeps ServeHTTP blocked for the upgraded tunnel. Record
+			// activity when the backend accepts the handshake, not when the socket
+			// eventually disconnects.
+			if isWebSocket && resp.StatusCode == http.StatusSwitchingProtocols {
+				tracker.Touch()
+			}
+			return nil
+		}
 
 		proxy.Director = func(req *http.Request) {
 			req.URL.Scheme = "http"

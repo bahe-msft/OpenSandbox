@@ -17,12 +17,14 @@ package runtime
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/jupyter"
 )
 
@@ -46,6 +48,7 @@ type Controller struct {
 	isolatedSessionMap      sync.Map // map[sessionID]*isolatedSession
 	db                      *sql.DB
 	dbOnce                  sync.Once
+	activity                *activity.Tracker
 }
 
 type jupyterKernel struct {
@@ -69,11 +72,15 @@ type commandKernel struct {
 }
 
 // NewController creates a runtime controller.
-func NewController(baseURL, token string) *Controller {
-	return &Controller{
-		baseURL: baseURL,
-		token:   token,
+func NewController(baseURL, token string, activityTracker *activity.Tracker) (*Controller, error) {
+	if activityTracker == nil {
+		return nil, errors.New("activity tracker is required")
 	}
+	return &Controller{
+		baseURL:  baseURL,
+		token:    token,
+		activity: activityTracker,
+	}, nil
 }
 
 // Execute dispatches a request to the correct backend.

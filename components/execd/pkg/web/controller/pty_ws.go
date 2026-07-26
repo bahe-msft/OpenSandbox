@@ -27,6 +27,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/log"
 	"github.com/alibaba/opensandbox/execd/pkg/runtime"
 	"github.com/alibaba/opensandbox/execd/pkg/web/model"
@@ -68,7 +69,13 @@ const (
 //     (initial writes done; all subsequent writes serialized by connMu)
 //  10. Start RFC 6455 ping, streamPump(s), exitWatcher goroutines
 //  11. Read loop: dispatch client frames
-func PTYSessionWebSocket(ctx *gin.Context) {
+func PTYSessionWebSocket(tracker *activity.Tracker) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		ptySessionWebSocket(ctx, tracker)
+	}
+}
+
+func ptySessionWebSocket(ctx *gin.Context, tracker *activity.Tracker) {
 	id := ctx.Param("sessionId")
 	if id == "" {
 		ctx.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -126,6 +133,7 @@ func PTYSessionWebSocket(ctx *gin.Context) {
 	}
 	// From here we hold the lock; it is released at the very end of this function (see
 	// defer below), only after all pump goroutines have exited.
+	tracker.Touch()
 
 	// Resolve query parameters.
 	pipeMode := ctx.Query("pty") == "0"
@@ -287,7 +295,7 @@ func PTYSessionWebSocket(ctx *gin.Context) {
 	safego.Go(func() { ptyExitWatcher(session, writeJSON, closeConn, cancelCh, cancelOnce) })
 
 	// 11. Client read loop.
-	ptyClientReadLoop(conn, session, id, writeJSON, cancelCh, cancelOnce)
+	ptyClientReadLoop(conn, session, id, writeJSON, cancelCh, cancelOnce, tracker)
 }
 
 // ptyPingLoop sends periodic WebSocket pings until cancelCh is closed.
@@ -365,7 +373,7 @@ func ptyExitWatcher(session runtime.PTYSession, writeJSON func(any) error, close
 
 // ptyHandleBinaryMsg processes an incoming binary WebSocket frame from the client.
 // Returns true if the connection should be terminated.
-func ptyHandleBinaryMsg(session runtime.PTYSession, data []byte, writeJSON func(any) error, cancelOnce func()) bool {
+func ptyHandleBinaryMsg(session runtime.PTYSession, data []byte, writeJSON func(any) error, cancelOnce func(), tracker *activity.Tracker) bool {
 	if len(data) == 0 {
 		return false
 	}
@@ -378,12 +386,13 @@ func ptyHandleBinaryMsg(session runtime.PTYSession, data []byte, writeJSON func(
 		cancelOnce()
 		return true
 	}
+	tracker.Touch()
 	return false
 }
 
 // ptyHandleTextMsg processes an incoming text WebSocket frame from the client.
 // Returns true if the connection should be terminated.
-func ptyHandleTextMsg(session runtime.PTYSession, id string, data []byte, writeJSON func(any) error, cancelOnce func()) bool {
+func ptyHandleTextMsg(session runtime.PTYSession, id string, data []byte, writeJSON func(any) error, cancelOnce func(), tracker *activity.Tracker) bool {
 	var frame model.ClientFrame
 	if json.Unmarshal(data, &frame) != nil {
 		return false
@@ -397,12 +406,16 @@ func ptyHandleTextMsg(session runtime.PTYSession, id string, data []byte, writeJ
 			cancelOnce()
 			return true
 		}
+		tracker.Touch()
 	case "signal":
 		session.SendSignal(frame.Signal)
+		tracker.Touch()
 	case "resize":
 		if frame.Cols > 0 && frame.Rows > 0 {
 			if resErr := session.ResizePTY(uint16(frame.Cols), uint16(frame.Rows)); resErr != nil {
 				log.Warn("pty resize session %s: %v", id, resErr)
+			} else {
+				tracker.Touch()
 			}
 		}
 	case "ping":
@@ -415,7 +428,7 @@ func ptyHandleTextMsg(session runtime.PTYSession, id string, data []byte, writeJ
 }
 
 // ptyClientReadLoop processes incoming WebSocket messages until the connection closes.
-func ptyClientReadLoop(conn *websocket.Conn, session runtime.PTYSession, id string, writeJSON func(any) error, cancelCh <-chan struct{}, cancelOnce func()) {
+func ptyClientReadLoop(conn *websocket.Conn, session runtime.PTYSession, id string, writeJSON func(any) error, cancelCh <-chan struct{}, cancelOnce func(), tracker *activity.Tracker) {
 	for {
 		select {
 		case <-cancelCh:
@@ -434,11 +447,11 @@ func ptyClientReadLoop(conn *websocket.Conn, session runtime.PTYSession, id stri
 
 		switch msgType {
 		case websocket.BinaryMessage:
-			if ptyHandleBinaryMsg(session, data, writeJSON, cancelOnce) {
+			if ptyHandleBinaryMsg(session, data, writeJSON, cancelOnce, tracker) {
 				return
 			}
 		case websocket.TextMessage:
-			if ptyHandleTextMsg(session, id, data, writeJSON, cancelOnce) {
+			if ptyHandleTextMsg(session, id, data, writeJSON, cancelOnce, tracker) {
 				return
 			}
 		}
