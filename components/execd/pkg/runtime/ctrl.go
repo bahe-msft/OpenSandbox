@@ -79,10 +79,6 @@ func NewController(baseURL, token string, activityTracker *activity.Tracker) *Co
 	}
 }
 
-func (c *Controller) beginActivity() func() {
-	return c.activity.Begin()
-}
-
 // Execute dispatches a request to the correct backend.
 func (c *Controller) Execute(request *ExecuteCodeRequest) error {
 	var cancel context.CancelFunc

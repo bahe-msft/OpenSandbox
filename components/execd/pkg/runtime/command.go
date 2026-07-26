@@ -332,7 +332,7 @@ func (c *Controller) runBackgroundCommand(ctx context.Context, cancel context.Ca
 	// handler could return before the kernel was stored.
 	kernel.pid = cmd.Process.Pid
 	c.storeCommandKernel(session, kernel)
-	endActivity := c.beginActivity()
+	endActivity := c.activity.Begin()
 
 	safego.Go(func() {
 		defer pipe.Close()

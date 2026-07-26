@@ -21,6 +21,7 @@ import (
 )
 
 func TestTrackerInitializesAtStartup(t *testing.T) {
+	t.Parallel()
 	start := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
 	tr := newTracker(func() time.Time { return start })
 
@@ -40,6 +41,7 @@ func TestTrackerInitializesAtStartup(t *testing.T) {
 }
 
 func TestTrackerBeginEndTransitions(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
 	tr := newTracker(func() time.Time { return now })
 
@@ -65,6 +67,7 @@ func TestTrackerBeginEndTransitions(t *testing.T) {
 }
 
 func TestTrackerCompletionIsIdempotent(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	tr := newTracker(func() time.Time { return now })
 	end := tr.Begin()
@@ -81,6 +84,7 @@ func TestTrackerCompletionIsIdempotent(t *testing.T) {
 }
 
 func TestTrackerTouch(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
 	tr := newTracker(func() time.Time { return now })
 	now = now.Add(10 * time.Second)
@@ -99,6 +103,7 @@ func TestTrackerTouch(t *testing.T) {
 }
 
 func TestTrackerIgnoresClockRegression(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
 	tr := newTracker(func() time.Time { return now })
 	advance := now.Add(time.Minute)
@@ -117,6 +122,7 @@ func TestTrackerIgnoresClockRegression(t *testing.T) {
 }
 
 func TestTrackerKeepAwake(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
 	tr := newTracker(func() time.Time { return now })
 
@@ -144,6 +150,7 @@ func TestTrackerKeepAwake(t *testing.T) {
 }
 
 func TestTrackerKeepAwakeOnlyExtends(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
 	tr := newTracker(func() time.Time { return now })
 
@@ -157,6 +164,7 @@ func TestTrackerKeepAwakeOnlyExtends(t *testing.T) {
 }
 
 func TestTrackerConcurrentSnapshotConsistency(t *testing.T) {
+	t.Parallel()
 	tr := NewTracker()
 	var wg sync.WaitGroup
 	for i := 0; i < 32; i++ {
@@ -176,5 +184,9 @@ func TestTrackerConcurrentSnapshotConsistency(t *testing.T) {
 	snap := tr.Snapshot()
 	if snap.Busy || snap.ActiveOperations != 0 {
 		t.Fatalf("final snapshot = %+v, want idle", snap)
+	}
+	const wantRevision = 32 * 100 * 3 // Begin + Touch + completion per iteration.
+	if snap.Revision != wantRevision {
+		t.Fatalf("revision = %d, want %d", snap.Revision, wantRevision)
 	}
 }
