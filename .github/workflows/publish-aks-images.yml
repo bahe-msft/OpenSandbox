@@ -14,7 +14,6 @@ on:
         options:
           - all
           - execd
-          - code-interpreter
           - ingress
           - egress
           - controller
@@ -47,7 +46,7 @@ jobs:
           set -euo pipefail
           COMPONENT="${{ inputs.component }}"
           if [[ "$COMPONENT" == "all" ]]; then
-            echo 'components=["execd","code-interpreter","ingress","egress","controller","task-executor","image-committer","server"]' >> "$GITHUB_OUTPUT"
+            echo 'components=["execd","ingress","egress","controller","task-executor","image-committer","server"]' >> "$GITHUB_OUTPUT"
           else
             printf 'components=["%s"]\n' "$COMPONENT" >> "$GITHUB_OUTPUT"
           fi
@@ -116,9 +115,6 @@ jobs:
                 ;;
               image-committer)
                 version="$(grep -m1 -oE 'image-committer:v[0-9][^"[:space:]]*' kubernetes/charts/opensandbox-controller/values.yaml | cut -d: -f2)"
-                ;;
-              code-interpreter)
-                version="$(grep -m1 -oE 'code-interpreter:v[0-9]+\.[0-9]+\.[0-9]+' README.md | cut -d: -f2)"
                 ;;
               *)
                 echo "unknown component: $component" >&2
@@ -190,8 +186,12 @@ jobs:
 
           case "$COMPONENT" in
             execd)
-              DOCKERFILE="components/execd/Dockerfile"
+              DOCKERFILE="${RUNNER_TEMP}/Dockerfile.execd-aks"
               CONTEXT="."
+              sed \
+                -e '/^RUN CGO_ENABLED=0 GOOS=windows go build /,/^    -o \/build\/execd.exe \.\/main.go$/d' \
+                -e '/^COPY --from=builder \/build\/execd.exe \.\/execd.exe$/d' \
+                components/execd/Dockerfile > "$DOCKERFILE"
               BUILD_ARGS+=(--build-arg "VERSION=${COMPONENT_VERSION}" --build-arg "GIT_COMMIT=${GITHUB_SHA}" --build-arg "BUILD_TIME=${BUILD_TIME}")
               ;;
             ingress)
@@ -203,10 +203,6 @@ jobs:
               DOCKERFILE="components/egress/Dockerfile"
               CONTEXT="."
               BUILD_ARGS+=(--build-arg "VERSION=${COMPONENT_VERSION}" --build-arg "GIT_COMMIT=${GITHUB_SHA}" --build-arg "BUILD_TIME=${BUILD_TIME}")
-              ;;
-            code-interpreter)
-              DOCKERFILE="sandboxes/code-interpreter/Dockerfile"
-              CONTEXT="sandboxes/code-interpreter"
               ;;
             controller)
               DOCKERFILE="kubernetes/Dockerfile"
