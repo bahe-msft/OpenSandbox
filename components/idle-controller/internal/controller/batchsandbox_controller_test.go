@@ -125,7 +125,7 @@ func newTestReconciler(t *testing.T, lifecycle opensandbox.Lifecycle, now *time.
 			OptInValue:    "true",
 		},
 		Now:          func() time.Time { return *now },
-		observations: make(map[types.NamespacedName]observation),
+		observations: make(map[string]observation),
 	}
 }
 

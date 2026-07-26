@@ -32,6 +32,15 @@ This guide explains how to use the pause and resume features for Kubernetes-back
 | **sandboxId** | Stable across pause/resume cycles — callers use the same ID throughout the sandbox lifetime |
 | **Replica support** | Currently limited to `BatchSandbox.spec.replicas=1`. Server-created Kubernetes sandboxes use `replicas: 1`; direct CRs with another replica count are rejected by the controller pause entry. |
 
+::: warning AgentSandbox provider semantics
+When `kubernetes.workload_provider = "agent-sandbox"`, pause and resume use the
+AgentSandbox CR's native suspension mechanism (`spec.replicas` 1 → 0 → 1).
+Unlike the BatchSandbox flow described below, this does not create an
+OpenSandbox `SandboxSnapshot` or commit the container root filesystem. Only
+state placed on persistent volumes managed by the AgentSandbox is retained;
+container rootfs changes, processes, memory, and open connections are lost.
+:::
+
 ### Key Design Principle
 
 **Controller-level configuration**: Registry URL and push/pull secrets are configured on the Kubernetes controller manager, not in `~/.sandbox.toml`. SDK users and API callers require **no code changes** to use pause/resume — they just call `pause` and `resume` on the existing sandbox ID.

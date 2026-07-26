@@ -1,7 +1,8 @@
 # OpenSandbox Idle Controller
 
-Standalone Go controller that watches `BatchSandbox` resources and pauses opted-in
-sandboxes after execd reports they have been idle for a configured threshold.
+Standalone Go controller that watches OpenSandbox `BatchSandbox` and Kubernetes
+SIG `AgentSandbox` resources and pauses opted-in sandboxes after execd reports
+they have been idle for a configured threshold.
 
 The controller intentionally remains outside the lifecycle server and the
 OpenSandbox Kubernetes operator. It combines:
@@ -15,8 +16,9 @@ It does **not** patch `BatchSandbox.spec.pause` directly.
 
 ## Flow
 
-1. Watch `BatchSandbox` resources with the opt-in label (default:
-   `opensandbox.ai/auto-pause=true`).
+1. Watch `BatchSandbox` resources and, when the `agents.x-k8s.io/v1alpha1`
+   Sandbox CRD is installed, AgentSandbox resources with the opt-in label
+   (default: `opensandbox.ai/auto-pause=true`).
 2. Select resources in phase `Succeed` with at least one ready replica and no
    pause intent.
 3. Resolve the sandbox's execd endpoint on port `44772` using lifecycle server
@@ -80,7 +82,8 @@ The example deployment starts in dry-run mode.
 
 ## RBAC
 
-The controller requires read-only access to `BatchSandbox` resources and access
+The controller requires read-only access to `BatchSandbox` and AgentSandbox
+resources and access
 to a leader-election Lease when leader election is enabled. It does not require
 permission to patch BatchSandbox because pause requests go through the lifecycle
 API.

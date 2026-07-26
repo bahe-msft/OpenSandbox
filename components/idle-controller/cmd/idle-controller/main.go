@@ -11,6 +11,7 @@ import (
 	idlecontroller "github.com/alibaba/opensandbox/idle-controller/internal/controller"
 	"github.com/alibaba/opensandbox/idle-controller/internal/opensandbox"
 	"go.uber.org/zap/zapcore"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -73,6 +74,18 @@ func main() {
 	if err := reconciler.SetupWithManager(manager); err != nil {
 		logger.Error(err, "register BatchSandbox controller")
 		os.Exit(1)
+	}
+	agentReconciler := &idlecontroller.AgentSandboxReconciler{
+		Client: manager.GetClient(),
+		Policy: reconciler,
+	}
+	if err := agentReconciler.SetupWithManager(manager); err != nil {
+		if meta.IsNoMatchError(err) {
+			logger.Info("AgentSandbox CRD is not installed; skipping AgentSandbox watch")
+		} else {
+			logger.Error(err, "register AgentSandbox controller")
+			os.Exit(1)
+		}
 	}
 	if err := manager.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		logger.Error(err, "add health check")

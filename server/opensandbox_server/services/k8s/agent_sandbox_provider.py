@@ -381,6 +381,20 @@ class AgentSandboxProvider(WorkloadProvider):
             body=body,
         )
 
+    def patch_workload(self, sandbox_id: str, namespace: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Patch the Sandbox CRD for the given OpenSandbox sandbox ID."""
+        sandbox = self.get_workload(sandbox_id, namespace)
+        if not sandbox:
+            raise ValueError(f"Sandbox '{sandbox_id}' not found")
+        return self.k8s_client.patch_custom_object(
+            group=self.group,
+            version=self.version,
+            namespace=namespace,
+            plural=self.plural,
+            name=sandbox["metadata"]["name"],
+            body=body,
+        )
+
     def get_expiration(self, workload: Dict[str, Any]) -> Optional[datetime]:
         """Parse shutdownTime from Sandbox CRD spec."""
         spec = workload.get("spec", {})
@@ -399,14 +413,38 @@ class AgentSandboxProvider(WorkloadProvider):
         """Derive sandbox state from the Sandbox CRD status conditions."""
         status = workload.get("status", {})
         conditions = status.get("conditions", [])
+        desired_replicas = workload.get("spec", {}).get("replicas", 1)
 
         ready_condition = None
+        suspended_condition = None
         for condition in conditions:
             if condition.get("type") == "Ready":
                 ready_condition = condition
-                break
+            elif condition.get("type") == "Suspended":
+                suspended_condition = condition
 
         creation_timestamp = workload.get("metadata", {}).get("creationTimestamp")
+        if desired_replicas == 0:
+            if suspended_condition and suspended_condition.get("status") == "True":
+                return {
+                    "state": "Paused",
+                    "reason": suspended_condition.get("reason") or "SandboxSuspended",
+                    "message": suspended_condition.get("message") or "Sandbox is suspended",
+                    "last_transition_at": suspended_condition.get("lastTransitionTime") or creation_timestamp,
+                }
+            return {
+                "state": "Pausing",
+                "reason": "SUSPEND_IN_PROGRESS",
+                "message": "Sandbox is suspending",
+                "last_transition_at": creation_timestamp,
+            }
+        if suspended_condition and suspended_condition.get("status") == "True":
+            return {
+                "state": "Resuming",
+                "reason": "RESUME_IN_PROGRESS",
+                "message": "Sandbox is resuming",
+                "last_transition_at": suspended_condition.get("lastTransitionTime") or creation_timestamp,
+            }
 
         if not ready_condition:
             pod_state = self._pod_state_from_selector(workload)
@@ -459,6 +497,28 @@ class AgentSandboxProvider(WorkloadProvider):
             "message": message,
             "last_transition_at": last_transition_at,
         }
+
+    def pause_sandbox(self, sandbox_id: str, namespace: str) -> None:
+        """Suspend an agent-sandbox Sandbox by scaling it to zero replicas."""
+        sandbox = self.get_workload(sandbox_id, namespace)
+        if not sandbox:
+            raise ValueError(f"Sandbox '{sandbox_id}' not found")
+        state = self.get_status(sandbox).get("state")
+        if state != "Running":
+            raise ValueError(f"Cannot pause sandbox in state {state}")
+        self.patch_workload(sandbox_id, namespace, {"spec": {"replicas": 0}})
+        logger.info("Patched agent Sandbox %s spec.replicas=0", sandbox_id)
+
+    def resume_sandbox(self, sandbox_id: str, namespace: str) -> None:
+        """Resume an agent-sandbox Sandbox by scaling it to one replica."""
+        sandbox = self.get_workload(sandbox_id, namespace)
+        if not sandbox:
+            raise ValueError(f"Sandbox '{sandbox_id}' not found")
+        state = self.get_status(sandbox).get("state")
+        if state != "Paused":
+            raise ValueError(f"Cannot resume sandbox in state {state}")
+        self.patch_workload(sandbox_id, namespace, {"spec": {"replicas": 1}})
+        logger.info("Patched agent Sandbox %s spec.replicas=1", sandbox_id)
 
     def _pod_state_from_selector(self, workload: Dict[str, Any]) -> Optional[tuple[str, str, str]]:
         """Resolve running/allocated/pending state from selected pods."""

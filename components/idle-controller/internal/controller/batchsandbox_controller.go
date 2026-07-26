@@ -42,7 +42,7 @@ type BatchSandboxReconciler struct {
 	Now       func() time.Time
 
 	mu           sync.Mutex
-	observations map[types.NamespacedName]observation
+	observations map[string]observation
 }
 
 // SetupWithManager registers the BatchSandbox watch.
@@ -54,7 +54,7 @@ func (r *BatchSandboxReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.Now = time.Now
 	}
 	if r.observations == nil {
-		r.observations = make(map[types.NamespacedName]observation)
+		r.observations = make(map[string]observation)
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&sandboxv1alpha1.BatchSandbox{}).
@@ -63,22 +63,30 @@ func (r *BatchSandboxReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // Reconcile checks one running sandbox and requeues at the next policy boundary.
 func (r *BatchSandboxReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("batchsandbox", request.NamespacedName)
+	key := candidateKey("batchsandbox", request.NamespacedName)
 	var sandbox sandboxv1alpha1.BatchSandbox
 	if err := r.Get(ctx, request.NamespacedName, &sandbox); err != nil {
-		r.forget(request.NamespacedName)
+		r.forget(key)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !sandbox.DeletionTimestamp.IsZero() || sandbox.Labels[r.Config.OptInLabel] != r.Config.OptInValue {
-		r.forget(request.NamespacedName)
+		r.forget(key)
 		return ctrl.Result{}, nil
 	}
 	if sandbox.Status.Phase != sandboxv1alpha1.BatchSandboxPhaseSucceed || sandbox.Status.Ready == 0 || paused(&sandbox) {
-		r.forget(request.NamespacedName)
+		r.forget(key)
 		return ctrl.Result{}, nil
 	}
+	sandboxID := sandbox.Labels["opensandbox.io/id"]
+	if sandboxID == "" {
+		sandboxID = sandbox.Name
+	}
+	return r.reconcileCandidate(ctx, key, sandboxID)
+}
 
-	endpoint, err := r.Lifecycle.ResolveExecdEndpoint(ctx, sandbox.Name)
+func (r *BatchSandboxReconciler) reconcileCandidate(ctx context.Context, key, sandboxID string) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues("candidate", key, "sandboxID", sandboxID)
+	endpoint, err := r.Lifecycle.ResolveExecdEndpoint(ctx, sandboxID)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: r.Config.CheckInterval}, fmt.Errorf("resolve execd endpoint: %w", err)
 	}
@@ -89,14 +97,14 @@ func (r *BatchSandboxReconciler) Reconcile(ctx context.Context, request ctrl.Req
 
 	now := r.Now().UTC()
 	if delay, reason := r.untilIdle(snapshot, now); delay > 0 {
-		r.forget(request.NamespacedName)
+		r.forget(key)
 		logger.V(1).Info("sandbox is not idle", "reason", reason, "requeueAfter", delay)
 		return ctrl.Result{RequeueAfter: min(delay, r.Config.CheckInterval)}, nil
 	}
 
-	first, ok := r.observation(request.NamespacedName)
+	first, ok := r.observation(key)
 	if !ok || first.revision != snapshot.Revision {
-		r.remember(request.NamespacedName, observation{revision: snapshot.Revision, at: now})
+		r.remember(key, observation{revision: snapshot.Revision, at: now})
 		return ctrl.Result{RequeueAfter: r.Config.GracePeriod}, nil
 	}
 	if graceRemaining := r.Config.GracePeriod - now.Sub(first.at); graceRemaining > 0 {
@@ -105,14 +113,14 @@ func (r *BatchSandboxReconciler) Reconcile(ctx context.Context, request ctrl.Req
 
 	if r.Config.DryRun {
 		logger.Info("sandbox is eligible for idle pause", "dryRun", true, "revision", snapshot.Revision)
-		r.forget(request.NamespacedName)
+		r.forget(key)
 		return ctrl.Result{RequeueAfter: r.Config.CheckInterval}, nil
 	}
-	if err := r.Lifecycle.Pause(ctx, sandbox.Name); err != nil {
+	if err := r.Lifecycle.Pause(ctx, sandboxID); err != nil {
 		return ctrl.Result{RequeueAfter: r.Config.CheckInterval}, fmt.Errorf("pause sandbox: %w", err)
 	}
 	logger.Info("requested idle pause", "revision", snapshot.Revision)
-	r.forget(request.NamespacedName)
+	r.forget(key)
 	return ctrl.Result{}, nil
 }
 
@@ -134,23 +142,27 @@ func paused(sandbox *sandboxv1alpha1.BatchSandbox) bool {
 	return sandbox.Spec.Pause != nil && *sandbox.Spec.Pause
 }
 
-func (r *BatchSandboxReconciler) observation(key types.NamespacedName) (observation, bool) {
+func (r *BatchSandboxReconciler) observation(key string) (observation, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	value, ok := r.observations[key]
 	return value, ok
 }
 
-func (r *BatchSandboxReconciler) remember(key types.NamespacedName, value observation) {
+func (r *BatchSandboxReconciler) remember(key string, value observation) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.observations[key] = value
 }
 
-func (r *BatchSandboxReconciler) forget(key types.NamespacedName) {
+func (r *BatchSandboxReconciler) forget(key string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.observations, key)
+}
+
+func candidateKey(kind string, name types.NamespacedName) string {
+	return kind + ":" + name.String()
 }
 
 func min(a, b time.Duration) time.Duration {
