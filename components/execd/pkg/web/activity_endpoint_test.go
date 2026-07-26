@@ -45,6 +45,13 @@ func TestActivityEndpointDoesNotUpdateActivity(t *testing.T) {
 	}
 }
 
+func TestNewRouterRequiresActivityTracker(t *testing.T) {
+	_, err := NewRouter("", nil, controller.DefaultActivityConfig())
+	if err == nil {
+		t.Fatal("expected missing activity tracker error")
+	}
+}
+
 func TestNewRouterRejectsInvalidActivityConfig(t *testing.T) {
 	_, err := NewRouter("", activity.NewTracker(), controller.ActivityConfig{})
 	if err == nil {

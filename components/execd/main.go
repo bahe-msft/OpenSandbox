@@ -62,7 +62,11 @@ func main() {
 	log.Init(flag.ServerLogLevel)
 
 	activityTracker := activity.NewTracker()
-	ctrl := controller.InitCodeRunner(activityTracker)
+	ctrl, err := controller.InitCodeRunner(activityTracker)
+	if err != nil {
+		log.Error("failed to initialize runtime controller: %v", err)
+		os.Exit(1)
+	}
 
 	// Always store probe result for capabilities endpoint.
 	controller.InitIsolatedProbe(&isolationProbe)

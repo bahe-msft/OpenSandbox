@@ -68,7 +68,9 @@ func newPTYTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	prev := codeRunner
 	tracker := activity.NewTracker()
-	codeRunner = runtime.NewController("", "", tracker)
+	controller, err := runtime.NewController("", "", tracker)
+	require.NoError(t, err)
+	codeRunner = controller
 	t.Cleanup(func() { codeRunner = prev })
 	return httptest.NewServer(buildPTYRouter(tracker))
 }

@@ -44,7 +44,8 @@ func newRunner(t *testing.T) *runtime.IsolatedRunner {
 func newRunnerWithConfig(t *testing.T, cfg isolation.Config) *runtime.IsolatedRunner {
 	t.Helper()
 
-	ctrl := runtime.NewController("", "", activity.NewTracker())
+	ctrl, err := runtime.NewController("", "", activity.NewTracker())
+	require.NoError(t, err)
 	iso := isolation.NewBwrap(cfg)
 	if !iso.Available() {
 		t.Skip("bwrap not available")

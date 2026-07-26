@@ -16,7 +16,7 @@ package model
 
 import "time"
 
-// ActivityTouchRequest records point activity and optionally holds the sandbox awake.
+// ActivityTouchRequest records point-in-time activity and optionally holds the sandbox awake.
 type ActivityTouchRequest struct {
 	// KeepAliveSeconds prevents idle controllers from pausing the sandbox until the returned keep_awake_until.
 	// A value of 0 records activity without a keep-awake deadline.

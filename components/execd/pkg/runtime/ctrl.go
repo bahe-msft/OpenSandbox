@@ -17,6 +17,7 @@ package runtime
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -71,12 +72,15 @@ type commandKernel struct {
 }
 
 // NewController creates a runtime controller.
-func NewController(baseURL, token string, activityTracker *activity.Tracker) *Controller {
+func NewController(baseURL, token string, activityTracker *activity.Tracker) (*Controller, error) {
+	if activityTracker == nil {
+		return nil, errors.New("activity tracker is required")
+	}
 	return &Controller{
 		baseURL:  baseURL,
 		token:    token,
 		activity: activityTracker,
-	}
+	}, nil
 }
 
 // Execute dispatches a request to the correct backend.

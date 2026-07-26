@@ -138,7 +138,9 @@ func TestGetContext_NotFoundReturns404(t *testing.T) {
 	ctrl := NewCodeInterpretingController(ctx)
 
 	previous := codeRunner
-	codeRunner = runtime.NewController("", "", activity.NewTracker())
+	controller, err := runtime.NewController("", "", activity.NewTracker())
+	require.NoError(t, err)
+	codeRunner = controller
 	t.Cleanup(func() { codeRunner = previous })
 
 	ctrl.GetContext()

@@ -15,6 +15,7 @@
 package web
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +28,9 @@ import (
 
 // NewRouter builds a Gin engine with all execd routes.
 func NewRouter(accessToken string, tracker *activity.Tracker, activityConfig controller.ActivityConfig) (*gin.Engine, error) {
+	if tracker == nil {
+		return nil, errors.New("activity tracker is required")
+	}
 	if err := activityConfig.Validate(); err != nil {
 		return nil, err
 	}

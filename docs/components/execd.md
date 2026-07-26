@@ -209,8 +209,9 @@ Example response:
 `busy` is true while execd is handling a counted long-running operation such as
 foreground command execution, code execution, session runs, file transfer,
 isolated-session runs, or ordinary proxied HTTP requests. `revision` changes
-when activity is observed or an active operation starts or completes, allowing an
-external idle controller to detect activity between two checks.
+when activity is recorded (including touch/keep-alive calls) or an active
+operation starts or completes, allowing an external idle controller to detect
+activity between two checks.
 
 ### OpenTelemetry Metrics
 

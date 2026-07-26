@@ -14,8 +14,23 @@
 
 package runtime
 
-import "github.com/alibaba/opensandbox/execd/pkg/activity"
+import (
+	"testing"
+
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
+)
 
 func newTestController(baseURL, token string) *Controller {
-	return NewController(baseURL, token, activity.NewTracker())
+	controller, err := NewController(baseURL, token, activity.NewTracker())
+	if err != nil {
+		panic(err)
+	}
+	return controller
+}
+
+func TestNewControllerRequiresActivityTracker(t *testing.T) {
+	t.Parallel()
+	if _, err := NewController("", "", nil); err == nil {
+		t.Fatal("expected missing activity tracker error")
+	}
 }

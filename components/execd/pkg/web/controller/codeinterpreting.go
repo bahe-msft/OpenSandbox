@@ -35,10 +35,13 @@ import (
 
 var codeRunner codeExecutionRunner
 
-func InitCodeRunner(activityTracker *activity.Tracker) *runtime.Controller {
-	ctrl := runtime.NewController(flag.JupyterServerHost, flag.JupyterServerToken, activityTracker)
+func InitCodeRunner(activityTracker *activity.Tracker) (*runtime.Controller, error) {
+	ctrl, err := runtime.NewController(flag.JupyterServerHost, flag.JupyterServerToken, activityTracker)
+	if err != nil {
+		return nil, err
+	}
 	codeRunner = ctrl
-	return ctrl
+	return ctrl, nil
 }
 
 // CodeInterpretingController handles code execution entrypoints.
