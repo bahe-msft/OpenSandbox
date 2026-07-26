@@ -1,0 +1,266 @@
+name: Publish AKS Images
+
+permissions:
+  contents: read
+  packages: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: 'Component to build, or all AKS images'
+        required: true
+        type: choice
+        options:
+          - all
+          - execd
+          - code-interpreter
+          - ingress
+          - egress
+          - controller
+          - task-executor
+          - image-committer
+          - server
+        default: 'all'
+      image_tag:
+        description: 'Optional Docker image tag override. Defaults to <component-version>-<aks-tag>-<short-commit> when aks_tag is set, otherwise <component-version>-<short-commit>.'
+        required: false
+        default: ''
+      aks_tag:
+        description: 'Optional AKS changelog tag, for example aksdev/20260726. Included in generated image tags as aksdev-20260726.'
+        required: false
+        default: ''
+      ghcr_owner:
+        description: 'GHCR owner/org for image publishes'
+        required: true
+        default: 'bahe-msft'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      components: ${{ steps.components.outputs.components }}
+    steps:
+      - name: Select components
+        id: components
+        run: |
+          set -euo pipefail
+          COMPONENT="${{ inputs.component }}"
+          if [[ "$COMPONENT" == "all" ]]; then
+            echo 'components=["execd","code-interpreter","ingress","egress","controller","task-executor","image-committer","server"]' >> "$GITHUB_OUTPUT"
+          else
+            printf 'components=["%s"]\n' "$COMPONENT" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJson(needs.prepare.outputs.components) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image settings
+        id: settings
+        run: |
+          set -euo pipefail
+
+          sanitize_image_tag_part() {
+            local value="$1"
+            value="${value,,}"
+            value="$(printf '%s' "$value" | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//')"
+            if [[ -z "$value" ]]; then
+              echo "unable to derive a Docker tag segment from AKS tag '$1'" >&2
+              return 1
+            fi
+            echo "$value"
+          }
+
+          component_version() {
+            local component="$1"
+            local version=""
+            case "$component" in
+              execd)
+                version="$(grep -m1 -oE 'execd:v[0-9][^"[:space:]]*' kubernetes/charts/opensandbox-server/values.yaml | cut -d: -f2)"
+                ;;
+              egress)
+                version="$(grep -m1 -oE 'egress:v[0-9][^"[:space:]]*' kubernetes/charts/opensandbox-server/values.yaml | cut -d: -f2)"
+                ;;
+              ingress)
+                version="$(awk '/^[[:space:]]+gateway:/{in_gateway=1} in_gateway && /^[[:space:]]+tag: /{gsub(/"/, "", $2); print $2; exit}' kubernetes/charts/opensandbox-server/values.yaml)"
+                ;;
+              server)
+                version="$(awk '/^server:/{in_server=1} in_server && /^[[:space:]]+image:/{in_image=1; next} in_image && /^[[:space:]]+tag: /{gsub(/"/, "", $2); print $2; exit}' kubernetes/charts/opensandbox-server/values.yaml)"
+                ;;
+              controller|task-executor)
+                version="$(awk -F'"' '/^appVersion:/{print $2; exit}' kubernetes/charts/opensandbox-controller/Chart.yaml)"
+                version="v${version#v}"
+                ;;
+              image-committer)
+                version="$(grep -m1 -oE 'image-committer:v[0-9][^"[:space:]]*' kubernetes/charts/opensandbox-controller/values.yaml | cut -d: -f2)"
+                ;;
+              code-interpreter)
+                version="$(grep -m1 -oE 'code-interpreter:v[0-9]+\.[0-9]+\.[0-9]+' README.md | cut -d: -f2)"
+                ;;
+              *)
+                echo "unknown component: $component" >&2
+                return 1
+                ;;
+            esac
+
+            if [[ -z "$version" ]]; then
+              echo "unable to resolve component version for $component" >&2
+              return 1
+            fi
+            echo "$version"
+          }
+
+          COMPONENT="${{ matrix.component }}"
+          COMPONENT_VERSION="$(component_version "$COMPONENT")"
+          SHORT_SHA="${GITHUB_SHA::12}"
+          AKS_TAG="${{ inputs.aks_tag }}"
+          if [[ -z "$AKS_TAG" && "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == aksdev/* ]]; then
+            AKS_TAG="$GITHUB_REF_NAME"
+          fi
+
+          IMAGE_TAG="${{ inputs.image_tag }}"
+          if [[ -z "$IMAGE_TAG" ]]; then
+            if [[ -n "$AKS_TAG" ]]; then
+              AKS_TAG_PART="$(sanitize_image_tag_part "$AKS_TAG")"
+              IMAGE_TAG="${COMPONENT_VERSION}-${AKS_TAG_PART}-${SHORT_SHA}"
+            else
+              IMAGE_TAG="${COMPONENT_VERSION}-${SHORT_SHA}"
+            fi
+          fi
+          if [[ ! "$IMAGE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Docker image tag '$IMAGE_TAG' is invalid. Use aks_tag for values like aksdev/YYYYMMDD so '/' can be sanitized." >&2
+            exit 1
+          fi
+
+          GHCR_OWNER="${{ inputs.ghcr_owner }}"
+          GHCR_OWNER="${GHCR_OWNER,,}"
+          GHCR_REPO="ghcr.io/${GHCR_OWNER}/opensandbox"
+
+          echo "component=$COMPONENT" >> "$GITHUB_OUTPUT"
+          echo "component_version=$COMPONENT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "aks_tag=$AKS_TAG" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "image=${GHCR_REPO}/${COMPONENT}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          df -h
+
+      - name: Build and push image
+        id: build
+        env:
+          COMPONENT: ${{ steps.settings.outputs.component }}
+          COMPONENT_VERSION: ${{ steps.settings.outputs.component_version }}
+          IMAGE: ${{ steps.settings.outputs.image }}
+          AKS_TAG: ${{ steps.settings.outputs.aks_tag }}
+          BUILD_METADATA_FILE: ${{ runner.temp }}/opensandbox-aks-image-${{ matrix.component }}.json
+        run: |
+          set -euo pipefail
+
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          SHORT_COMMIT="${GITHUB_SHA::12}"
+          PLATFORMS="linux/amd64,linux/arm64"
+          BUILD_ARGS=()
+
+          case "$COMPONENT" in
+            execd)
+              DOCKERFILE="components/execd/Dockerfile"
+              CONTEXT="."
+              BUILD_ARGS+=(--build-arg "VERSION=${COMPONENT_VERSION}" --build-arg "GIT_COMMIT=${GITHUB_SHA}" --build-arg "BUILD_TIME=${BUILD_TIME}")
+              ;;
+            ingress)
+              DOCKERFILE="components/ingress/Dockerfile"
+              CONTEXT="."
+              BUILD_ARGS+=(--build-arg "VERSION=${COMPONENT_VERSION}" --build-arg "GIT_COMMIT=${GITHUB_SHA}" --build-arg "BUILD_TIME=${BUILD_TIME}")
+              ;;
+            egress)
+              DOCKERFILE="components/egress/Dockerfile"
+              CONTEXT="."
+              BUILD_ARGS+=(--build-arg "VERSION=${COMPONENT_VERSION}" --build-arg "GIT_COMMIT=${GITHUB_SHA}" --build-arg "BUILD_TIME=${BUILD_TIME}")
+              ;;
+            code-interpreter)
+              DOCKERFILE="sandboxes/code-interpreter/Dockerfile"
+              CONTEXT="sandboxes/code-interpreter"
+              ;;
+            controller)
+              DOCKERFILE="kubernetes/Dockerfile"
+              CONTEXT="kubernetes"
+              BUILD_ARGS+=(--build-arg "PACKAGE=./cmd/controller" --build-arg "COMMIT_ID=${SHORT_COMMIT}" --build-arg "BUILD_DATE=${BUILD_TIME}")
+              ;;
+            task-executor)
+              DOCKERFILE="kubernetes/Dockerfile"
+              CONTEXT="kubernetes"
+              BUILD_ARGS+=(--build-arg "PACKAGE=cmd/task-executor/main.go" --build-arg "USERID=0" --build-arg "COMMIT_ID=${SHORT_COMMIT}" --build-arg "BUILD_DATE=${BUILD_TIME}")
+              ;;
+            image-committer)
+              DOCKERFILE="kubernetes/Dockerfile.image-committer"
+              CONTEXT="kubernetes"
+              ;;
+            server)
+              DOCKERFILE="server/Dockerfile"
+              CONTEXT="server"
+              ;;
+            *)
+              echo "unknown component: $COMPONENT" >&2
+              exit 1
+              ;;
+          esac
+
+          docker buildx build \
+            --platform "$PLATFORMS" \
+            -f "$DOCKERFILE" \
+            -t "$IMAGE" \
+            "${BUILD_ARGS[@]}" \
+            --metadata-file "$BUILD_METADATA_FILE" \
+            --push \
+            "$CONTEXT"
+
+          DIGEST="$(jq -r '."containerimage.digest" // empty' "$BUILD_METADATA_FILE")"
+          if [[ -z "$DIGEST" ]]; then
+            echo "Unable to resolve image digest from $BUILD_METADATA_FILE" >&2
+            cat "$BUILD_METADATA_FILE" >&2
+            exit 1
+          fi
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize image
+        env:
+          IMAGE: ${{ steps.settings.outputs.image }}
+          AKS_TAG: ${{ steps.settings.outputs.aks_tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### Published AKS image"
+            echo
+            echo "- Image: \`${IMAGE}\`"
+            if [[ -n "${AKS_TAG}" ]]; then
+              echo "- AKS tag: \`${AKS_TAG}\`"
+            fi
+            echo "- Digest: \`${DIGEST}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
