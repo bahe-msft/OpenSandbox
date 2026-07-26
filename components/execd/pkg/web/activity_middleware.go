@@ -33,6 +33,12 @@ type activityHandler func(*activity.Tracker, *gin.Context)
 // activityMiddleware builds a route-to-behavior table once and captures it in
 // the returned Gin handler. Routes absent from the table are intentionally not
 // tracked.
+//
+// TODO: Route registration in router.go and activityRoutes are maintained
+// separately. A newly added execd route can therefore be omitted from activity
+// tracking without a compile-time or test failure. Move activity behavior next
+// to route registration, or add a route-table completeness check, so the route
+// and its activity semantics remain paired as the API grows.
 func activityMiddleware(tracker *activity.Tracker) gin.HandlerFunc {
 	routes := activityRoutes()
 	return func(ctx *gin.Context) {
