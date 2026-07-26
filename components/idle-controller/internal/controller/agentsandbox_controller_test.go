@@ -44,18 +44,15 @@ func TestAgentSandboxReconcilePausesAfterStableObservation(t *testing.T) {
 			"lastTransitionTime": "2026-07-26T20:00:00Z",
 		}},
 	}
-	policy := &BatchSandboxReconciler{
-		Lifecycle: lifecycle,
-		Config: Config{
-			PauseAfter:    time.Hour,
-			GracePeriod:   30 * time.Second,
-			CheckInterval: 5 * time.Minute,
-			OptInLabel:    "opensandbox.ai/auto-pause",
-			OptInValue:    "true",
-		},
-		Now:          func() time.Time { return now },
-		observations: make(map[string]observation),
-	}
+	policy, err := NewIdlePolicy(lifecycle, Config{
+		PauseAfter:    time.Hour,
+		GracePeriod:   30 * time.Second,
+		CheckInterval: 5 * time.Minute,
+		OptInLabel:    "opensandbox.ai/auto-pause",
+		OptInValue:    "true",
+	})
+	require.NoError(t, err)
+	policy.now = func() time.Time { return now }
 	reconciler := &AgentSandboxReconciler{
 		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox).Build(),
 		Policy: policy,

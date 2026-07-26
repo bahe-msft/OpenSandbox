@@ -23,7 +23,7 @@ const sandboxIDLabel = "opensandbox.io/id"
 // AgentSandboxReconciler watches agent-sandbox Sandbox CRs and delegates idle policy.
 type AgentSandboxReconciler struct {
 	client.Client
-	Policy *BatchSandboxReconciler
+	Policy *IdlePolicy
 }
 
 // SetupWithManager registers the unstructured AgentSandbox watch without taking
@@ -53,7 +53,7 @@ func (r *AgentSandboxReconciler) Reconcile(ctx context.Context, request ctrl.Req
 		r.Policy.forget(key)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	if !sandbox.GetDeletionTimestamp().IsZero() || sandbox.GetLabels()[r.Policy.Config.OptInLabel] != r.Policy.Config.OptInValue {
+	if !sandbox.GetDeletionTimestamp().IsZero() || sandbox.GetLabels()[r.Policy.config.OptInLabel] != r.Policy.config.OptInValue {
 		r.Policy.forget(key)
 		return ctrl.Result{}, nil
 	}

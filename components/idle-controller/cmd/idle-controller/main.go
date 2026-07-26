@@ -59,17 +59,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	policy, err := idlecontroller.NewIdlePolicy(lifecycle, idlecontroller.Config{
+		PauseAfter:    cfg.PauseAfter,
+		GracePeriod:   cfg.GracePeriod,
+		CheckInterval: cfg.CheckInterval,
+		DryRun:        cfg.DryRun,
+		OptInLabel:    cfg.OptInLabel,
+		OptInValue:    cfg.OptInValue,
+	})
+	if err != nil {
+		logger.Error(err, "create idle policy")
+		os.Exit(1)
+	}
 	reconciler := &idlecontroller.BatchSandboxReconciler{
-		Client:    manager.GetClient(),
-		Lifecycle: lifecycle,
-		Config: idlecontroller.Config{
-			PauseAfter:    cfg.PauseAfter,
-			GracePeriod:   cfg.GracePeriod,
-			CheckInterval: cfg.CheckInterval,
-			DryRun:        cfg.DryRun,
-			OptInLabel:    cfg.OptInLabel,
-			OptInValue:    cfg.OptInValue,
-		},
+		Client: manager.GetClient(),
+		Policy: policy,
 	}
 	if err := reconciler.SetupWithManager(manager); err != nil {
 		logger.Error(err, "register BatchSandbox controller")
@@ -77,7 +81,7 @@ func main() {
 	}
 	agentReconciler := &idlecontroller.AgentSandboxReconciler{
 		Client: manager.GetClient(),
-		Policy: reconciler,
+		Policy: policy,
 	}
 	if err := agentReconciler.SetupWithManager(manager); err != nil {
 		if meta.IsNoMatchError(err) {

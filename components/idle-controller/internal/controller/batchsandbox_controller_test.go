@@ -40,6 +40,15 @@ func (f *fakeLifecycle) Pause(_ context.Context, sandboxID string) error {
 	return nil
 }
 
+func TestNewIdlePolicyValidatesDependencies(t *testing.T) {
+	t.Parallel()
+	_, err := NewIdlePolicy(nil, Config{})
+	require.Error(t, err)
+
+	_, err = NewIdlePolicy(&fakeLifecycle{}, Config{})
+	require.Error(t, err)
+}
+
 func TestReconcilePausesAfterStableGraceObservation(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 7, 26, 21, 0, 0, 0, time.UTC)
@@ -113,19 +122,19 @@ func newTestReconciler(t *testing.T, lifecycle opensandbox.Lifecycle, now *time.
 			Ready: 1,
 		},
 	}
+	policy, err := NewIdlePolicy(lifecycle, Config{
+		PauseAfter:    time.Hour,
+		GracePeriod:   30 * time.Second,
+		CheckInterval: 5 * time.Minute,
+		DryRun:        dryRun,
+		OptInLabel:    "opensandbox.ai/auto-pause",
+		OptInValue:    "true",
+	})
+	require.NoError(t, err)
+	policy.now = func() time.Time { return *now }
 	return &BatchSandboxReconciler{
-		Client:    fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox).Build(),
-		Lifecycle: lifecycle,
-		Config: Config{
-			PauseAfter:    time.Hour,
-			GracePeriod:   30 * time.Second,
-			CheckInterval: 5 * time.Minute,
-			DryRun:        dryRun,
-			OptInLabel:    "opensandbox.ai/auto-pause",
-			OptInValue:    "true",
-		},
-		Now:          func() time.Time { return *now },
-		observations: make(map[string]observation),
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox).Build(),
+		Policy: policy,
 	}
 }
 
