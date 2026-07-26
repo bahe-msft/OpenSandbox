@@ -23,15 +23,15 @@ import (
 	"github.com/alibaba/opensandbox/execd/pkg/activity"
 )
 
-type activityMode int
+type activityTrackingMode int
 
 const (
-	// activityIgnore excludes operational polling and endpoints that instrument themselves.
-	activityIgnore activityMode = iota
-	// activityPoint records one successful user interaction after the handler returns.
-	activityPoint
-	// activityBusy keeps active_operations incremented for the full request lifetime.
-	activityBusy
+	// activityUntracked excludes operational polling and endpoints that instrument themselves.
+	activityUntracked activityTrackingMode = iota
+	// activityPointInTime records one successful user interaction after the handler returns.
+	activityPointInTime
+	// activityRequestLifetime keeps active_operations incremented for the full request lifetime.
+	activityRequestLifetime
 )
 
 type activityRoute struct {
@@ -39,65 +39,51 @@ type activityRoute struct {
 	path   string
 }
 
-type activityClassifier map[activityRoute]activityMode
+type activityClassifier map[activityRoute]activityTrackingMode
 
 // newActivityClassifier uses Gin route templates so instrumentation stays
 // declarative and additions are reviewable alongside router.go.
 func newActivityClassifier() activityClassifier {
 	return activityClassifier{
-		{http.MethodGet, "/ping"}:                                              activityIgnore,
-		{http.MethodGet, "/v1/activity"}:                                       activityIgnore,
-		{http.MethodPost, "/v1/activity/touch"}:                                activityIgnore,
-		{http.MethodGet, "/metrics"}:                                           activityIgnore,
-		{http.MethodGet, "/metrics/watch"}:                                     activityIgnore,
-		{http.MethodPost, "/command"}:                                          activityBusy,
-		{http.MethodDelete, "/command"}:                                        activityPoint,
-		{http.MethodGet, "/command/status/:id"}:                                activityIgnore,
-		{http.MethodGet, "/command/:id/logs"}:                                  activityIgnore,
-		{http.MethodPost, "/code"}:                                             activityBusy,
-		{http.MethodDelete, "/code"}:                                           activityPoint,
-		{http.MethodPost, "/code/context"}:                                     activityPoint,
-		{http.MethodGet, "/code/contexts"}:                                     activityIgnore,
-		{http.MethodDelete, "/code/contexts"}:                                  activityPoint,
-		{http.MethodGet, "/code/contexts/:contextId"}:                          activityIgnore,
-		{http.MethodDelete, "/code/contexts/:contextId"}:                       activityPoint,
-		{http.MethodPost, "/session"}:                                          activityPoint,
-		{http.MethodPost, "/session/:sessionId/run"}:                           activityBusy,
-		{http.MethodDelete, "/session/:sessionId"}:                             activityPoint,
-		{http.MethodPost, "/pty"}:                                              activityPoint,
-		{http.MethodGet, "/pty/:sessionId"}:                                    activityIgnore,
-		{http.MethodDelete, "/pty/:sessionId"}:                                 activityPoint,
-		{http.MethodGet, "/pty/:sessionId/ws"}:                                 activityIgnore, // PTY frames instrument themselves.
-		{http.MethodDelete, "/files"}:                                          activityBusy,
-		{http.MethodGet, "/files/info"}:                                        activityPoint,
-		{http.MethodPost, "/files/mv"}:                                         activityBusy,
-		{http.MethodPost, "/files/permissions"}:                                activityBusy,
-		{http.MethodGet, "/files/search"}:                                      activityPoint,
-		{http.MethodPost, "/files/replace"}:                                    activityBusy,
-		{http.MethodPost, "/files/upload"}:                                     activityBusy,
-		{http.MethodGet, "/files/download"}:                                    activityBusy,
-		{http.MethodGet, "/directories/list"}:                                  activityPoint,
-		{http.MethodPost, "/directories"}:                                      activityBusy,
-		{http.MethodDelete, "/directories"}:                                    activityBusy,
-		{http.MethodPost, "/v1/isolated/session"}:                              activityPoint,
-		{http.MethodGet, "/v1/isolated/sessions"}:                              activityIgnore,
-		{http.MethodGet, "/v1/isolated/session/:sessionId"}:                    activityIgnore,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/run"}:               activityBusy,
-		{http.MethodDelete, "/v1/isolated/session/:sessionId"}:                 activityPoint,
-		{http.MethodGet, "/v1/isolated/session/:sessionId/diff"}:               activityPoint,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/commit"}:            activityBusy,
-		{http.MethodGet, "/v1/isolated/session/:sessionId/files/info"}:         activityPoint,
-		{http.MethodGet, "/v1/isolated/session/:sessionId/files/download"}:     activityBusy,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/files/upload"}:      activityBusy,
-		{http.MethodDelete, "/v1/isolated/session/:sessionId/files"}:           activityBusy,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/files/mv"}:          activityBusy,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/files/permissions"}: activityBusy,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/files/replace"}:     activityBusy,
-		{http.MethodGet, "/v1/isolated/session/:sessionId/files/search"}:       activityPoint,
-		{http.MethodGet, "/v1/isolated/session/:sessionId/directories/list"}:   activityPoint,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/directories"}:       activityBusy,
-		{http.MethodDelete, "/v1/isolated/session/:sessionId/directories"}:     activityBusy,
-		{http.MethodGet, "/v1/isolated/capabilities"}:                          activityIgnore,
+		{http.MethodPost, "/command"}:                                          activityRequestLifetime,
+		{http.MethodDelete, "/command"}:                                        activityPointInTime,
+		{http.MethodPost, "/code"}:                                             activityRequestLifetime,
+		{http.MethodDelete, "/code"}:                                           activityPointInTime,
+		{http.MethodPost, "/code/context"}:                                     activityPointInTime,
+		{http.MethodDelete, "/code/contexts"}:                                  activityPointInTime,
+		{http.MethodDelete, "/code/contexts/:contextId"}:                       activityPointInTime,
+		{http.MethodPost, "/session"}:                                          activityPointInTime,
+		{http.MethodPost, "/session/:sessionId/run"}:                           activityRequestLifetime,
+		{http.MethodDelete, "/session/:sessionId"}:                             activityPointInTime,
+		{http.MethodPost, "/pty"}:                                              activityPointInTime,
+		{http.MethodDelete, "/pty/:sessionId"}:                                 activityPointInTime,
+		{http.MethodDelete, "/files"}:                                          activityRequestLifetime,
+		{http.MethodGet, "/files/info"}:                                        activityPointInTime,
+		{http.MethodPost, "/files/mv"}:                                         activityRequestLifetime,
+		{http.MethodPost, "/files/permissions"}:                                activityRequestLifetime,
+		{http.MethodGet, "/files/search"}:                                      activityPointInTime,
+		{http.MethodPost, "/files/replace"}:                                    activityRequestLifetime,
+		{http.MethodPost, "/files/upload"}:                                     activityRequestLifetime,
+		{http.MethodGet, "/files/download"}:                                    activityRequestLifetime,
+		{http.MethodGet, "/directories/list"}:                                  activityPointInTime,
+		{http.MethodPost, "/directories"}:                                      activityRequestLifetime,
+		{http.MethodDelete, "/directories"}:                                    activityRequestLifetime,
+		{http.MethodPost, "/v1/isolated/session"}:                              activityPointInTime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/run"}:               activityRequestLifetime,
+		{http.MethodDelete, "/v1/isolated/session/:sessionId"}:                 activityPointInTime,
+		{http.MethodGet, "/v1/isolated/session/:sessionId/diff"}:               activityPointInTime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/commit"}:            activityRequestLifetime,
+		{http.MethodGet, "/v1/isolated/session/:sessionId/files/info"}:         activityPointInTime,
+		{http.MethodGet, "/v1/isolated/session/:sessionId/files/download"}:     activityRequestLifetime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/files/upload"}:      activityRequestLifetime,
+		{http.MethodDelete, "/v1/isolated/session/:sessionId/files"}:           activityRequestLifetime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/files/mv"}:          activityRequestLifetime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/files/permissions"}: activityRequestLifetime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/files/replace"}:     activityRequestLifetime,
+		{http.MethodGet, "/v1/isolated/session/:sessionId/files/search"}:       activityPointInTime,
+		{http.MethodGet, "/v1/isolated/session/:sessionId/directories/list"}:   activityPointInTime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/directories"}:       activityRequestLifetime,
+		{http.MethodDelete, "/v1/isolated/session/:sessionId/directories"}:     activityRequestLifetime,
 	}
 }
 
@@ -106,11 +92,11 @@ func activityMiddleware(tracker *activity.Tracker) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		mode := classifier.classify(ctx.Request.Method, ctx.FullPath(), ctx.Request.URL.Path, ctx.GetHeader("Upgrade"))
 		switch mode {
-		case activityBusy:
+		case activityRequestLifetime:
 			end := tracker.Begin()
 			defer end()
 			ctx.Next()
-		case activityPoint:
+		case activityPointInTime:
 			ctx.Next()
 			if ctx.Writer.Status() < http.StatusBadRequest {
 				tracker.Touch()
@@ -121,12 +107,12 @@ func activityMiddleware(tracker *activity.Tracker) gin.HandlerFunc {
 	}
 }
 
-func (c activityClassifier) classify(method, routePath, requestPath, upgrade string) activityMode {
+func (c activityClassifier) classify(method, routePath, requestPath, upgrade string) activityTrackingMode {
 	if strings.HasPrefix(requestPath, "/proxy/") {
 		if strings.EqualFold(upgrade, "websocket") {
-			return activityPoint
+			return activityPointInTime
 		}
-		return activityBusy
+		return activityRequestLifetime
 	}
 	return c[activityRoute{method: method, path: routePath}]
 }
