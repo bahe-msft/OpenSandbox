@@ -26,15 +26,17 @@ type Snapshot struct {
 	Busy             bool
 	ActiveOperations uint64
 	Revision         uint64
+	KeepAwakeUntil   time.Time
 }
 
 // Tracker records process-wide execd activity for idle detection.
 type Tracker struct {
-	mu       sync.Mutex
-	last     time.Time
-	active   uint64
-	revision uint64
-	now      func() time.Time
+	mu             sync.Mutex
+	last           time.Time
+	active         uint64
+	revision       uint64
+	keepAwakeUntil time.Time
+	now            func() time.Time
 }
 
 // NewTracker creates a tracker initialized with activity at startup time.
@@ -88,6 +90,30 @@ func (t *Tracker) Begin() func() {
 	}
 }
 
+// KeepAwake records activity and prevents idle controllers from treating the sandbox as idle until duration elapses.
+func (t *Tracker) KeepAwake(duration time.Duration) {
+	if t == nil {
+		return
+	}
+	if duration <= 0 {
+		t.Touch()
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	now := t.currentLocked()
+	if !now.Before(t.last) {
+		t.last = now
+	}
+	until := now.Add(duration)
+	if until.After(t.keepAwakeUntil) {
+		t.keepAwakeUntil = until
+	}
+	t.revision++
+}
+
 // Snapshot returns a consistent activity view. It does not update activity state.
 func (t *Tracker) Snapshot() Snapshot {
 	if t == nil {
@@ -101,12 +127,18 @@ func (t *Tracker) Snapshot() Snapshot {
 	if observed.Before(t.last) {
 		observed = t.last
 	}
+	keepAwakeUntil := t.keepAwakeUntil
+	if !keepAwakeUntil.IsZero() && !observed.Before(keepAwakeUntil) {
+		keepAwakeUntil = time.Time{}
+	}
+
 	return Snapshot{
 		LastActivityAt:   t.last,
 		ObservedAt:       observed,
 		Busy:             t.active > 0,
 		ActiveOperations: t.active,
 		Revision:         t.revision,
+		KeepAwakeUntil:   keepAwakeUntil,
 	}
 }
 

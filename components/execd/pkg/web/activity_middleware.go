@@ -55,7 +55,7 @@ func activityMiddleware(tracker *activity.Tracker) gin.HandlerFunc {
 }
 
 func classifyActivity(method, path, upgrade string) activityMode {
-	if path == "/v1/activity" || path == "/ping" || strings.HasPrefix(path, "/metrics") {
+	if strings.HasPrefix(path, "/v1/activity") || path == "/ping" || strings.HasPrefix(path, "/metrics") {
 		return activityIgnore
 	}
 

@@ -28,6 +28,7 @@ func TestClassifyActivity(t *testing.T) {
 		want    activityMode
 	}{
 		{name: "activity endpoint ignored", method: http.MethodGet, path: "/v1/activity", want: activityIgnore},
+		{name: "activity touch handled by controller", method: http.MethodPost, path: "/v1/activity/touch", want: activityIgnore},
 		{name: "health ignored", method: http.MethodGet, path: "/ping", want: activityIgnore},
 		{name: "command status ignored", method: http.MethodGet, path: "/command/status/abc", want: activityIgnore},
 		{name: "command logs ignored", method: http.MethodGet, path: "/command/abc/logs", want: activityIgnore},

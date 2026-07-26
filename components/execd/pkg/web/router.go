@@ -34,6 +34,7 @@ func NewRouter(accessToken string, tracker *activity.Tracker) *gin.Engine {
 
 	r.GET("/ping", controller.PingHandler)
 	r.GET("/v1/activity", withActivity(tracker, func(c *controller.ActivityController) { c.Get() }))
+	r.POST("/v1/activity/touch", withActivity(tracker, func(c *controller.ActivityController) { c.Touch() }))
 
 	files := r.Group("/files")
 	{

@@ -182,6 +182,13 @@ allowed_writable = ["/workspace", "/mnt", "/media", "/data"]
 `GET /v1/activity` returns a read-only snapshot of sandbox-local activity for
 external idle controllers. The endpoint itself does not update activity state.
 
+`POST /v1/activity/touch` records user activity. It accepts an optional
+`keep_alive_seconds` value to ask idle controllers not to pause the sandbox until
+`keep_awake_until`. The keep-alive duration is capped at 86,400 seconds (24
+hours) per request so a single call cannot hold an environment forever. Repeated
+calls can renew the deadline when a client is still intentionally using the
+sandbox.
+
 Example response:
 
 ```json
@@ -190,9 +197,12 @@ Example response:
   "observed_at": "2026-07-26T14:33:00.012931Z",
   "busy": false,
   "active_operations": 0,
-  "revision": 184
+  "revision": 184,
+  "keep_awake_until": "2026-07-26T15:31:22.482193Z"
 }
 ```
+
+`keep_awake_until` is omitted when no active keep-alive deadline exists.
 
 `busy` is true while execd is handling a counted long-running operation such as
 foreground command execution, code execution, session runs, file transfer,

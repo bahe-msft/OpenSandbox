@@ -116,6 +116,46 @@ func TestTrackerIgnoresClockRegression(t *testing.T) {
 	}
 }
 
+func TestTrackerKeepAwake(t *testing.T) {
+	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
+	tr := NewTrackerWithClock(func() time.Time { return now })
+
+	tr.KeepAwake(30 * time.Second)
+	snap := tr.Snapshot()
+	wantUntil := now.Add(30 * time.Second)
+	if !snap.KeepAwakeUntil.Equal(wantUntil) {
+		t.Fatalf("keep awake until = %s, want %s", snap.KeepAwakeUntil, wantUntil)
+	}
+	if snap.Busy {
+		t.Fatal("keep awake should not make tracker busy")
+	}
+	if snap.Revision != 1 {
+		t.Fatalf("revision = %d, want 1", snap.Revision)
+	}
+
+	now = now.Add(time.Minute)
+	snap = tr.Snapshot()
+	if !snap.KeepAwakeUntil.IsZero() {
+		t.Fatalf("expired keep awake should be omitted from snapshot, got %s", snap.KeepAwakeUntil)
+	}
+	if snap.Revision != 1 {
+		t.Fatalf("snapshot should not mutate revision, got %d", snap.Revision)
+	}
+}
+
+func TestTrackerKeepAwakeOnlyExtends(t *testing.T) {
+	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
+	tr := NewTrackerWithClock(func() time.Time { return now })
+
+	tr.KeepAwake(time.Hour)
+	first := tr.Snapshot().KeepAwakeUntil
+	now = now.Add(time.Minute)
+	tr.KeepAwake(time.Minute)
+	if got := tr.Snapshot().KeepAwakeUntil; !got.Equal(first) {
+		t.Fatalf("shorter keep awake moved deadline to %s, want %s", got, first)
+	}
+}
+
 func TestTrackerConcurrentSnapshotConsistency(t *testing.T) {
 	tr := NewTracker()
 	var wg sync.WaitGroup

@@ -15,11 +15,19 @@
 package controller
 
 import (
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/web/model"
 )
+
+const maxKeepAliveDuration = 24 * time.Hour
 
 var activityTracker *activity.Tracker
 
@@ -50,12 +58,50 @@ func NewActivityController(ctx *gin.Context, tracker *activity.Tracker) *Activit
 
 // Get returns a read-only activity snapshot. This endpoint must not update activity.
 func (c *ActivityController) Get() {
-	snap := c.tracker.Snapshot()
-	c.RespondSuccess(model.ActivityResponse{
+	c.RespondSuccess(activityResponse(c.tracker.Snapshot()))
+}
+
+// Touch records user activity and optionally holds the sandbox awake for a bounded duration.
+func (c *ActivityController) Touch() {
+	var req model.ActivityTouchRequest
+	if err := c.bindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.RespondError(http.StatusBadRequest, model.ErrorCodeInvalidRequest, fmt.Sprintf("error parsing request: %v", err))
+		return
+	}
+	if req.KeepAliveSeconds < 0 {
+		c.RespondError(http.StatusBadRequest, model.ErrorCodeInvalidRequest, "keep_alive_seconds must be non-negative")
+		return
+	}
+
+	keepAlive := time.Duration(req.KeepAliveSeconds) * time.Second
+	if keepAlive > maxKeepAliveDuration {
+		c.RespondError(
+			http.StatusBadRequest,
+			model.ErrorCodeInvalidRequest,
+			fmt.Sprintf("keep_alive_seconds must not exceed %d", int64(maxKeepAliveDuration/time.Second)),
+		)
+		return
+	}
+
+	if keepAlive > 0 {
+		c.tracker.KeepAwake(keepAlive)
+	} else {
+		c.tracker.Touch()
+	}
+	c.RespondSuccess(activityResponse(c.tracker.Snapshot()))
+}
+
+func activityResponse(snap activity.Snapshot) model.ActivityResponse {
+	resp := model.ActivityResponse{
 		LastActivityAt:   snap.LastActivityAt,
 		ObservedAt:       snap.ObservedAt,
 		Busy:             snap.Busy,
 		ActiveOperations: snap.ActiveOperations,
 		Revision:         snap.Revision,
-	})
+	}
+	if !snap.KeepAwakeUntil.IsZero() {
+		keepAwakeUntil := snap.KeepAwakeUntil
+		resp.KeepAwakeUntil = &keepAwakeUntil
+	}
+	return resp
 }

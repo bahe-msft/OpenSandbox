@@ -16,11 +16,19 @@ package model
 
 import "time"
 
+// ActivityTouchRequest records point activity and optionally holds the sandbox awake.
+type ActivityTouchRequest struct {
+	// KeepAliveSeconds prevents idle controllers from pausing the sandbox until the returned keep_awake_until.
+	// A value of 0 records activity without a keep-awake deadline.
+	KeepAliveSeconds int64 `json:"keep_alive_seconds,omitempty"`
+}
+
 // ActivityResponse describes execd-local activity for external idle controllers.
 type ActivityResponse struct {
-	LastActivityAt   time.Time `json:"last_activity_at"`
-	ObservedAt       time.Time `json:"observed_at"`
-	Busy             bool      `json:"busy"`
-	ActiveOperations uint64    `json:"active_operations"`
-	Revision         uint64    `json:"revision"`
+	LastActivityAt   time.Time  `json:"last_activity_at"`
+	ObservedAt       time.Time  `json:"observed_at"`
+	Busy             bool       `json:"busy"`
+	ActiveOperations uint64     `json:"active_operations"`
+	Revision         uint64     `json:"revision"`
+	KeepAwakeUntil   *time.Time `json:"keep_awake_until,omitempty"`
 }
