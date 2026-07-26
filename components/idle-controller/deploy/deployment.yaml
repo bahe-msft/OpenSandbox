@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opensandbox-idle-controller
+  namespace: opensandbox-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: opensandbox-idle-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: opensandbox-idle-controller
+    spec:
+      serviceAccountName: opensandbox-idle-controller
+      containers:
+        - name: controller
+          image: ghcr.io/bahe-msft/opensandbox/idle-controller:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --opensandbox-url=http://opensandbox-server.opensandbox-system.svc.cluster.local
+            - --pause-after=1h
+            - --grace-period=30s
+            - --check-interval=5m
+            - --leader-elect=true
+            - --dry-run=true
+          env:
+            - name: OPENSANDBOX_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: opensandbox-api-key
+                  key: api-key
+          ports:
+            - name: metrics
+              containerPort: 8080
+            - name: health
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
