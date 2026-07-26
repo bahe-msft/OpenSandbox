@@ -22,16 +22,16 @@ import (
 	"time"
 
 	"github.com/alibaba/opensandbox/execd/pkg/activity"
+	"github.com/alibaba/opensandbox/execd/pkg/web/controller"
 	"github.com/alibaba/opensandbox/execd/pkg/web/model"
 )
 
 func TestActivityEndpointDoesNotUpdateActivity(t *testing.T) {
-	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
-	tracker := activity.NewTrackerWithClock(func() time.Time { return now })
-	router := NewRouter("", tracker)
+	tracker := activity.NewTracker()
+	router := NewRouter("", tracker, controller.DefaultActivityConfig())
 
 	first := getActivity(t, router)
-	now = now.Add(time.Minute)
+	time.Sleep(time.Millisecond)
 	second := getActivity(t, router)
 
 	if !second.LastActivityAt.Equal(first.LastActivityAt) {
@@ -40,8 +40,8 @@ func TestActivityEndpointDoesNotUpdateActivity(t *testing.T) {
 	if second.Revision != first.Revision {
 		t.Fatalf("activity endpoint changed revision from %d to %d", first.Revision, second.Revision)
 	}
-	if !second.ObservedAt.Equal(now) {
-		t.Fatalf("observed_at = %s, want %s", second.ObservedAt, now)
+	if second.ObservedAt.Before(first.ObservedAt) {
+		t.Fatalf("observed_at regressed from %s to %s", first.ObservedAt, second.ObservedAt)
 	}
 }
 

@@ -25,6 +25,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/isolation"
 	"github.com/alibaba/opensandbox/execd/pkg/runtime"
 )
@@ -43,7 +44,7 @@ func newRunner(t *testing.T) *runtime.IsolatedRunner {
 func newRunnerWithConfig(t *testing.T, cfg isolation.Config) *runtime.IsolatedRunner {
 	t.Helper()
 
-	ctrl := runtime.NewController("", "")
+	ctrl := runtime.NewController("", "", activity.NewTracker())
 	iso := isolation.NewBwrap(cfg)
 	if !iso.Available() {
 		t.Skip("bwrap not available")

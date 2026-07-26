@@ -37,7 +37,7 @@ func TestBashSession_NonZeroExitEmitsError(t *testing.T) {
 		t.Skip("bash not found in PATH")
 	}
 
-	c := NewController("", "")
+	c := newTestController("", "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -407,7 +407,7 @@ func TestBashSession_envDumpNotLeakedWhenNoOutput(t *testing.T) {
 
 func TestBashSession_heredoc(t *testing.T) {
 	rewardDir := t.TempDir()
-	controller := NewController("", "")
+	controller := newTestController("", "")
 
 	sessionID, err := controller.CreateBashSession(&CreateContextRequest{})
 	require.NoError(t, err)
@@ -594,7 +594,7 @@ func TestBashSession_DeleteBashSessionKillsRunningProcess(t *testing.T) {
 		t.Skip("bash not found in PATH")
 	}
 
-	c := NewController("", "")
+	c := newTestController("", "")
 	sessionID, err := c.CreateBashSession(&CreateContextRequest{})
 	require.NoError(t, err)
 

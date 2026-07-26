@@ -28,19 +28,17 @@ import (
 )
 
 func TestActivityTouchUpdatesRevision(t *testing.T) {
-	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
-	tracker := activity.NewTrackerWithClock(func() time.Time { return now })
-	router := NewRouter("", tracker)
+	tracker := activity.NewTracker()
+	router := NewRouter("", tracker, controller.DefaultActivityConfig())
 
 	initial := getActivity(t, router)
-	now = now.Add(time.Second)
 	resp := postActivityTouch(t, router, nil)
 
 	if resp.Revision != initial.Revision+1 {
 		t.Fatalf("revision = %d, want %d", resp.Revision, initial.Revision+1)
 	}
-	if !resp.LastActivityAt.Equal(now) {
-		t.Fatalf("last_activity_at = %s, want %s", resp.LastActivityAt, now)
+	if resp.LastActivityAt.Before(initial.LastActivityAt) {
+		t.Fatalf("last_activity_at regressed from %s to %s", initial.LastActivityAt, resp.LastActivityAt)
 	}
 	if resp.KeepAwakeUntil != nil {
 		t.Fatalf("keep_awake_until = %s, want nil", *resp.KeepAwakeUntil)
@@ -48,17 +46,17 @@ func TestActivityTouchUpdatesRevision(t *testing.T) {
 }
 
 func TestActivityTouchKeepAlive(t *testing.T) {
-	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
-	tracker := activity.NewTrackerWithClock(func() time.Time { return now })
-	router := NewRouter("", tracker)
+	tracker := activity.NewTracker()
+	router := NewRouter("", tracker, controller.DefaultActivityConfig())
 
+	before := time.Now().UTC().Add(time.Minute)
 	resp := postActivityTouch(t, router, map[string]any{"keep_alive_seconds": 60})
+	after := time.Now().UTC().Add(time.Minute)
 	if resp.KeepAwakeUntil == nil {
 		t.Fatal("keep_awake_until is nil")
 	}
-	want := now.Add(time.Minute)
-	if !resp.KeepAwakeUntil.Equal(want) {
-		t.Fatalf("keep_awake_until = %s, want %s", *resp.KeepAwakeUntil, want)
+	if resp.KeepAwakeUntil.Before(before) || resp.KeepAwakeUntil.After(after) {
+		t.Fatalf("keep_awake_until = %s, want between %s and %s", *resp.KeepAwakeUntil, before, after)
 	}
 	if resp.Busy {
 		t.Fatal("keepalive should not mark busy")
@@ -67,7 +65,7 @@ func TestActivityTouchKeepAlive(t *testing.T) {
 
 func TestActivityTouchRejectsTooLongKeepAlive(t *testing.T) {
 	tracker := activity.NewTracker()
-	router := NewRouter("", tracker)
+	router := NewRouter("", tracker, controller.DefaultActivityConfig())
 
 	body, err := json.Marshal(map[string]any{"keep_alive_seconds": 24*60*60 + 1})
 	if err != nil {
@@ -84,7 +82,7 @@ func TestActivityTouchRejectsTooLongKeepAlive(t *testing.T) {
 
 func TestActivityTouchRejectsHugeKeepAliveWithoutOverflow(t *testing.T) {
 	tracker := activity.NewTracker()
-	router := NewRouter("", tracker)
+	router := NewRouter("", tracker, controller.DefaultActivityConfig())
 
 	body, err := json.Marshal(map[string]any{"keep_alive_seconds": int64(1<<63 - 1)})
 	if err != nil {

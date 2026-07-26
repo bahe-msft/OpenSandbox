@@ -41,14 +41,10 @@ type Tracker struct {
 
 // NewTracker creates a tracker initialized with activity at startup time.
 func NewTracker() *Tracker {
-	return NewTrackerWithClock(time.Now)
+	return newTracker(time.Now)
 }
 
-// NewTrackerWithClock creates a tracker using a custom clock. It is intended for tests.
-func NewTrackerWithClock(now func() time.Time) *Tracker {
-	if now == nil {
-		now = time.Now
-	}
+func newTracker(now func() time.Time) *Tracker {
 	t := &Tracker{now: now}
 	t.last = t.currentLocked()
 	return t
@@ -56,9 +52,6 @@ func NewTrackerWithClock(now func() time.Time) *Tracker {
 
 // Touch records point-in-time activity.
 func (t *Tracker) Touch() {
-	if t == nil {
-		return
-	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.recordLocked()
@@ -67,9 +60,6 @@ func (t *Tracker) Touch() {
 
 // Begin marks a long-running operation as active and returns an idempotent completion closure.
 func (t *Tracker) Begin() func() {
-	if t == nil {
-		return func() {}
-	}
 	t.mu.Lock()
 	t.recordLocked()
 	t.active++
@@ -92,9 +82,6 @@ func (t *Tracker) Begin() func() {
 
 // KeepAwake records activity and prevents idle controllers from treating the sandbox as idle until duration elapses.
 func (t *Tracker) KeepAwake(duration time.Duration) {
-	if t == nil {
-		return
-	}
 	if duration <= 0 {
 		t.Touch()
 		return
@@ -116,10 +103,6 @@ func (t *Tracker) KeepAwake(duration time.Duration) {
 
 // Snapshot returns a consistent activity view. It does not update activity state.
 func (t *Tracker) Snapshot() Snapshot {
-	if t == nil {
-		now := time.Now().UTC()
-		return Snapshot{LastActivityAt: now, ObservedAt: now}
-	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 

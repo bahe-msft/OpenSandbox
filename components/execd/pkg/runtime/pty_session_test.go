@@ -366,7 +366,7 @@ func TestPTYSession_CustomCommand(t *testing.T) {
 }
 
 func TestPTYSession_ControllerCRUD(t *testing.T) {
-	c := NewController("", "")
+	c := newTestController("", "")
 	id := uuidString()
 
 	sess, _ := c.CreatePTYSession(id, "", "")

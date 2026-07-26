@@ -22,7 +22,7 @@ import (
 
 func TestTrackerInitializesAtStartup(t *testing.T) {
 	start := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
-	tr := NewTrackerWithClock(func() time.Time { return start })
+	tr := newTracker(func() time.Time { return start })
 
 	snap := tr.Snapshot()
 	if !snap.LastActivityAt.Equal(start) {
@@ -41,7 +41,7 @@ func TestTrackerInitializesAtStartup(t *testing.T) {
 
 func TestTrackerBeginEndTransitions(t *testing.T) {
 	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
-	tr := NewTrackerWithClock(func() time.Time { return now })
+	tr := newTracker(func() time.Time { return now })
 
 	now = now.Add(time.Second)
 	end := tr.Begin()
@@ -66,7 +66,7 @@ func TestTrackerBeginEndTransitions(t *testing.T) {
 
 func TestTrackerCompletionIsIdempotent(t *testing.T) {
 	now := time.Now()
-	tr := NewTrackerWithClock(func() time.Time { return now })
+	tr := newTracker(func() time.Time { return now })
 	end := tr.Begin()
 	end()
 	end()
@@ -82,7 +82,7 @@ func TestTrackerCompletionIsIdempotent(t *testing.T) {
 
 func TestTrackerTouch(t *testing.T) {
 	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
-	tr := NewTrackerWithClock(func() time.Time { return now })
+	tr := newTracker(func() time.Time { return now })
 	now = now.Add(10 * time.Second)
 	tr.Touch()
 
@@ -100,7 +100,7 @@ func TestTrackerTouch(t *testing.T) {
 
 func TestTrackerIgnoresClockRegression(t *testing.T) {
 	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
-	tr := NewTrackerWithClock(func() time.Time { return now })
+	tr := newTracker(func() time.Time { return now })
 	advance := now.Add(time.Minute)
 	now = advance
 	tr.Touch()
@@ -118,7 +118,7 @@ func TestTrackerIgnoresClockRegression(t *testing.T) {
 
 func TestTrackerKeepAwake(t *testing.T) {
 	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
-	tr := NewTrackerWithClock(func() time.Time { return now })
+	tr := newTracker(func() time.Time { return now })
 
 	tr.KeepAwake(30 * time.Second)
 	snap := tr.Snapshot()
@@ -145,7 +145,7 @@ func TestTrackerKeepAwake(t *testing.T) {
 
 func TestTrackerKeepAwakeOnlyExtends(t *testing.T) {
 	now := time.Date(2026, 7, 26, 14, 0, 0, 0, time.UTC)
-	tr := NewTrackerWithClock(func() time.Time { return now })
+	tr := newTracker(func() time.Time { return now })
 
 	tr.KeepAwake(time.Hour)
 	first := tr.Snapshot().KeepAwakeUntil

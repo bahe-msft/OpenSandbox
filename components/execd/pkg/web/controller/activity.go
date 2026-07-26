@@ -44,19 +44,6 @@ func (c ActivityConfig) normalized() ActivityConfig {
 	return c
 }
 
-var activityTracker *activity.Tracker
-
-// InitActivityTracker wires the process-wide execd activity tracker.
-func InitActivityTracker(tracker *activity.Tracker) {
-	activityTracker = tracker
-}
-
-func touchActivity() {
-	if activityTracker != nil {
-		activityTracker.Touch()
-	}
-}
-
 // ActivityController handles /v1/activity.
 type ActivityController struct {
 	*basicController
@@ -66,6 +53,9 @@ type ActivityController struct {
 
 // NewActivityController creates an activity controller.
 func NewActivityController(ctx *gin.Context, tracker *activity.Tracker, config ActivityConfig) *ActivityController {
+	if tracker == nil {
+		panic("activity controller tracker must not be nil")
+	}
 	return &ActivityController{
 		basicController: newBasicController(ctx),
 		tracker:         tracker,
@@ -75,19 +65,11 @@ func NewActivityController(ctx *gin.Context, tracker *activity.Tracker, config A
 
 // Get returns a read-only activity snapshot. This endpoint must not update activity.
 func (c *ActivityController) Get() {
-	if c.tracker == nil {
-		c.RespondError(http.StatusServiceUnavailable, model.ErrorCodeServiceUnavailable, "activity tracker unavailable")
-		return
-	}
 	c.RespondSuccess(activityResponse(c.tracker.Snapshot()))
 }
 
 // Touch records user activity and optionally holds the sandbox awake for a bounded duration.
 func (c *ActivityController) Touch() {
-	if c.tracker == nil {
-		c.RespondError(http.StatusServiceUnavailable, model.ErrorCodeServiceUnavailable, "activity tracker unavailable")
-		return
-	}
 	var req model.ActivityTouchRequest
 	if err := c.bindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		c.RespondError(http.StatusBadRequest, model.ErrorCodeInvalidRequest, fmt.Sprintf("error parsing request: %v", err))

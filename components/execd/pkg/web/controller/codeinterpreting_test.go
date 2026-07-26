@@ -24,6 +24,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/flag"
 	"github.com/alibaba/opensandbox/execd/pkg/jupyter/execute"
 	"github.com/alibaba/opensandbox/execd/pkg/runtime"
@@ -137,7 +138,7 @@ func TestGetContext_NotFoundReturns404(t *testing.T) {
 	ctrl := NewCodeInterpretingController(ctx)
 
 	previous := codeRunner
-	codeRunner = runtime.NewController("", "")
+	codeRunner = runtime.NewController("", "", activity.NewTracker())
 	t.Cleanup(func() { codeRunner = previous })
 
 	ctrl.GetContext()

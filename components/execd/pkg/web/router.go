@@ -26,10 +26,9 @@ import (
 )
 
 // NewRouter builds a Gin engine with all execd routes.
-func NewRouter(accessToken string, tracker *activity.Tracker, activityConfig ...controller.ActivityConfig) *gin.Engine {
-	config := controller.DefaultActivityConfig()
-	if len(activityConfig) > 0 {
-		config = activityConfig[0]
+func NewRouter(accessToken string, tracker *activity.Tracker, activityConfig controller.ActivityConfig) *gin.Engine {
+	if tracker == nil {
+		panic("web activity tracker must not be nil")
 	}
 
 	gin.SetMode(gin.ReleaseMode)
@@ -38,8 +37,8 @@ func NewRouter(accessToken string, tracker *activity.Tracker, activityConfig ...
 	r.Use(logMiddleware(), otelHTTPMetricsMiddleware(), accessTokenMiddleware(accessToken), activityMiddleware(tracker), ProxyMiddleware())
 
 	r.GET("/ping", controller.PingHandler)
-	r.GET("/v1/activity", withActivity(tracker, config, func(c *controller.ActivityController) { c.Get() }))
-	r.POST("/v1/activity/touch", withActivity(tracker, config, func(c *controller.ActivityController) { c.Touch() }))
+	r.GET("/v1/activity", withActivity(tracker, activityConfig, func(c *controller.ActivityController) { c.Get() }))
+	r.POST("/v1/activity/touch", withActivity(tracker, activityConfig, func(c *controller.ActivityController) { c.Touch() }))
 
 	files := r.Group("/files")
 	{
@@ -97,7 +96,7 @@ func NewRouter(accessToken string, tracker *activity.Tracker, activityConfig ...
 		pty.POST("", withPTY(func(c *controller.PTYController) { c.CreatePTYSession() }))
 		pty.GET("/:sessionId", withPTY(func(c *controller.PTYController) { c.GetPTYSessionStatus() }))
 		pty.DELETE("/:sessionId", withPTY(func(c *controller.PTYController) { c.DeletePTYSession() }))
-		pty.GET("/:sessionId/ws", controller.PTYSessionWebSocket)
+		pty.GET("/:sessionId/ws", controller.PTYSessionWebSocket(tracker))
 	}
 
 	isolated := r.Group("/v1/isolated")

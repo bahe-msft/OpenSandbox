@@ -71,22 +71,18 @@ type commandKernel struct {
 }
 
 // NewController creates a runtime controller.
-func NewController(baseURL, token string) *Controller {
-	return &Controller{
-		baseURL: baseURL,
-		token:   token,
+func NewController(baseURL, token string, activityTracker *activity.Tracker) *Controller {
+	if activityTracker == nil {
+		panic("runtime activity tracker must not be nil")
 	}
-}
-
-// SetActivityTracker wires optional activity tracking for runtime work that outlives HTTP handlers.
-func (c *Controller) SetActivityTracker(tracker *activity.Tracker) {
-	c.activity = tracker
+	return &Controller{
+		baseURL:  baseURL,
+		token:    token,
+		activity: activityTracker,
+	}
 }
 
 func (c *Controller) beginActivity() func() {
-	if c.activity == nil {
-		return func() {}
-	}
 	return c.activity.Begin()
 }
 

@@ -35,7 +35,7 @@ func TestExecuteSelectSQLQuery_Success(t *testing.T) {
 	}
 	db := newStubDB(t, driver)
 
-	c := NewController("", "")
+	c := newTestController("", "")
 	c.db = db
 
 	var (
@@ -81,7 +81,7 @@ func TestExecuteUpdateSQLQuery_Success(t *testing.T) {
 	}
 	db := newStubDB(t, driver)
 
-	c := NewController("", "")
+	c := newTestController("", "")
 	c.db = db
 
 	var (

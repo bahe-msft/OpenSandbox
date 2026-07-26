@@ -62,10 +62,7 @@ func main() {
 	log.Init(flag.ServerLogLevel)
 
 	activityTracker := activity.NewTracker()
-	controller.InitActivityTracker(activityTracker)
-
-	ctrl := controller.InitCodeRunner()
-	ctrl.SetActivityTracker(activityTracker)
+	ctrl := controller.InitCodeRunner(activityTracker)
 
 	// Always store probe result for capabilities endpoint.
 	controller.InitIsolatedProbe(&isolationProbe)

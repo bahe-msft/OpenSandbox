@@ -90,7 +90,7 @@ func TestReadFromPos_FlushesTrailingLine(t *testing.T) {
 	err := os.WriteFile(file, content, 0o644)
 	assert.NoError(t, err)
 
-	c := NewController("", "")
+	c := newTestController("", "")
 	mutex := &sync.Mutex{}
 	var lines []string
 	onExecute := func(text string) {
@@ -186,7 +186,7 @@ func TestRunCommand_Echo(t *testing.T) {
 		t.Skip("bash not found in PATH")
 	}
 
-	c := NewController("", "")
+	c := newTestController("", "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -240,7 +240,7 @@ func TestRunCommand_Error(t *testing.T) {
 		t.Skip("bash not found in PATH")
 	}
 
-	c := NewController("", "")
+	c := newTestController("", "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -301,7 +301,7 @@ func TestRunCommand_ExpandsHomeInCwd(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	c := NewController("", "")
+	c := newTestController("", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -357,7 +357,7 @@ func TestRunCommand_ExpandsCwdFromRequestEnvWithHigherPriority(t *testing.T) {
 	requestDir := t.TempDir()
 	t.Setenv("WORKDIR", processDir)
 
-	c := NewController("", "")
+	c := newTestController("", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -416,7 +416,7 @@ func TestRunCommand_StartErrorIncludesTraceback(t *testing.T) {
 		t.Skip("bash not found in PATH")
 	}
 
-	c := NewController("", "")
+	c := newTestController("", "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -464,7 +464,7 @@ func TestStdLogDescriptor_AutoCreatesTempDir(t *testing.T) {
 	missingDir := filepath.Join(t.TempDir(), "deleted_tmp")
 	t.Setenv("TMPDIR", missingDir)
 
-	c := NewController("", "")
+	c := newTestController("", "")
 	stdout, stderr, err := c.stdLogDescriptor("test-session")
 	require.NoError(t, err)
 	stdout.Close()
@@ -487,7 +487,7 @@ func TestCombinedOutputDescriptor_AutoCreatesTempDir(t *testing.T) {
 	missingDir := filepath.Join(t.TempDir(), "deleted_tmp")
 	t.Setenv("TMPDIR", missingDir)
 
-	c := NewController("", "")
+	c := newTestController("", "")
 	f, err := c.combinedOutputDescriptor("test-session")
 	require.NoError(t, err)
 	f.Close()

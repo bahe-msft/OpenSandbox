@@ -57,7 +57,7 @@ func newStubIsolator() *stubIsolator {
 
 func newTestRunner(t *testing.T) *IsolatedRunner {
 	t.Helper()
-	ctrl := NewController("", "")
+	ctrl := newTestController("", "")
 	mgr, err := isolation.NewUpperManager(t.TempDir(), 8<<30)
 	if err != nil {
 		t.Fatal(err)
