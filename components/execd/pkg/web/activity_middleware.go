@@ -37,11 +37,8 @@ func activityMiddleware(tracker *activity.Tracker) gin.HandlerFunc {
 	routes := activityRoutes()
 	return func(ctx *gin.Context) {
 		handler := routes[activityRoute{method: ctx.Request.Method, path: ctx.FullPath()}]
-		if strings.HasPrefix(ctx.Request.URL.Path, "/proxy/") {
+		if strings.HasPrefix(ctx.Request.URL.Path, "/proxy/") && !strings.EqualFold(ctx.GetHeader("Upgrade"), "websocket") {
 			handler = trackRequestLifetime
-			if strings.EqualFold(ctx.GetHeader("Upgrade"), "websocket") {
-				handler = trackPointInTime
-			}
 		}
 		if handler == nil {
 			ctx.Next()

@@ -34,7 +34,7 @@ func NewRouter(accessToken string, tracker *activity.Tracker, activityConfig con
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(logMiddleware(), otelHTTPMetricsMiddleware(), accessTokenMiddleware(accessToken), activityMiddleware(tracker), ProxyMiddleware())
+	r.Use(logMiddleware(), otelHTTPMetricsMiddleware(), accessTokenMiddleware(accessToken), activityMiddleware(tracker), ProxyMiddleware(tracker))
 
 	r.GET("/ping", controller.PingHandler)
 	r.GET("/v1/activity", withActivity(tracker, activityConfig, func(c *controller.ActivityController) { c.Get() }))
