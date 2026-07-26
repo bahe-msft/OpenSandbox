@@ -126,6 +126,7 @@ func PTYSessionWebSocket(ctx *gin.Context) {
 	}
 	// From here we hold the lock; it is released at the very end of this function (see
 	// defer below), only after all pump goroutines have exited.
+	touchActivity()
 
 	// Resolve query parameters.
 	pipeMode := ctx.Query("pty") == "0"
@@ -378,6 +379,7 @@ func ptyHandleBinaryMsg(session runtime.PTYSession, data []byte, writeJSON func(
 		cancelOnce()
 		return true
 	}
+	touchActivity()
 	return false
 }
 
@@ -397,12 +399,16 @@ func ptyHandleTextMsg(session runtime.PTYSession, id string, data []byte, writeJ
 			cancelOnce()
 			return true
 		}
+		touchActivity()
 	case "signal":
 		session.SendSignal(frame.Signal)
+		touchActivity()
 	case "resize":
 		if frame.Cols > 0 && frame.Rows > 0 {
 			if resErr := session.ResizePTY(uint16(frame.Cols), uint16(frame.Rows)); resErr != nil {
 				log.Warn("pty resize session %s: %v", id, resErr)
+			} else {
+				touchActivity()
 			}
 		}
 	case "ping":

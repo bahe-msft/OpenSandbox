@@ -23,6 +23,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/jupyter"
 )
 
@@ -46,6 +47,7 @@ type Controller struct {
 	isolatedSessionMap      sync.Map // map[sessionID]*isolatedSession
 	db                      *sql.DB
 	dbOnce                  sync.Once
+	activity                *activity.Tracker
 }
 
 type jupyterKernel struct {
@@ -74,6 +76,18 @@ func NewController(baseURL, token string) *Controller {
 		baseURL: baseURL,
 		token:   token,
 	}
+}
+
+// SetActivityTracker wires optional activity tracking for runtime work that outlives HTTP handlers.
+func (c *Controller) SetActivityTracker(tracker *activity.Tracker) {
+	c.activity = tracker
+}
+
+func (c *Controller) beginActivity() func() {
+	if c.activity == nil {
+		return func() {}
+	}
+	return c.activity.Begin()
 }
 
 // Execute dispatches a request to the correct backend.

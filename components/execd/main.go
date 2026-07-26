@@ -26,6 +26,7 @@ import (
 	_ "github.com/alibaba/opensandbox/internal/safego"
 	_ "go.uber.org/automaxprocs/maxprocs"
 
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/clone3compat"
 	"github.com/alibaba/opensandbox/execd/pkg/flag"
 	"github.com/alibaba/opensandbox/execd/pkg/isolation"
@@ -60,7 +61,11 @@ func main() {
 
 	log.Init(flag.ServerLogLevel)
 
+	activityTracker := activity.NewTracker()
+	controller.InitActivityTracker(activityTracker)
+
 	ctrl := controller.InitCodeRunner()
+	ctrl.SetActivityTracker(activityTracker)
 
 	// Always store probe result for capabilities endpoint.
 	controller.InitIsolatedProbe(&isolationProbe)
@@ -92,7 +97,7 @@ func main() {
 		}()
 	}
 
-	engine := web.NewRouter(flag.ServerAccessToken)
+	engine := web.NewRouter(flag.ServerAccessToken, activityTracker)
 	addr := fmt.Sprintf(":%d", flag.ServerPort)
 	listener, err := net.Listen("tcp4", addr)
 	if err != nil {

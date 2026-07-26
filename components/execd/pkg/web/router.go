@@ -19,19 +19,21 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/log"
 	"github.com/alibaba/opensandbox/execd/pkg/web/controller"
 	"github.com/alibaba/opensandbox/execd/pkg/web/model"
 )
 
 // NewRouter builds a Gin engine with all execd routes.
-func NewRouter(accessToken string) *gin.Engine {
+func NewRouter(accessToken string, tracker *activity.Tracker) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(logMiddleware(), otelHTTPMetricsMiddleware(), accessTokenMiddleware(accessToken), ProxyMiddleware())
+	r.Use(logMiddleware(), otelHTTPMetricsMiddleware(), accessTokenMiddleware(accessToken), activityMiddleware(tracker), ProxyMiddleware())
 
 	r.GET("/ping", controller.PingHandler)
+	r.GET("/v1/activity", withActivity(tracker, func(c *controller.ActivityController) { c.Get() }))
 
 	files := r.Group("/files")
 	{
@@ -116,6 +118,12 @@ func NewRouter(accessToken string) *gin.Engine {
 	}
 
 	return r
+}
+
+func withActivity(tracker *activity.Tracker, fn func(*controller.ActivityController)) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		fn(controller.NewActivityController(ctx, tracker))
+	}
 }
 
 func withFilesystem(fn func(*controller.FilesystemController)) gin.HandlerFunc {

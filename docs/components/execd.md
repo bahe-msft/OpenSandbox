@@ -48,6 +48,7 @@ curl -v http://localhost:44772/ping
   - Filesystem operations (`/files`, `/directories`)
   - Isolated sessions (`/v1/isolated/session`, bubblewrap namespaces)
   - PTY over WebSocket (`/pty`)
+  - Local activity endpoint (`/v1/activity`) for external idle controllers
   - Local metrics endpoints (`/metrics`, `/metrics/watch`)
 
 Shell-backed sessions use Bash when it is available and fall back to `sh` on
@@ -175,6 +176,29 @@ allowed_writable = ["/workspace", "/mnt", "/media", "/data"]
 ```
 
 ## Observability
+
+### Activity endpoint
+
+`GET /v1/activity` returns a read-only snapshot of sandbox-local activity for
+external idle controllers. The endpoint itself does not update activity state.
+
+Example response:
+
+```json
+{
+  "last_activity_at": "2026-07-26T14:31:22.482193Z",
+  "observed_at": "2026-07-26T14:33:00.012931Z",
+  "busy": false,
+  "active_operations": 0,
+  "revision": 184
+}
+```
+
+`busy` is true while execd is handling a counted long-running operation such as
+foreground command execution, code execution, session runs, file transfer,
+isolated-session runs, or ordinary proxied HTTP requests. `revision` changes
+when activity is observed or an active operation starts or completes, allowing an
+external idle controller to detect activity between two checks.
 
 ### OpenTelemetry Metrics
 
