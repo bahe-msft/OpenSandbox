@@ -10,6 +10,7 @@ import (
 
 	sandboxv1alpha1 "github.com/alibaba/OpenSandbox/sandbox-k8s/apis/sandbox/v1alpha1"
 	"github.com/alibaba/opensandbox/idle-controller/internal/opensandbox"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,15 +20,21 @@ import (
 )
 
 type fakeLifecycle struct {
-	snapshots []opensandbox.ActivitySnapshot
-	pauses    []string
+	snapshots     []opensandbox.ActivitySnapshot
+	pauses        []string
+	resolveError  error
+	activityError error
+	pauseError    error
 }
 
 func (f *fakeLifecycle) ResolveExecdEndpoint(context.Context, string) (opensandbox.Endpoint, error) {
-	return opensandbox.Endpoint{URL: "http://execd"}, nil
+	return opensandbox.Endpoint{URL: "http://execd"}, f.resolveError
 }
 
 func (f *fakeLifecycle) Activity(context.Context, opensandbox.Endpoint) (opensandbox.ActivitySnapshot, error) {
+	if f.activityError != nil {
+		return opensandbox.ActivitySnapshot{}, f.activityError
+	}
 	value := f.snapshots[0]
 	if len(f.snapshots) > 1 {
 		f.snapshots = f.snapshots[1:]
@@ -36,6 +43,9 @@ func (f *fakeLifecycle) Activity(context.Context, opensandbox.Endpoint) (opensan
 }
 
 func (f *fakeLifecycle) Pause(_ context.Context, sandboxID string) error {
+	if f.pauseError != nil {
+		return f.pauseError
+	}
 	f.pauses = append(f.pauses, sandboxID)
 	return nil
 }
@@ -47,6 +57,17 @@ func TestNewIdlePolicyValidatesDependencies(t *testing.T) {
 
 	_, err = NewIdlePolicy(&fakeLifecycle{}, Config{})
 	require.Error(t, err)
+}
+
+func TestReconcileRequeuesLifecycleErrors(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 26, 21, 0, 0, 0, time.UTC)
+	lifecycle := &fakeLifecycle{resolveError: assert.AnError}
+	reconciler := newTestReconciler(t, lifecycle, &now, false)
+
+	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "opensandbox", Name: "s1"}})
+	require.NoError(t, err)
+	require.Equal(t, 5*time.Minute, result.RequeueAfter)
 }
 
 func TestReconcilePausesAfterStableGraceObservation(t *testing.T) {

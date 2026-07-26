@@ -75,11 +75,13 @@ func (p *IdlePolicy) reconcileCandidate(ctx context.Context, key, sandboxID stri
 	logger := log.FromContext(ctx).WithValues("candidate", key, "sandboxID", sandboxID)
 	endpoint, err := p.lifecycle.ResolveExecdEndpoint(ctx, sandboxID)
 	if err != nil {
-		return ctrl.Result{RequeueAfter: p.config.CheckInterval}, fmt.Errorf("resolve execd endpoint: %w", err)
+		logger.Error(err, "resolve execd endpoint")
+		return ctrl.Result{RequeueAfter: p.config.CheckInterval}, nil
 	}
 	snapshot, err := p.lifecycle.Activity(ctx, endpoint)
 	if err != nil {
-		return ctrl.Result{RequeueAfter: p.config.CheckInterval}, fmt.Errorf("read execd activity: %w", err)
+		logger.Error(err, "read execd activity")
+		return ctrl.Result{RequeueAfter: p.config.CheckInterval}, nil
 	}
 
 	now := p.now().UTC()
@@ -104,7 +106,8 @@ func (p *IdlePolicy) reconcileCandidate(ctx context.Context, key, sandboxID stri
 		return ctrl.Result{RequeueAfter: p.config.CheckInterval}, nil
 	}
 	if err := p.lifecycle.Pause(ctx, sandboxID); err != nil {
-		return ctrl.Result{RequeueAfter: p.config.CheckInterval}, fmt.Errorf("pause sandbox: %w", err)
+		logger.Error(err, "pause sandbox")
+		return ctrl.Result{RequeueAfter: p.config.CheckInterval}, nil
 	}
 	logger.Info("requested idle pause", "revision", snapshot.Revision)
 	p.forget(key)
