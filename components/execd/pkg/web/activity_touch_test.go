@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/alibaba/opensandbox/execd/pkg/activity"
+	"github.com/alibaba/opensandbox/execd/pkg/web/controller"
 	"github.com/alibaba/opensandbox/execd/pkg/web/model"
 )
 
@@ -69,6 +70,28 @@ func TestActivityTouchRejectsTooLongKeepAlive(t *testing.T) {
 	router := NewRouter("", tracker)
 
 	body, err := json.Marshal(map[string]any{"keep_alive_seconds": 24*60*60 + 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/activity/touch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+}
+
+func TestActivityTouchUsesConfiguredMaxKeepAlive(t *testing.T) {
+	tracker := activity.NewTracker()
+	router := NewRouter("", tracker, controller.ActivityConfig{MaxKeepAliveDuration: time.Minute})
+
+	ok := postActivityTouch(t, router, map[string]any{"keep_alive_seconds": 60})
+	if ok.KeepAwakeUntil == nil {
+		t.Fatal("keep_awake_until is nil")
+	}
+
+	body, err := json.Marshal(map[string]any{"keep_alive_seconds": 61})
 	if err != nil {
 		t.Fatal(err)
 	}

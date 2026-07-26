@@ -27,7 +27,22 @@ import (
 	"github.com/alibaba/opensandbox/execd/pkg/web/model"
 )
 
-const maxKeepAliveDuration = 24 * time.Hour
+// ActivityConfig controls activity endpoint behavior.
+type ActivityConfig struct {
+	MaxKeepAliveDuration time.Duration
+}
+
+// DefaultActivityConfig returns the default activity endpoint configuration.
+func DefaultActivityConfig() ActivityConfig {
+	return ActivityConfig{MaxKeepAliveDuration: 24 * time.Hour}
+}
+
+func (c ActivityConfig) normalized() ActivityConfig {
+	if c.MaxKeepAliveDuration <= 0 {
+		c.MaxKeepAliveDuration = DefaultActivityConfig().MaxKeepAliveDuration
+	}
+	return c
+}
 
 var activityTracker *activity.Tracker
 
@@ -46,13 +61,15 @@ func touchActivity() {
 type ActivityController struct {
 	*basicController
 	tracker *activity.Tracker
+	config  ActivityConfig
 }
 
 // NewActivityController creates an activity controller.
-func NewActivityController(ctx *gin.Context, tracker *activity.Tracker) *ActivityController {
+func NewActivityController(ctx *gin.Context, tracker *activity.Tracker, config ActivityConfig) *ActivityController {
 	return &ActivityController{
 		basicController: newBasicController(ctx),
 		tracker:         tracker,
+		config:          config.normalized(),
 	}
 }
 
@@ -74,11 +91,11 @@ func (c *ActivityController) Touch() {
 	}
 
 	keepAlive := time.Duration(req.KeepAliveSeconds) * time.Second
-	if keepAlive > maxKeepAliveDuration {
+	if keepAlive > c.config.MaxKeepAliveDuration {
 		c.RespondError(
 			http.StatusBadRequest,
 			model.ErrorCodeInvalidRequest,
-			fmt.Sprintf("keep_alive_seconds must not exceed %d", int64(maxKeepAliveDuration/time.Second)),
+			fmt.Sprintf("keep_alive_seconds must not exceed %d", int64(c.config.MaxKeepAliveDuration/time.Second)),
 		)
 		return
 	}

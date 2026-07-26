@@ -97,7 +97,9 @@ func main() {
 		}()
 	}
 
-	engine := web.NewRouter(flag.ServerAccessToken, activityTracker)
+	engine := web.NewRouter(flag.ServerAccessToken, activityTracker, controller.ActivityConfig{
+		MaxKeepAliveDuration: flag.ActivityMaxKeepAliveDuration,
+	})
 	addr := fmt.Sprintf(":%d", flag.ServerPort)
 	listener, err := net.Listen("tcp4", addr)
 	if err != nil {

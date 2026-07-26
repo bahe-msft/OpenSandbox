@@ -140,6 +140,7 @@ override it.
 | `--access-token` | `""` | Optional shared API access token. |
 | `--graceful-shutdown-timeout` | `1s` | SSE tail-drain wait window before closing. |
 | `--jupyter-idle-poll-interval` | `100ms` | Poll interval after Jupyter reports idle. |
+| `--activity-max-keepalive` | `24h` | Maximum keep-alive duration accepted by `POST /v1/activity/touch`. |
 | `--isolation-config` | `""` | Path to the isolation TOML config (see below). |
 
 ### Environment Variables
@@ -151,6 +152,7 @@ override it.
 | `EXECD_ACCESS_TOKEN` | Same as `--access-token` (overridden by explicit flag). |
 | `EXECD_API_GRACE_SHUTDOWN` | Same as `--graceful-shutdown-timeout`. |
 | `EXECD_JUPYTER_IDLE_POLL_INTERVAL` | Same as `--jupyter-idle-poll-interval`. |
+| `EXECD_ACTIVITY_MAX_KEEPALIVE` | Same as `--activity-max-keepalive`. |
 | `EXECD_ISOLATION_CONFIG` | Same as `--isolation-config`. |
 | `EXECD_CLONE3_COMPAT` | Linux clone3 compatibility switch (see below). |
 | `EXECD_LOG_FILE` | Optional log output file path; default is stdout. |
@@ -184,10 +186,10 @@ external idle controllers. The endpoint itself does not update activity state.
 
 `POST /v1/activity/touch` records user activity. It accepts an optional
 `keep_alive_seconds` value to ask idle controllers not to pause the sandbox until
-`keep_awake_until`. The keep-alive duration is capped at 86,400 seconds (24
-hours) per request so a single call cannot hold an environment forever. Repeated
-calls can renew the deadline when a client is still intentionally using the
-sandbox.
+`keep_awake_until`. The keep-alive duration is capped by
+`--activity-max-keepalive` (default: `24h`) so a single call cannot hold an
+environment forever. Repeated calls can renew the deadline when a client is still
+intentionally using the sandbox.
 
 Example response:
 

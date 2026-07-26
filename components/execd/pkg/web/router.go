@@ -26,15 +26,20 @@ import (
 )
 
 // NewRouter builds a Gin engine with all execd routes.
-func NewRouter(accessToken string, tracker *activity.Tracker) *gin.Engine {
+func NewRouter(accessToken string, tracker *activity.Tracker, activityConfig ...controller.ActivityConfig) *gin.Engine {
+	config := controller.DefaultActivityConfig()
+	if len(activityConfig) > 0 {
+		config = activityConfig[0]
+	}
+
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(logMiddleware(), otelHTTPMetricsMiddleware(), accessTokenMiddleware(accessToken), activityMiddleware(tracker), ProxyMiddleware())
 
 	r.GET("/ping", controller.PingHandler)
-	r.GET("/v1/activity", withActivity(tracker, func(c *controller.ActivityController) { c.Get() }))
-	r.POST("/v1/activity/touch", withActivity(tracker, func(c *controller.ActivityController) { c.Touch() }))
+	r.GET("/v1/activity", withActivity(tracker, config, func(c *controller.ActivityController) { c.Get() }))
+	r.POST("/v1/activity/touch", withActivity(tracker, config, func(c *controller.ActivityController) { c.Touch() }))
 
 	files := r.Group("/files")
 	{
@@ -121,9 +126,9 @@ func NewRouter(accessToken string, tracker *activity.Tracker) *gin.Engine {
 	return r
 }
 
-func withActivity(tracker *activity.Tracker, fn func(*controller.ActivityController)) gin.HandlerFunc {
+func withActivity(tracker *activity.Tracker, config controller.ActivityConfig, fn func(*controller.ActivityController)) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		fn(controller.NewActivityController(ctx, tracker))
+		fn(controller.NewActivityController(ctx, tracker, config))
 	}
 }
 
