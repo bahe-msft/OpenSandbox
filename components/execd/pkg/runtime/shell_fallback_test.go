@@ -12,16 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package opensandbox
+//go:build !windows
 
-import "testing"
+package runtime
 
-// TestVersion_MatchesReleasedTag is a regression guard: the Version constant is
-// reported in the User-Agent header and must be bumped together with the
-// released module tag. Update this expectation when releasing.
-func TestVersion_MatchesReleasedTag(t *testing.T) {
-	const want = "1.0.5"
-	if Version != want {
-		t.Fatalf("Version = %q, want %q; bump this together with the release tag", Version, want)
-	}
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// useShOnlyPath limits PATH to a directory containing sh but not bash.
+func useShOnlyPath(t *testing.T) {
+	t.Helper()
+
+	shPath, err := exec.LookPath("sh")
+	require.NoError(t, err, "sh is required to test the fallback")
+	shPath, err = filepath.Abs(shPath)
+	require.NoError(t, err)
+
+	binDir := t.TempDir()
+	require.NoError(t, os.Symlink(shPath, filepath.Join(binDir, "sh")))
+	t.Setenv("PATH", binDir)
+	require.Equal(t, "sh", getShell())
 }
