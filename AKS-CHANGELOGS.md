@@ -5,7 +5,7 @@ This file tracks AKS-specific changes carried by the `aks-dev` branch relative t
 ## Release process
 
 1. Add new AKS-local changes under `Unreleased` as PRs merge into `aks-dev`.
-2. When cutting an AKS dev snapshot, choose a tag in the form `aksdev/YYYYMMDD` (for example, `aksdev/20260726`).
+2. When cutting an AKS dev snapshot, choose a tag in the form `aksdev/YYYYMMDD` (for example, `aksdev/20260726`). If multiple snapshots are cut on the same day, append a numeric suffix such as `aksdev/20260726-1`.
 3. Move the relevant `Unreleased` entries into a new section named for that tag.
 4. Merge the changelog update, then create and push the tag from the desired `aks-dev` commit:
 
@@ -23,9 +23,9 @@ This file tracks AKS-specific changes carried by the `aks-dev` branch relative t
 
 - _No unreleased AKS-local changes._
 
-## aksdev/20260726
+## aksdev/20260726-1
 
-- [`2a4d013`](https://github.com/bahe-msft/OpenSandbox/commit/2a4d01355776d7714ef8888b8f910c95d1e10cd3) — Cross-compiled Go binaries before Docker packaging to avoid slow arm64 Go builds under QEMU.
+- [`f6f70ad`](https://github.com/bahe-msft/OpenSandbox/commit/f6f70add8bc7111c41b9f75ead3ee5dbd10e7396) — Cross-compiled Go binaries before Docker packaging to avoid slow arm64 Go builds under QEMU.
 - [`cdffbfe`](https://github.com/bahe-msft/OpenSandbox/commit/cdffbfe2787c4b9911cad72f8ea594b244dbc2b6) — Skipped code-interpreter and removed the Windows execd binary from AKS image publishing to reduce publish time.
 - [#11](https://github.com/bahe-msft/OpenSandbox/pull/11) / [`2fc47c2`](https://github.com/bahe-msft/OpenSandbox/commit/2fc47c266df6fbb76a9ec3776a026a8c33065822) — Added a dedicated GHCR workflow for publishing AKS images with AKS tag-aware image tags.
 - [#8](https://github.com/bahe-msft/OpenSandbox/pull/8) / [`a53e0f7`](https://github.com/bahe-msft/OpenSandbox/commit/a53e0f766bb728174df486f4272201a909e8f00e) — Added a PTY shell fallback so execd can start interactive sessions when `bash` is unavailable.
