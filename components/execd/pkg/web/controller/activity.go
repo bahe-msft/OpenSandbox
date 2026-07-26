@@ -53,9 +53,6 @@ type ActivityController struct {
 
 // NewActivityController creates an activity controller.
 func NewActivityController(ctx *gin.Context, tracker *activity.Tracker, config ActivityConfig) *ActivityController {
-	if tracker == nil {
-		panic("activity controller tracker must not be nil")
-	}
 	return &ActivityController{
 		basicController: newBasicController(ctx),
 		tracker:         tracker,

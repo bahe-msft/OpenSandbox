@@ -27,10 +27,6 @@ import (
 
 // NewRouter builds a Gin engine with all execd routes.
 func NewRouter(accessToken string, tracker *activity.Tracker, activityConfig controller.ActivityConfig) *gin.Engine {
-	if tracker == nil {
-		panic("web activity tracker must not be nil")
-	}
-
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())

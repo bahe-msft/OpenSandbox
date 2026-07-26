@@ -20,6 +20,7 @@ import (
 )
 
 func TestClassifyActivity(t *testing.T) {
+	classifier := newActivityClassifier()
 	tests := []struct {
 		name        string
 		method      string
@@ -53,7 +54,7 @@ func TestClassifyActivity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := classifyActivity(tt.method, tt.routePath, tt.requestPath, tt.upgrade)
+			got := classifier.classify(tt.method, tt.routePath, tt.requestPath, tt.upgrade)
 			if got != tt.want {
 				t.Fatalf("classifyActivity(%q, %q, %q, %q) = %v, want %v", tt.method, tt.routePath, tt.requestPath, tt.upgrade, got, tt.want)
 			}

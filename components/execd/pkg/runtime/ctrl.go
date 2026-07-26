@@ -72,9 +72,6 @@ type commandKernel struct {
 
 // NewController creates a runtime controller.
 func NewController(baseURL, token string, activityTracker *activity.Tracker) *Controller {
-	if activityTracker == nil {
-		panic("runtime activity tracker must not be nil")
-	}
 	return &Controller{
 		baseURL:  baseURL,
 		token:    token,

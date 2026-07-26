@@ -14,19 +14,8 @@
 
 package runtime
 
-import (
-	"testing"
-
-	"github.com/alibaba/opensandbox/execd/pkg/activity"
-	"github.com/stretchr/testify/require"
-)
+import "github.com/alibaba/opensandbox/execd/pkg/activity"
 
 func newTestController(baseURL, token string) *Controller {
 	return NewController(baseURL, token, activity.NewTracker())
-}
-
-func TestNewControllerRejectsNilActivityTracker(t *testing.T) {
-	require.Panics(t, func() {
-		NewController("", "", nil)
-	})
 }

@@ -70,10 +70,3 @@ func TestActivityControllerTouchRejectsConfiguredMaximum(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
 	require.EqualValues(t, 0, tracker.Snapshot().Revision)
 }
-
-func TestNewActivityControllerRejectsNilTracker(t *testing.T) {
-	ctx, _ := newTestContext(http.MethodGet, "/v1/activity", nil)
-	require.Panics(t, func() {
-		NewActivityController(ctx, nil, DefaultActivityConfig())
-	})
-}

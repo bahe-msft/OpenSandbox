@@ -70,9 +70,6 @@ const (
 //  10. Start RFC 6455 ping, streamPump(s), exitWatcher goroutines
 //  11. Read loop: dispatch client frames
 func PTYSessionWebSocket(tracker *activity.Tracker) gin.HandlerFunc {
-	if tracker == nil {
-		panic("PTY activity tracker must not be nil")
-	}
 	return func(ctx *gin.Context) {
 		ptySessionWebSocket(ctx, tracker)
 	}
