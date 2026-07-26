@@ -29,7 +29,7 @@ import (
 
 func TestActivityTouchUpdatesRevision(t *testing.T) {
 	tracker := activity.NewTracker()
-	router := NewRouter("", tracker, controller.DefaultActivityConfig())
+	router := mustNewRouter(t, tracker, controller.DefaultActivityConfig())
 
 	initial := getActivity(t, router)
 	resp := postActivityTouch(t, router, nil)
@@ -47,7 +47,7 @@ func TestActivityTouchUpdatesRevision(t *testing.T) {
 
 func TestActivityTouchKeepAlive(t *testing.T) {
 	tracker := activity.NewTracker()
-	router := NewRouter("", tracker, controller.DefaultActivityConfig())
+	router := mustNewRouter(t, tracker, controller.DefaultActivityConfig())
 
 	before := time.Now().UTC().Add(time.Minute)
 	resp := postActivityTouch(t, router, map[string]any{"keep_alive_seconds": 60})
@@ -65,7 +65,7 @@ func TestActivityTouchKeepAlive(t *testing.T) {
 
 func TestActivityTouchRejectsTooLongKeepAlive(t *testing.T) {
 	tracker := activity.NewTracker()
-	router := NewRouter("", tracker, controller.DefaultActivityConfig())
+	router := mustNewRouter(t, tracker, controller.DefaultActivityConfig())
 
 	body, err := json.Marshal(map[string]any{"keep_alive_seconds": 24*60*60 + 1})
 	if err != nil {
@@ -82,7 +82,7 @@ func TestActivityTouchRejectsTooLongKeepAlive(t *testing.T) {
 
 func TestActivityTouchRejectsHugeKeepAliveWithoutOverflow(t *testing.T) {
 	tracker := activity.NewTracker()
-	router := NewRouter("", tracker, controller.DefaultActivityConfig())
+	router := mustNewRouter(t, tracker, controller.DefaultActivityConfig())
 
 	body, err := json.Marshal(map[string]any{"keep_alive_seconds": int64(1<<63 - 1)})
 	if err != nil {
@@ -99,7 +99,7 @@ func TestActivityTouchRejectsHugeKeepAliveWithoutOverflow(t *testing.T) {
 
 func TestActivityTouchUsesConfiguredMaxKeepAlive(t *testing.T) {
 	tracker := activity.NewTracker()
-	router := NewRouter("", tracker, controller.ActivityConfig{MaxKeepAliveDuration: time.Minute})
+	router := mustNewRouter(t, tracker, controller.ActivityConfig{MaxKeepAliveDuration: time.Minute})
 
 	ok := postActivityTouch(t, router, map[string]any{"keep_alive_seconds": 60})
 	if ok.KeepAwakeUntil == nil {

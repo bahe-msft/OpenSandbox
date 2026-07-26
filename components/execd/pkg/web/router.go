@@ -26,7 +26,11 @@ import (
 )
 
 // NewRouter builds a Gin engine with all execd routes.
-func NewRouter(accessToken string, tracker *activity.Tracker, activityConfig controller.ActivityConfig) *gin.Engine {
+func NewRouter(accessToken string, tracker *activity.Tracker, activityConfig controller.ActivityConfig) (*gin.Engine, error) {
+	if err := activityConfig.Validate(); err != nil {
+		return nil, err
+	}
+
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -118,7 +122,7 @@ func NewRouter(accessToken string, tracker *activity.Tracker, activityConfig con
 		isolated.GET("/capabilities", withIsolated(func(c *controller.IsolatedSessionController) { c.Capabilities() }))
 	}
 
-	return r
+	return r, nil
 }
 
 func withActivity(tracker *activity.Tracker, config controller.ActivityConfig, fn func(*controller.ActivityController)) gin.HandlerFunc {

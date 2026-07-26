@@ -37,11 +37,12 @@ func DefaultActivityConfig() ActivityConfig {
 	return ActivityConfig{MaxKeepAliveDuration: 24 * time.Hour}
 }
 
-func (c ActivityConfig) normalized() ActivityConfig {
+// Validate rejects activity configuration that cannot safely bound keep-alive requests.
+func (c ActivityConfig) Validate() error {
 	if c.MaxKeepAliveDuration <= 0 {
-		c.MaxKeepAliveDuration = DefaultActivityConfig().MaxKeepAliveDuration
+		return errors.New("activity max keep-alive duration must be positive")
 	}
-	return c
+	return nil
 }
 
 // ActivityController handles /v1/activity.
@@ -56,7 +57,7 @@ func NewActivityController(ctx *gin.Context, tracker *activity.Tracker, config A
 	return &ActivityController{
 		basicController: newBasicController(ctx),
 		tracker:         tracker,
-		config:          config.normalized(),
+		config:          config,
 	}
 }
 

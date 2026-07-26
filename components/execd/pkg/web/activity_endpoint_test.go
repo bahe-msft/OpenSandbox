@@ -28,7 +28,7 @@ import (
 
 func TestActivityEndpointDoesNotUpdateActivity(t *testing.T) {
 	tracker := activity.NewTracker()
-	router := NewRouter("", tracker, controller.DefaultActivityConfig())
+	router := mustNewRouter(t, tracker, controller.DefaultActivityConfig())
 
 	first := getActivity(t, router)
 	time.Sleep(time.Millisecond)
@@ -43,6 +43,22 @@ func TestActivityEndpointDoesNotUpdateActivity(t *testing.T) {
 	if second.ObservedAt.Before(first.ObservedAt) {
 		t.Fatalf("observed_at regressed from %s to %s", first.ObservedAt, second.ObservedAt)
 	}
+}
+
+func TestNewRouterRejectsInvalidActivityConfig(t *testing.T) {
+	_, err := NewRouter("", activity.NewTracker(), controller.ActivityConfig{})
+	if err == nil {
+		t.Fatal("expected invalid activity config error")
+	}
+}
+
+func mustNewRouter(t *testing.T, tracker *activity.Tracker, config controller.ActivityConfig) http.Handler {
+	t.Helper()
+	router, err := NewRouter("", tracker, config)
+	if err != nil {
+		t.Fatalf("create router: %v", err)
+	}
+	return router
 }
 
 func getActivity(t *testing.T, handler http.Handler) model.ActivityResponse {
