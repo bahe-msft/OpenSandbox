@@ -23,96 +23,89 @@ import (
 	"github.com/alibaba/opensandbox/execd/pkg/activity"
 )
 
-type activityTrackingMode int
-
-const (
-	// activityUntracked excludes operational polling and endpoints that instrument themselves.
-	activityUntracked activityTrackingMode = iota
-	// activityPointInTime records one successful user interaction after the handler returns.
-	activityPointInTime
-	// activityRequestLifetime keeps active_operations incremented for the full request lifetime.
-	activityRequestLifetime
-)
-
 type activityRoute struct {
 	method string
 	path   string
 }
 
-type activityClassifier map[activityRoute]activityTrackingMode
+type activityHandler func(*activity.Tracker, *gin.Context)
 
-// newActivityClassifier uses Gin route templates so instrumentation stays
-// declarative and additions are reviewable alongside router.go.
-func newActivityClassifier() activityClassifier {
-	return activityClassifier{
-		{http.MethodPost, "/command"}:                                          activityRequestLifetime,
-		{http.MethodDelete, "/command"}:                                        activityPointInTime,
-		{http.MethodPost, "/code"}:                                             activityRequestLifetime,
-		{http.MethodDelete, "/code"}:                                           activityPointInTime,
-		{http.MethodPost, "/code/context"}:                                     activityPointInTime,
-		{http.MethodDelete, "/code/contexts"}:                                  activityPointInTime,
-		{http.MethodDelete, "/code/contexts/:contextId"}:                       activityPointInTime,
-		{http.MethodPost, "/session"}:                                          activityPointInTime,
-		{http.MethodPost, "/session/:sessionId/run"}:                           activityRequestLifetime,
-		{http.MethodDelete, "/session/:sessionId"}:                             activityPointInTime,
-		{http.MethodPost, "/pty"}:                                              activityPointInTime,
-		{http.MethodDelete, "/pty/:sessionId"}:                                 activityPointInTime,
-		{http.MethodDelete, "/files"}:                                          activityRequestLifetime,
-		{http.MethodGet, "/files/info"}:                                        activityPointInTime,
-		{http.MethodPost, "/files/mv"}:                                         activityRequestLifetime,
-		{http.MethodPost, "/files/permissions"}:                                activityRequestLifetime,
-		{http.MethodGet, "/files/search"}:                                      activityPointInTime,
-		{http.MethodPost, "/files/replace"}:                                    activityRequestLifetime,
-		{http.MethodPost, "/files/upload"}:                                     activityRequestLifetime,
-		{http.MethodGet, "/files/download"}:                                    activityRequestLifetime,
-		{http.MethodGet, "/directories/list"}:                                  activityPointInTime,
-		{http.MethodPost, "/directories"}:                                      activityRequestLifetime,
-		{http.MethodDelete, "/directories"}:                                    activityRequestLifetime,
-		{http.MethodPost, "/v1/isolated/session"}:                              activityPointInTime,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/run"}:               activityRequestLifetime,
-		{http.MethodDelete, "/v1/isolated/session/:sessionId"}:                 activityPointInTime,
-		{http.MethodGet, "/v1/isolated/session/:sessionId/diff"}:               activityPointInTime,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/commit"}:            activityRequestLifetime,
-		{http.MethodGet, "/v1/isolated/session/:sessionId/files/info"}:         activityPointInTime,
-		{http.MethodGet, "/v1/isolated/session/:sessionId/files/download"}:     activityRequestLifetime,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/files/upload"}:      activityRequestLifetime,
-		{http.MethodDelete, "/v1/isolated/session/:sessionId/files"}:           activityRequestLifetime,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/files/mv"}:          activityRequestLifetime,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/files/permissions"}: activityRequestLifetime,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/files/replace"}:     activityRequestLifetime,
-		{http.MethodGet, "/v1/isolated/session/:sessionId/files/search"}:       activityPointInTime,
-		{http.MethodGet, "/v1/isolated/session/:sessionId/directories/list"}:   activityPointInTime,
-		{http.MethodPost, "/v1/isolated/session/:sessionId/directories"}:       activityRequestLifetime,
-		{http.MethodDelete, "/v1/isolated/session/:sessionId/directories"}:     activityRequestLifetime,
-	}
-}
-
+// activityMiddleware builds a route-to-behavior table once and captures it in
+// the returned Gin handler. Routes absent from the table are intentionally not
+// tracked.
 func activityMiddleware(tracker *activity.Tracker) gin.HandlerFunc {
-	classifier := newActivityClassifier()
+	routes := activityRoutes()
 	return func(ctx *gin.Context) {
-		mode := classifier.classify(ctx.Request.Method, ctx.FullPath(), ctx.Request.URL.Path, ctx.GetHeader("Upgrade"))
-		switch mode {
-		case activityRequestLifetime:
-			end := tracker.Begin()
-			defer end()
-			ctx.Next()
-		case activityPointInTime:
-			ctx.Next()
-			if ctx.Writer.Status() < http.StatusBadRequest {
-				tracker.Touch()
+		handler := routes[activityRoute{method: ctx.Request.Method, path: ctx.FullPath()}]
+		if strings.HasPrefix(ctx.Request.URL.Path, "/proxy/") {
+			handler = trackRequestLifetime
+			if strings.EqualFold(ctx.GetHeader("Upgrade"), "websocket") {
+				handler = trackPointInTime
 			}
-		default:
-			ctx.Next()
 		}
+		if handler == nil {
+			ctx.Next()
+			return
+		}
+		handler(tracker, ctx)
 	}
 }
 
-func (c activityClassifier) classify(method, routePath, requestPath, upgrade string) activityTrackingMode {
-	if strings.HasPrefix(requestPath, "/proxy/") {
-		if strings.EqualFold(upgrade, "websocket") {
-			return activityPointInTime
-		}
-		return activityRequestLifetime
+func activityRoutes() map[activityRoute]activityHandler {
+	return map[activityRoute]activityHandler{
+		{http.MethodPost, "/command"}:                                          trackRequestLifetime,
+		{http.MethodDelete, "/command"}:                                        trackPointInTime,
+		{http.MethodPost, "/code"}:                                             trackRequestLifetime,
+		{http.MethodDelete, "/code"}:                                           trackPointInTime,
+		{http.MethodPost, "/code/context"}:                                     trackPointInTime,
+		{http.MethodDelete, "/code/contexts"}:                                  trackPointInTime,
+		{http.MethodDelete, "/code/contexts/:contextId"}:                       trackPointInTime,
+		{http.MethodPost, "/session"}:                                          trackPointInTime,
+		{http.MethodPost, "/session/:sessionId/run"}:                           trackRequestLifetime,
+		{http.MethodDelete, "/session/:sessionId"}:                             trackPointInTime,
+		{http.MethodPost, "/pty"}:                                              trackPointInTime,
+		{http.MethodDelete, "/pty/:sessionId"}:                                 trackPointInTime,
+		{http.MethodDelete, "/files"}:                                          trackRequestLifetime,
+		{http.MethodGet, "/files/info"}:                                        trackPointInTime,
+		{http.MethodPost, "/files/mv"}:                                         trackRequestLifetime,
+		{http.MethodPost, "/files/permissions"}:                                trackRequestLifetime,
+		{http.MethodGet, "/files/search"}:                                      trackPointInTime,
+		{http.MethodPost, "/files/replace"}:                                    trackRequestLifetime,
+		{http.MethodPost, "/files/upload"}:                                     trackRequestLifetime,
+		{http.MethodGet, "/files/download"}:                                    trackRequestLifetime,
+		{http.MethodGet, "/directories/list"}:                                  trackPointInTime,
+		{http.MethodPost, "/directories"}:                                      trackRequestLifetime,
+		{http.MethodDelete, "/directories"}:                                    trackRequestLifetime,
+		{http.MethodPost, "/v1/isolated/session"}:                              trackPointInTime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/run"}:               trackRequestLifetime,
+		{http.MethodDelete, "/v1/isolated/session/:sessionId"}:                 trackPointInTime,
+		{http.MethodGet, "/v1/isolated/session/:sessionId/diff"}:               trackPointInTime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/commit"}:            trackRequestLifetime,
+		{http.MethodGet, "/v1/isolated/session/:sessionId/files/info"}:         trackPointInTime,
+		{http.MethodGet, "/v1/isolated/session/:sessionId/files/download"}:     trackRequestLifetime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/files/upload"}:      trackRequestLifetime,
+		{http.MethodDelete, "/v1/isolated/session/:sessionId/files"}:           trackRequestLifetime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/files/mv"}:          trackRequestLifetime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/files/permissions"}: trackRequestLifetime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/files/replace"}:     trackRequestLifetime,
+		{http.MethodGet, "/v1/isolated/session/:sessionId/files/search"}:       trackPointInTime,
+		{http.MethodGet, "/v1/isolated/session/:sessionId/directories/list"}:   trackPointInTime,
+		{http.MethodPost, "/v1/isolated/session/:sessionId/directories"}:       trackRequestLifetime,
+		{http.MethodDelete, "/v1/isolated/session/:sessionId/directories"}:     trackRequestLifetime,
 	}
-	return c[activityRoute{method: method, path: routePath}]
+}
+
+// trackPointInTime records one successful user interaction after the handler returns.
+func trackPointInTime(tracker *activity.Tracker, ctx *gin.Context) {
+	ctx.Next()
+	if ctx.Writer.Status() < http.StatusBadRequest {
+		tracker.Touch()
+	}
+}
+
+// trackRequestLifetime keeps active_operations incremented for the full request lifetime.
+func trackRequestLifetime(tracker *activity.Tracker, ctx *gin.Context) {
+	end := tracker.Begin()
+	defer end()
+	ctx.Next()
 }
