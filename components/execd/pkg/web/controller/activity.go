@@ -75,11 +75,19 @@ func NewActivityController(ctx *gin.Context, tracker *activity.Tracker, config A
 
 // Get returns a read-only activity snapshot. This endpoint must not update activity.
 func (c *ActivityController) Get() {
+	if c.tracker == nil {
+		c.RespondError(http.StatusServiceUnavailable, model.ErrorCodeServiceUnavailable, "activity tracker unavailable")
+		return
+	}
 	c.RespondSuccess(activityResponse(c.tracker.Snapshot()))
 }
 
 // Touch records user activity and optionally holds the sandbox awake for a bounded duration.
 func (c *ActivityController) Touch() {
+	if c.tracker == nil {
+		c.RespondError(http.StatusServiceUnavailable, model.ErrorCodeServiceUnavailable, "activity tracker unavailable")
+		return
+	}
 	var req model.ActivityTouchRequest
 	if err := c.bindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		c.RespondError(http.StatusBadRequest, model.ErrorCodeInvalidRequest, fmt.Sprintf("error parsing request: %v", err))
@@ -90,16 +98,17 @@ func (c *ActivityController) Touch() {
 		return
 	}
 
-	keepAlive := time.Duration(req.KeepAliveSeconds) * time.Second
-	if keepAlive > c.config.MaxKeepAliveDuration {
+	maxKeepAliveSeconds := int64(c.config.MaxKeepAliveDuration / time.Second)
+	if req.KeepAliveSeconds > maxKeepAliveSeconds {
 		c.RespondError(
 			http.StatusBadRequest,
 			model.ErrorCodeInvalidRequest,
-			fmt.Sprintf("keep_alive_seconds must not exceed %d", int64(c.config.MaxKeepAliveDuration/time.Second)),
+			fmt.Sprintf("keep_alive_seconds must not exceed %d", maxKeepAliveSeconds),
 		)
 		return
 	}
 
+	keepAlive := time.Duration(req.KeepAliveSeconds) * time.Second
 	if keepAlive > 0 {
 		c.tracker.KeepAwake(keepAlive)
 	} else {

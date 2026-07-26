@@ -82,6 +82,23 @@ func TestActivityTouchRejectsTooLongKeepAlive(t *testing.T) {
 	}
 }
 
+func TestActivityTouchRejectsHugeKeepAliveWithoutOverflow(t *testing.T) {
+	tracker := activity.NewTracker()
+	router := NewRouter("", tracker)
+
+	body, err := json.Marshal(map[string]any{"keep_alive_seconds": int64(1<<63 - 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/activity/touch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+}
+
 func TestActivityTouchUsesConfiguredMaxKeepAlive(t *testing.T) {
 	tracker := activity.NewTracker()
 	router := NewRouter("", tracker, controller.ActivityConfig{MaxKeepAliveDuration: time.Minute})
