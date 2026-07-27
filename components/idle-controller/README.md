@@ -69,6 +69,15 @@ Build the container from the repository root:
 docker build -f components/idle-controller/Dockerfile -t idle-controller:dev .
 ```
 
+The repository's `Publish AKS Images` workflow also publishes multi-architecture
+idle-controller images to:
+
+```text
+ghcr.io/<owner>/opensandbox/idle-controller:<component-version>-<aks-tag>-<commit>
+```
+
+The component version is maintained in `components/idle-controller/VERSION`.
+
 ## Deploy
 
 Review the image and policy settings, then apply the example manifests:
