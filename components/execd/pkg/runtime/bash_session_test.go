@@ -37,7 +37,7 @@ func TestBashSession_NonZeroExitEmitsError(t *testing.T) {
 		t.Skip("bash not found in PATH")
 	}
 
-	c := NewController("", "")
+	c := newTestController("", "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -85,6 +85,54 @@ func TestBashSession_NonZeroExitEmitsError(t *testing.T) {
 	case <-completeCh:
 		require.Fail(t, "did not expect completion hook on non-zero exit")
 	default:
+	}
+}
+
+func TestBashSession_FallsBackToSh(t *testing.T) {
+	useShOnlyPath(t)
+
+	session := newBashSession("")
+	t.Cleanup(func() { _ = session.close() })
+	require.NoError(t, session.start())
+
+	require.NoError(t, session.run(context.Background(), &ExecuteCodeRequest{
+		Code:    "export FALLBACK_VALUE='hello world'",
+		Timeout: 3 * time.Second,
+	}))
+
+	var stdoutLines []string
+	require.NoError(t, session.run(context.Background(), &ExecuteCodeRequest{
+		Code:    `printf '%s\n' "$FALLBACK_VALUE"`,
+		Timeout: 3 * time.Second,
+		Hooks: ExecuteResultHook{
+			OnExecuteStdout: func(line string) { stdoutLines = append(stdoutLines, line) },
+		},
+	}))
+	require.Contains(t, stdoutLines, "hello world")
+}
+
+func TestParseExportLine_BashAndShFormats(t *testing.T) {
+	tests := []struct {
+		name      string
+		line      string
+		wantName  string
+		wantValue string
+		wantOK    bool
+	}{
+		{name: "bash", line: `declare -x FOO="hello world"`, wantName: "FOO", wantValue: "hello world", wantOK: true},
+		{name: "sh", line: `export FOO='hello world'`, wantName: "FOO", wantValue: "hello world", wantOK: true},
+		{name: "sh escaped quote", line: `export FOO='it'\''s'`, wantName: "FOO", wantValue: "it's", wantOK: true},
+		{name: "empty", line: `export FOO=""`, wantName: "FOO", wantValue: "", wantOK: true},
+		{name: "lone quote", line: `export FOO='`, wantName: "FOO", wantValue: "'", wantOK: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotName, gotValue, gotOK := parseExportLine(tt.line)
+			require.Equal(t, tt.wantOK, gotOK)
+			require.Equal(t, tt.wantName, gotName)
+			require.Equal(t, tt.wantValue, gotValue)
+		})
 	}
 }
 
@@ -359,7 +407,7 @@ func TestBashSession_envDumpNotLeakedWhenNoOutput(t *testing.T) {
 
 func TestBashSession_heredoc(t *testing.T) {
 	rewardDir := t.TempDir()
-	controller := NewController("", "")
+	controller := newTestController("", "")
 
 	sessionID, err := controller.CreateBashSession(&CreateContextRequest{})
 	require.NoError(t, err)
@@ -440,7 +488,7 @@ exec /tmp/exec_child.sh
 	require.NoError(t, session.run(context.Background(), request), "expected exec to complete without killing the session")
 	require.True(t, containsLine(stdoutLines, "child says hi"), "expected child output, got %v", stdoutLines)
 
-	// Subsequent run should still work because we restart bash per run.
+	// Subsequent run should still work because we restart the shell per run.
 	request = &ExecuteCodeRequest{
 		Code:    "echo still-alive",
 		Hooks:   hooks,
@@ -546,7 +594,7 @@ func TestBashSession_DeleteBashSessionKillsRunningProcess(t *testing.T) {
 		t.Skip("bash not found in PATH")
 	}
 
-	c := NewController("", "")
+	c := newTestController("", "")
 	sessionID, err := c.CreateBashSession(&CreateContextRequest{})
 	require.NoError(t, err)
 

@@ -57,7 +57,7 @@ func newStubIsolator() *stubIsolator {
 
 func newTestRunner(t *testing.T) *IsolatedRunner {
 	t.Helper()
-	ctrl := NewController("", "")
+	ctrl := newTestController("", "")
 	mgr, err := isolation.NewUpperManager(t.TempDir(), 8<<30)
 	if err != nil {
 		t.Fatal(err)
@@ -172,6 +172,31 @@ func TestSetprivIdentitySwitchRequired(t *testing.T) {
 				t.Errorf("setprivIdentitySwitchRequired() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestIsolatedSession_FallsBackToSh(t *testing.T) {
+	useShOnlyPath(t)
+
+	runner := newTestRunner(t)
+	id, err := runner.CreateIsolatedSession(&IsolatedSessionOptions{
+		WorkspacePath: filepath.Join(t.TempDir(), "workspace"),
+		WorkspaceMode: "rw",
+	})
+	if err != nil {
+		t.Fatalf("CreateIsolatedSession: %v", err)
+	}
+	defer runner.DeleteIsolatedSession(id)
+
+	var lines []string
+	err = runner.RunInIsolatedSession(context.Background(), id, "printf 'fallback_isolated\\n'", nil, func(line string) {
+		lines = append(lines, line)
+	})
+	if err != nil {
+		t.Fatalf("RunInIsolatedSession: %v", err)
+	}
+	if len(lines) != 1 || lines[0] != "fallback_isolated" {
+		t.Fatalf("output = %v, want [fallback_isolated]", lines)
 	}
 }
 
@@ -647,7 +672,7 @@ func TestRunInIsolatedSession_EnvPersistence(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Run 1: set env var in bash session.
+	// Run 1: set env var in the shell session.
 	err = runner.RunInIsolatedSession(ctx, id, "export MY_VAR=hello_from_session", nil, nil)
 	if err != nil {
 		t.Fatalf("run 1: %v", err)

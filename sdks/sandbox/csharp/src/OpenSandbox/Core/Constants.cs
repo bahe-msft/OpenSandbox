@@ -66,7 +66,7 @@ public static class Constants
     /// <summary>
     /// Default user agent string for SDK HTTP requests.
     /// </summary>
-    public const string DefaultUserAgent = "OpenSandbox-CSharp-SDK/0.1.4";
+    public const string DefaultUserAgent = "OpenSandbox-CSharp-SDK/0.1.5";
 
     /// <summary>
     /// Environment variable name for the OpenSandbox domain.
@@ -93,4 +93,12 @@ public static class Constants
     /// Header name for request ID.
     /// </summary>
     public const string RequestIdHeader = "x-request-id";
+
+    /// <summary>
+    /// Header name carrying the SDK host's own IP. A non-standard name is used
+    /// on purpose: standard forwarded headers (X-Forwarded-For, etc.) are
+    /// rewritten or stripped by intermediaries, so a dedicated name conveys it
+    /// reliably.
+    /// </summary>
+    public const string ClientIpHeader = "OPEN-SANDBOX-CLIENT-IP";
 }

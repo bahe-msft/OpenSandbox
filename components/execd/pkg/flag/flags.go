@@ -39,6 +39,9 @@ var (
 	// late execute_result/error messages after receiving idle status.
 	JupyterIdlePollInterval time.Duration
 
+	// ActivityMaxKeepAliveDuration caps a single /v1/activity/touch keep-alive request.
+	ActivityMaxKeepAliveDuration time.Duration
+
 	// IsolationConfigPath points to the TOML isolation config file.
 	// Empty means use built-in defaults.
 	IsolationConfigPath string

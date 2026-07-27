@@ -45,7 +45,7 @@ func TestRunCommand_CancelKillsChildren(t *testing.T) {
 
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
 
-	c := NewController("", "")
+	c := newTestController("", "")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -122,7 +122,7 @@ func TestInterrupt_AfterFinished_ReturnsError(t *testing.T) {
 		t.Skip("bash not found in PATH")
 	}
 
-	c := NewController("", "")
+	c := newTestController("", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
