@@ -50,8 +50,8 @@ func TestApplyStatic_BuildsRuleset_DefaultDeny(t *testing.T) {
 	expectContains(t, rendered, "add rule inet opensandbox egress oifname \"lo\" accept")
 	expectContains(t, rendered, "add rule inet opensandbox egress tcp dport 853 drop")
 	expectContains(t, rendered, "add rule inet opensandbox egress udp dport 853 drop")
-	expectContains(t, rendered, "add set inet opensandbox dyn_allow_v4 { type ipv4_addr; timeout 360s; }")
-	expectContains(t, rendered, "add set inet opensandbox dyn_allow_v6 { type ipv6_addr; timeout 360s; }")
+	expectContains(t, rendered, "add set inet opensandbox dyn_allow_v4 { type ipv4_addr; timeout 86400s; }")
+	expectContains(t, rendered, "add set inet opensandbox dyn_allow_v6 { type ipv6_addr; timeout 86400s; }")
 	expectContains(t, rendered, "add element inet opensandbox allow_v4 { 1.1.1.1, 2.2.0.0/16 }")
 	expectContains(t, rendered, "add element inet opensandbox deny_v6 { 2001:db8::/32 }")
 	expectContains(t, rendered, "add rule inet opensandbox egress ip daddr @dyn_allow_v4 accept")
@@ -153,11 +153,11 @@ func TestAddResolvedIPs_BuildsDynamicElements(t *testing.T) {
 		{Addr: netip.MustParseAddr("2001:db8::1"), TTL: 60 * time.Second},
 	}
 	require.NoError(t, m.AddResolvedIPs(context.Background(), ips), "AddResolvedIPs returned error")
-	expectContains(t, rendered, "add element inet opensandbox dyn_allow_v4 { 1.1.1.1 timeout 180s }")
-	expectContains(t, rendered, "add element inet opensandbox dyn_allow_v6 { 2001:db8::1 timeout 120s }")
+	expectContains(t, rendered, "add element inet opensandbox dyn_allow_v4 { 1.1.1.1 timeout 86400s }")
+	expectContains(t, rendered, "add element inet opensandbox dyn_allow_v6 { 2001:db8::1 timeout 86400s }")
 }
 
-func TestAddResolvedIPs_ClampsTTL(t *testing.T) {
+func TestAddResolvedIPs_UsesReconnectSafeTTL(t *testing.T) {
 	var rendered string
 	m := NewManagerWithRunner(func(_ context.Context, script string) ([]byte, error) {
 		rendered = script
@@ -168,8 +168,8 @@ func TestAddResolvedIPs_ClampsTTL(t *testing.T) {
 		{Addr: netip.MustParseAddr("10.0.0.2"), TTL: 9999 * time.Second},
 	}
 	require.NoError(t, m.AddResolvedIPs(context.Background(), ips), "AddResolvedIPs returned error")
-	expectContains(t, rendered, "10.0.0.1 timeout 70s")
-	expectContains(t, rendered, "10.0.0.2 timeout 360s")
+	expectContains(t, rendered, "10.0.0.1 timeout 86400s")
+	expectContains(t, rendered, "10.0.0.2 timeout 86400s")
 }
 
 func TestAddResolvedIPs_EmptyNoOp(t *testing.T) {
