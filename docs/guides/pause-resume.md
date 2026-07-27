@@ -5,7 +5,7 @@ description: Pause sandbox state to an OCI image and resume from snapshot on Kub
 
 # Pause and Resume Guide
 
-This guide explains how to use the pause and resume features for Kubernetes-backed sandboxes in OpenSandbox. Pause commits the sandbox's root filesystem as an OCI image and releases cluster resources. Resume restores the sandbox from that image.
+This guide explains how to use the pause and resume features for Kubernetes-backed sandboxes in OpenSandbox. The snapshot-based behavior described in this guide applies to the `BatchSandbox` provider: pause commits the sandbox's root filesystem as an OCI image and releases cluster resources, and resume restores the sandbox from that image. The AgentSandbox provider instead uses native replica suspension, as described in the warning below.
 
 ## Table of Contents
 

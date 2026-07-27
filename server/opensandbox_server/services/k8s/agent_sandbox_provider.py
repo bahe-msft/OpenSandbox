@@ -381,11 +381,8 @@ class AgentSandboxProvider(WorkloadProvider):
             body=body,
         )
 
-    def patch_workload(self, sandbox_id: str, namespace: str, body: Dict[str, Any]) -> Dict[str, Any]:
-        """Patch the Sandbox CRD for the given OpenSandbox sandbox ID."""
-        sandbox = self.get_workload(sandbox_id, namespace)
-        if not sandbox:
-            raise ValueError(f"Sandbox '{sandbox_id}' not found")
+    def patch_workload(self, sandbox: Dict[str, Any], namespace: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Patch an already-resolved Sandbox CRD."""
         return self.k8s_client.patch_custom_object(
             group=self.group,
             version=self.version,
@@ -506,7 +503,7 @@ class AgentSandboxProvider(WorkloadProvider):
         state = self.get_status(sandbox).get("state")
         if state != "Running":
             raise ValueError(f"Cannot pause sandbox in state {state}")
-        self.patch_workload(sandbox_id, namespace, {"spec": {"replicas": 0}})
+        self.patch_workload(sandbox, namespace, {"spec": {"replicas": 0}})
         logger.info("Patched agent Sandbox %s spec.replicas=0", sandbox_id)
 
     def resume_sandbox(self, sandbox_id: str, namespace: str) -> None:
@@ -517,7 +514,7 @@ class AgentSandboxProvider(WorkloadProvider):
         state = self.get_status(sandbox).get("state")
         if state != "Paused":
             raise ValueError(f"Cannot resume sandbox in state {state}")
-        self.patch_workload(sandbox_id, namespace, {"spec": {"replicas": 1}})
+        self.patch_workload(sandbox, namespace, {"spec": {"replicas": 1}})
         logger.info("Patched agent Sandbox %s spec.replicas=1", sandbox_id)
 
     def _pod_state_from_selector(self, workload: Dict[str, Any]) -> Optional[tuple[str, str, str]]:

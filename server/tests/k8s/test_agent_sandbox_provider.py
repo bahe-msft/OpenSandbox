@@ -502,6 +502,7 @@ spec:
         provider.pause_sandbox("test-id", "test-ns")
 
         assert mock_k8s_client.patch_custom_object.call_args.kwargs["body"] == {"spec": {"replicas": 0}}
+        mock_k8s_client.get_custom_object.assert_called_once()
 
     def test_pause_sandbox_rejects_non_running_state(self, mock_k8s_client):
         provider = AgentSandboxProvider(mock_k8s_client)
@@ -534,6 +535,7 @@ spec:
         provider.resume_sandbox("test-id", "test-ns")
 
         assert mock_k8s_client.patch_custom_object.call_args.kwargs["body"] == {"spec": {"replicas": 1}}
+        mock_k8s_client.get_custom_object.assert_called_once()
 
     def test_resume_sandbox_rejects_non_paused_state(self, mock_k8s_client):
         provider = AgentSandboxProvider(mock_k8s_client)
