@@ -51,34 +51,6 @@ from mitmproxy import ctx, http
 from mitmproxy.tls import ClientHelloData
 
 
-H2_FLOW_CONTROL_WINDOW = 16 * 1024 * 1024
-
-
-def _expand_http2_flow_control_windows() -> None:
-    """Increase mitmproxy's default 64 KiB HTTP/2 receive windows."""
-    try:
-        from mitmproxy.proxy.layers.http import _http2
-    except ImportError:
-        return
-
-    original_init = _http2.Http2Connection.__init__
-    original_initiate = _http2.BufferedH2Connection.initiate_connection
-
-    def init(connection: Any, *args: Any, **kwargs: Any) -> None:
-        original_init(connection, *args, **kwargs)
-        connection.h2_conn.local_settings.initial_window_size = H2_FLOW_CONTROL_WINDOW
-
-    def initiate(connection: Any, *args: Any, **kwargs: Any) -> None:
-        original_initiate(connection, *args, **kwargs)
-        connection.increment_flow_control_window(H2_FLOW_CONTROL_WINDOW - 65535)
-
-    _http2.Http2Connection.__init__ = init
-    _http2.BufferedH2Connection.initiate_connection = initiate
-
-
-_expand_http2_flow_control_windows()
-
-
 CREDENTIAL_PROXY_SOCKET_ENV = "OPENSANDBOX_CREDENTIAL_PROXY_SOCKET"
 DEFAULT_CREDENTIAL_PROXY_SOCKET = "/run/opensandbox/credential-proxy/active.sock"
 ACTIVE_VAULT_PATH = "/credential-vault/_active"

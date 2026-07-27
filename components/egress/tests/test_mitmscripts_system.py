@@ -129,11 +129,6 @@ def _load_system_module() -> Any:
 
 
 class SystemAddonRedactionTest(unittest.TestCase):
-    def test_http2_flow_control_window_is_large(self) -> None:
-        system = _load_system_module()
-
-        self.assertEqual(16 * 1024 * 1024, system.H2_FLOW_CONTROL_WINDOW)
-
     def test_load_active_vault_reads_unix_socket(self) -> None:
         system = _load_system_module()
         calls: list[tuple[str, Any, Any]] = []
