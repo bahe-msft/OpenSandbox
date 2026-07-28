@@ -158,20 +158,7 @@ func (m *Manager) AddResolvedIPs(ctx context.Context, ips []ResolvedIP) error {
 // observation renews the entry for the full timeout, and the final observation
 // after close provides the same bounded grace period for reconnects.
 func (m *Manager) StartConnectionRefresh(ctx context.Context) {
-	m.tracker.start(ctx, m.opts.ConnectionRefreshInterval, m.runDynamicIPRefresh)
-}
-
-func (m *Manager) runDynamicIPRefresh(ctx context.Context, generation uint64, script string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if !m.tracker.isCurrent(generation) {
-		return nil
-	}
-	if _, err := m.run(ctx, script); err != nil {
-		return err
-	}
-	telemetry.RecordNftablesUpdate()
-	return nil
+	m.tracker.start(ctx, m.opts.ConnectionRefreshInterval, m)
 }
 
 // RemoveEnforcement drops inet opensandbox; missing table is not an error.

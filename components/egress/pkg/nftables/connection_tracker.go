@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/alibaba/opensandbox/egress/pkg/log"
+	"github.com/alibaba/opensandbox/egress/pkg/telemetry"
 	"github.com/alibaba/opensandbox/internal/safego"
 )
 
@@ -33,8 +34,6 @@ type connectionTracker struct {
 	now               func() time.Time
 	generation        uint64
 }
-
-type refreshRunner func(context.Context, uint64, string) error
 
 type refreshPlan struct {
 	addresses  []netip.Addr
@@ -64,13 +63,13 @@ func (t *connectionTracker) setDynamicIPs(ips []ResolvedIP) {
 	}
 }
 
-func (t *connectionTracker) start(ctx context.Context, interval time.Duration, run refreshRunner) {
+func (t *connectionTracker) start(ctx context.Context, interval time.Duration, manager *Manager) {
 	safego.Go(func() {
-		t.run(ctx, interval, run)
+		t.run(ctx, interval, manager)
 	})
 }
 
-func (t *connectionTracker) run(ctx context.Context, interval time.Duration, run refreshRunner) {
+func (t *connectionTracker) run(ctx context.Context, interval time.Duration, manager *Manager) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -85,7 +84,7 @@ func (t *connectionTracker) run(ctx context.Context, interval time.Duration, run
 				continue
 			}
 			refreshCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err = t.refreshActiveConnections(refreshCtx, connections, run)
+			err = t.refreshActiveConnections(refreshCtx, connections, manager)
 			cancel()
 			if err != nil {
 				log.Warnf("nftables: refresh active DNS IPs failed: %v", err)
@@ -94,15 +93,28 @@ func (t *connectionTracker) run(ctx context.Context, interval time.Duration, run
 	}
 }
 
-func (t *connectionTracker) refreshActiveConnections(ctx context.Context, connections []tcpConnection, run refreshRunner) error {
+func (t *connectionTracker) refreshActiveConnections(ctx context.Context, connections []tcpConnection, manager *Manager) error {
 	plan := t.refreshCandidates(connections)
 	if len(plan.addresses) > 0 {
-		script := buildRefreshResolvedIPsScript(tableName, plan.addresses)
-		if err := run(ctx, plan.generation, script); err != nil {
+		if err := t.applyRefresh(ctx, manager, plan); err != nil {
 			return err
 		}
 	}
 	t.recordRefresh(plan)
+	return nil
+}
+
+func (t *connectionTracker) applyRefresh(ctx context.Context, manager *Manager, plan refreshPlan) error {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if !t.isCurrent(plan.generation) {
+		return nil
+	}
+	script := buildRefreshResolvedIPsScript(tableName, plan.addresses)
+	if _, err := manager.run(ctx, script); err != nil {
+		return err
+	}
+	telemetry.RecordNftablesUpdate()
 	return nil
 }
 

@@ -132,15 +132,15 @@ func TestConnectionTrackerRefreshActiveConnections(t *testing.T) {
 	tracker.now = func() time.Time { return now }
 	tracker.setDynamicIPs([]ResolvedIP{{Addr: addr, TTL: time.Minute}})
 	var script string
+	manager := NewManagerWithRunner(func(_ context.Context, rendered string) ([]byte, error) {
+		script = rendered
+		return nil, nil
+	})
 
 	err := tracker.refreshActiveConnections(
 		context.Background(),
 		[]tcpConnection{{remote: addr, state: "ESTABLISHED"}},
-		func(_ context.Context, generation uint64, rendered string) error {
-			require.Equal(t, uint64(0), generation)
-			script = rendered
-			return nil
-		},
+		manager,
 	)
 	require.NoError(t, err)
 	require.Equal(t, "add element inet opensandbox dyn_allow_v4 { 1.1.1.1 timeout 360s }\n", script)
@@ -153,11 +153,14 @@ func TestConnectionTrackerRefreshFailureDoesNotRecordState(t *testing.T) {
 	tracker := newConnectionTracker()
 	tracker.setDynamicIPs([]ResolvedIP{{Addr: addr, TTL: time.Minute}})
 	originalExpiry := tracker.dynamicIPs[addr]
+	manager := NewManagerWithRunner(func(context.Context, string) ([]byte, error) {
+		return nil, fmt.Errorf("nft failed")
+	})
 
 	err := tracker.refreshActiveConnections(
 		context.Background(),
 		[]tcpConnection{{remote: addr, state: "ESTABLISHED"}},
-		func(context.Context, uint64, string) error { return fmt.Errorf("nft failed") },
+		manager,
 	)
 	require.Error(t, err)
 	require.Equal(t, originalExpiry, tracker.dynamicIPs[addr])
@@ -168,11 +171,15 @@ func TestConnectionTrackerRejectsStaleRefreshAfterClear(t *testing.T) {
 	addr := netip.MustParseAddr("1.1.1.1")
 	tracker := newConnectionTracker()
 	tracker.setDynamicIPs([]ResolvedIP{{Addr: addr, TTL: time.Minute}})
-	refresh := tracker.refreshCandidates([]tcpConnection{{remote: addr, state: "ESTABLISHED"}})
+	plan := tracker.refreshCandidates([]tcpConnection{{remote: addr, state: "ESTABLISHED"}})
+	manager := NewManagerWithRunner(func(_ context.Context, _ string) ([]byte, error) {
+		require.FailNow(t, "stale refresh must not execute nft")
+		return nil, nil
+	})
 
 	tracker.clear()
-	require.False(t, tracker.isCurrent(refresh.generation))
-	tracker.recordRefresh(refresh)
+	require.NoError(t, tracker.applyRefresh(context.Background(), manager, plan))
+	tracker.recordRefresh(plan)
 	require.Empty(t, tracker.dynamicIPs)
 	require.Empty(t, tracker.previousActiveIPs)
 }
