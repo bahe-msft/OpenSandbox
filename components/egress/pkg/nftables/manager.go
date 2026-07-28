@@ -145,16 +145,20 @@ func (m *Manager) AddResolvedIPs(ctx context.Context, ips []ResolvedIP) error {
 	log.Debugf("nftables: adding %d resolved IP(s) to dynamic allow sets with script statement %s", len(ips), script)
 	_, err := m.run(ctx, script)
 	if err == nil {
-		now := m.now()
-		for _, ip := range ips {
-			addr := ip.Addr.Unmap()
-			if addr.IsValid() {
-				m.dynamicIPs[addr] = now.Add(clampTTL(ip.TTL))
-			}
-		}
+		m.setDynamicIPsLocked(ips)
 		telemetry.RecordNftablesUpdate()
 	}
 	return err
+}
+
+func (m *Manager) setDynamicIPsLocked(ips []ResolvedIP) {
+	now := m.now()
+	for _, ip := range ips {
+		addr := ip.Addr.Unmap()
+		if addr.IsValid() {
+			m.dynamicIPs[addr] = now.Add(clampTTL(ip.TTL))
+		}
+	}
 }
 
 // StartConnectionRefresh keeps DNS-learned IPs authorized while a TCP
