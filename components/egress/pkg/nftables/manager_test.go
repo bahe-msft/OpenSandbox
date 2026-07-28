@@ -342,10 +342,9 @@ func TestRefreshActiveConnections_RenewsExpiredActiveIP(t *testing.T) {
 func TestStartConnectionRefresh_StopsWithContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	called := make(chan struct{}, 1)
-	m := NewManagerWithRunner(func(_ context.Context, _ string) ([]byte, error) {
+	m := NewManagerWithRunnerAndOptions(func(_ context.Context, _ string) ([]byte, error) {
 		return nil, nil
-	})
-	m.refreshInterval = time.Millisecond
+	}, Options{ConnectionRefreshInterval: time.Millisecond})
 	m.listConnections = func(context.Context) ([]tcpConnection, error) {
 		select {
 		case called <- struct{}{}:
@@ -374,11 +373,10 @@ func TestStartConnectionRefresh_PollErrorClearsPriorActivity(t *testing.T) {
 	var scripts []string
 	var polls int
 	done := make(chan struct{})
-	m := NewManagerWithRunner(func(_ context.Context, script string) ([]byte, error) {
+	m := NewManagerWithRunnerAndOptions(func(_ context.Context, script string) ([]byte, error) {
 		scripts = append(scripts, script)
 		return nil, nil
-	})
-	m.refreshInterval = time.Millisecond
+	}, Options{ConnectionRefreshInterval: time.Millisecond})
 	m.listConnections = func(context.Context) ([]tcpConnection, error) {
 		polls++
 		switch polls {
@@ -410,4 +408,9 @@ func TestStartConnectionRefresh_PollErrorClearsPriorActivity(t *testing.T) {
 	// Initial insert plus the active renewal. A stale final renewal must not be
 	// emitted after the observation gap.
 	require.Len(t, scripts, 2)
+}
+
+func TestNewManager_DefaultsConnectionRefreshInterval(t *testing.T) {
+	m := NewManagerWithOptions(Options{})
+	require.Equal(t, 30*time.Second, m.opts.ConnectionRefreshInterval)
 }

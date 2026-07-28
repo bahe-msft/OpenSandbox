@@ -32,15 +32,15 @@ import (
 )
 
 const (
-	tableName                 = "opensandbox"
-	chainName                 = "egress"
-	allowV4Set                = "allow_v4"
-	allowV6Set                = "allow_v6"
-	denyV4Set                 = "deny_v4"
-	denyV6Set                 = "deny_v6"
-	dohBlockV4Set             = "doh_block_v4"
-	dohBlockV6Set             = "doh_block_v6"
-	connectionRefreshInterval = 30 * time.Second
+	tableName                        = "opensandbox"
+	chainName                        = "egress"
+	allowV4Set                       = "allow_v4"
+	allowV6Set                       = "allow_v6"
+	denyV4Set                        = "deny_v4"
+	denyV6Set                        = "deny_v6"
+	dohBlockV4Set                    = "doh_block_v4"
+	dohBlockV6Set                    = "doh_block_v6"
+	defaultConnectionRefreshInterval = 30 * time.Second
 )
 
 type runner func(ctx context.Context, script string) ([]byte, error)
@@ -50,6 +50,11 @@ type Options struct {
 	BlockDoH443    bool
 	DoHBlocklistV4 []string
 	DoHBlocklistV6 []string
+	// ConnectionRefreshInterval controls how often active TCP connections renew
+	// DNS-derived nft leases. Shorter intervals reduce the maximum temporary
+	// reconnect gap, but increase /proc scans and nft updates. The 30-second
+	// default is half the minimum 60-second DNS lease.
+	ConnectionRefreshInterval time.Duration
 }
 
 type Manager struct {
@@ -59,7 +64,6 @@ type Manager struct {
 	dynamicIPs        map[netip.Addr]time.Time
 	previousActiveIPs map[netip.Addr]struct{}
 	listConnections   func(context.Context) ([]tcpConnection, error)
-	refreshInterval   time.Duration
 	now               func() time.Time
 }
 
@@ -80,13 +84,15 @@ func NewManagerWithOptions(opts Options) *Manager {
 }
 
 func newManager(r runner, opts Options) *Manager {
+	if opts.ConnectionRefreshInterval <= 0 {
+		opts.ConnectionRefreshInterval = defaultConnectionRefreshInterval
+	}
 	return &Manager{
 		run:               r,
 		opts:              opts,
 		dynamicIPs:        make(map[netip.Addr]time.Time),
 		previousActiveIPs: make(map[netip.Addr]struct{}),
 		listConnections:   listTCPConnections,
-		refreshInterval:   connectionRefreshInterval,
 		now:               time.Now,
 	}
 }
@@ -168,7 +174,7 @@ func (m *Manager) AddResolvedIPs(ctx context.Context, ips []ResolvedIP) error {
 // after close provides the same bounded grace period for reconnects.
 func (m *Manager) StartConnectionRefresh(ctx context.Context) {
 	safego.Go(func() {
-		ticker := time.NewTicker(m.refreshInterval)
+		ticker := time.NewTicker(m.opts.ConnectionRefreshInterval)
 		defer ticker.Stop()
 		for {
 			select {
