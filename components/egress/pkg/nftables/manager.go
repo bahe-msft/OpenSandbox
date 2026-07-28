@@ -17,9 +17,7 @@ package nftables
 import (
 	"context"
 	"fmt"
-	"net/netip"
 	"os/exec"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -58,13 +56,10 @@ type Options struct {
 }
 
 type Manager struct {
-	run               runner
-	opts              Options
-	mu                sync.Mutex
-	dynamicIPs        map[netip.Addr]time.Time
-	previousActiveIPs map[netip.Addr]struct{}
-	listConnections   func(context.Context) ([]tcpConnection, error)
-	now               func() time.Time
+	run     runner
+	opts    Options
+	mu      sync.Mutex
+	tracker *connectionTracker
 }
 
 func NewManager() *Manager {
@@ -88,12 +83,9 @@ func newManager(r runner, opts Options) *Manager {
 		opts.ConnectionRefreshInterval = defaultConnectionRefreshInterval
 	}
 	return &Manager{
-		run:               r,
-		opts:              opts,
-		dynamicIPs:        make(map[netip.Addr]time.Time),
-		previousActiveIPs: make(map[netip.Addr]struct{}),
-		listConnections:   listTCPConnections,
-		now:               time.Now,
+		run:     r,
+		opts:    opts,
+		tracker: newConnectionTracker(),
 	}
 }
 
@@ -145,20 +137,10 @@ func (m *Manager) AddResolvedIPs(ctx context.Context, ips []ResolvedIP) error {
 	log.Debugf("nftables: adding %d resolved IP(s) to dynamic allow sets with script statement %s", len(ips), script)
 	_, err := m.run(ctx, script)
 	if err == nil {
-		m.setDynamicIPsLocked(ips)
+		m.tracker.setDynamicIPs(ips)
 		telemetry.RecordNftablesUpdate()
 	}
 	return err
-}
-
-func (m *Manager) setDynamicIPsLocked(ips []ResolvedIP) {
-	now := m.now()
-	for _, ip := range ips {
-		addr := ip.Addr.Unmap()
-		if addr.IsValid() {
-			m.dynamicIPs[addr] = now.Add(clampTTL(ip.TTL))
-		}
-	}
 }
 
 // StartConnectionRefresh keeps DNS-learned IPs authorized while a TCP
@@ -185,9 +167,11 @@ func (m *Manager) StartConnectionRefresh(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				connections, err := m.listConnections(ctx)
+				connections, err := m.tracker.listConnections(ctx)
 				if err != nil {
-					m.clearPreviousActiveIPs()
+					m.mu.Lock()
+					m.tracker.clearPreviousActiveIPs()
+					m.mu.Unlock()
 					log.Warnf("nftables: list active TCP connections failed: %v", err)
 					continue
 				}
@@ -202,92 +186,25 @@ func (m *Manager) StartConnectionRefresh(ctx context.Context) {
 	})
 }
 
-func (m *Manager) clearPreviousActiveIPs() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.previousActiveIPs = make(map[netip.Addr]struct{})
-}
-
 func (m *Manager) refreshActiveConnections(ctx context.Context, connections []tcpConnection) error {
-	active := activeRemoteIPs(connections)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	now := m.now()
-	for addr, expiresAt := range m.dynamicIPs {
-		if !expiresAt.After(now) {
-			if _, isActive := active[addr]; isActive {
-				continue
-			}
-			if _, wasActive := m.previousActiveIPs[addr]; wasActive {
-				continue
-			}
-			delete(m.dynamicIPs, addr)
-			delete(m.previousActiveIPs, addr)
-		}
-	}
-
-	current := make(map[netip.Addr]struct{})
-	refresh := make(map[netip.Addr]struct{})
-	for addr := range active {
-		if _, ok := m.dynamicIPs[addr]; ok {
-			current[addr] = struct{}{}
-			refresh[addr] = struct{}{}
-		}
-	}
-	// A final refresh when activity ends makes the existing timeout the
-	// reconnect grace period instead of extending every DNS answer globally.
-	for addr := range m.previousActiveIPs {
-		if _, stillActive := current[addr]; !stillActive {
-			if _, known := m.dynamicIPs[addr]; known {
-				refresh[addr] = struct{}{}
-			}
-		}
-	}
-	if len(refresh) == 0 {
-		m.previousActiveIPs = current
+	refresh := m.tracker.refreshCandidates(connections)
+	if len(refresh.addresses) == 0 {
+		m.tracker.recordRefresh(refresh)
 		return nil
 	}
-
-	addresses := make([]netip.Addr, 0, len(refresh))
-	for addr := range refresh {
-		addresses = append(addresses, addr)
-	}
-	sort.Slice(addresses, func(i, j int) bool { return addresses[i].Compare(addresses[j]) < 0 })
-	script := buildRefreshResolvedIPsScript(tableName, addresses)
+	script := buildRefreshResolvedIPsScript(tableName, refresh.addresses)
 	if _, err := m.run(ctx, script); err != nil {
 		return err
 	}
-	for addr := range refresh {
-		m.dynamicIPs[addr] = now.Add(time.Duration(dynSetTimeoutS) * time.Second)
-	}
-	m.previousActiveIPs = current
+	m.tracker.recordRefresh(refresh)
 	telemetry.RecordNftablesUpdate()
 	return nil
 }
 
-func activeRemoteIPs(connections []tcpConnection) map[netip.Addr]struct{} {
-	active := make(map[netip.Addr]struct{})
-	for _, connection := range connections {
-		if !activeTCPState(connection.state) || !connection.remote.IsValid() {
-			continue
-		}
-		active[connection.remote.Unmap()] = struct{}{}
-	}
-	return active
-}
-
-func activeTCPState(state string) bool {
-	switch state {
-	case "ESTABLISHED", "SYN_SENT", "SYN_RECV", "FIN_WAIT1", "FIN_WAIT2", "CLOSE_WAIT", "CLOSING", "LAST_ACK":
-		return true
-	default:
-		return false
-	}
-}
-
 func (m *Manager) clearDynamicIPsLocked() {
-	m.dynamicIPs = make(map[netip.Addr]time.Time)
-	m.previousActiveIPs = make(map[netip.Addr]struct{})
+	m.tracker.clear()
 }
 
 // RemoveEnforcement drops inet opensandbox; missing table is not an error.

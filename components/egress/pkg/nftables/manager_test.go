@@ -309,14 +309,14 @@ func TestRefreshActiveConnections_ForgetsExpiredInactiveIP(t *testing.T) {
 	m := NewManagerWithRunner(func(_ context.Context, _ string) ([]byte, error) {
 		return nil, nil
 	})
-	m.now = func() time.Time { return now }
+	m.tracker.now = func() time.Time { return now }
 	require.NoError(t, m.AddResolvedIPs(context.Background(), []ResolvedIP{
 		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: 10 * time.Second},
 	}))
 	now = now.Add(71 * time.Second)
 	require.NoError(t, m.refreshActiveConnections(context.Background(), nil))
 
-	require.Empty(t, m.dynamicIPs)
+	require.Empty(t, m.tracker.dynamicIPs)
 }
 
 func TestRefreshActiveConnections_RenewsExpiredActiveIP(t *testing.T) {
@@ -326,7 +326,7 @@ func TestRefreshActiveConnections_RenewsExpiredActiveIP(t *testing.T) {
 		scripts = append(scripts, script)
 		return nil, nil
 	})
-	m.now = func() time.Time { return now }
+	m.tracker.now = func() time.Time { return now }
 	require.NoError(t, m.AddResolvedIPs(context.Background(), []ResolvedIP{
 		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: 10 * time.Second},
 	}))
@@ -336,7 +336,7 @@ func TestRefreshActiveConnections_RenewsExpiredActiveIP(t *testing.T) {
 	}))
 
 	require.Len(t, scripts, 2)
-	require.Equal(t, now.Add(6*time.Minute), m.dynamicIPs[netip.MustParseAddr("1.1.1.1")])
+	require.Equal(t, now.Add(6*time.Minute), m.tracker.dynamicIPs[netip.MustParseAddr("1.1.1.1")])
 }
 
 func TestStartConnectionRefresh_StopsWithContext(t *testing.T) {
@@ -345,7 +345,7 @@ func TestStartConnectionRefresh_StopsWithContext(t *testing.T) {
 	m := NewManagerWithRunnerAndOptions(func(_ context.Context, _ string) ([]byte, error) {
 		return nil, nil
 	}, Options{ConnectionRefreshInterval: time.Millisecond})
-	m.listConnections = func(context.Context) ([]tcpConnection, error) {
+	m.tracker.listConnections = func(context.Context) ([]tcpConnection, error) {
 		select {
 		case called <- struct{}{}:
 		default:
@@ -377,7 +377,7 @@ func TestStartConnectionRefresh_PollErrorClearsPriorActivity(t *testing.T) {
 		scripts = append(scripts, script)
 		return nil, nil
 	}, Options{ConnectionRefreshInterval: time.Millisecond})
-	m.listConnections = func(context.Context) ([]tcpConnection, error) {
+	m.tracker.listConnections = func(context.Context) ([]tcpConnection, error) {
 		polls++
 		switch polls {
 		case 1:
