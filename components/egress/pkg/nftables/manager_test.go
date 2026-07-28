@@ -240,11 +240,11 @@ func TestRefreshActiveConnections_RenewsKnownActiveIP(t *testing.T) {
 		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: time.Minute},
 	}))
 
-	require.NoError(t, m.refreshActiveConnections(context.Background(), []tcpConnection{
+	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), []tcpConnection{
 		{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"},
 		{remote: netip.MustParseAddr("2.2.2.2"), state: "ESTABLISHED"},
 		{remote: netip.MustParseAddr("1.1.1.1"), state: "TIME_WAIT"},
-	}))
+	}, m))
 
 	require.Len(t, scripts, 2)
 	require.Equal(t, "add element inet opensandbox dyn_allow_v4 { 1.1.1.1 timeout 360s }\n", scripts[1])
@@ -262,9 +262,9 @@ func TestRefreshActiveConnections_RenewsOnceAfterConnectionCloses(t *testing.T) 
 	active := []tcpConnection{
 		{remote: netip.MustParseAddr("2001:db8::1"), state: "ESTABLISHED"},
 	}
-	require.NoError(t, m.refreshActiveConnections(context.Background(), active))
-	require.NoError(t, m.refreshActiveConnections(context.Background(), nil))
-	require.NoError(t, m.refreshActiveConnections(context.Background(), nil))
+	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), active, m))
+	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), nil, m))
+	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), nil, m))
 
 	require.Len(t, scripts, 3)
 	require.Equal(t, "add element inet opensandbox dyn_allow_v6 { 2001:db8::1 timeout 360s }\n", scripts[1])
@@ -281,9 +281,9 @@ func TestApplyStatic_ClearsTrackedDynamicIPs(t *testing.T) {
 		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: time.Minute},
 	}))
 	require.NoError(t, m.ApplyStatic(context.Background(), policy.DefaultDenyPolicy()))
-	require.NoError(t, m.refreshActiveConnections(context.Background(), []tcpConnection{
+	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), []tcpConnection{
 		{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"},
-	}))
+	}, m))
 
 	require.Len(t, scripts, 2)
 }
@@ -300,9 +300,9 @@ func TestAddResolvedIPs_DoesNotTrackFailedInsert(t *testing.T) {
 		require.FailNow(t, "failed insert must not become refresh eligible")
 		return nil, nil
 	}
-	require.NoError(t, m.refreshActiveConnections(context.Background(), []tcpConnection{
+	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), []tcpConnection{
 		{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"},
-	}))
+	}, m))
 }
 
 func TestRefreshActiveConnections_ForgetsExpiredInactiveIP(t *testing.T) {
@@ -315,7 +315,7 @@ func TestRefreshActiveConnections_ForgetsExpiredInactiveIP(t *testing.T) {
 		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: 10 * time.Second},
 	}))
 	now = now.Add(71 * time.Second)
-	require.NoError(t, m.refreshActiveConnections(context.Background(), nil))
+	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), nil, m))
 
 	require.Empty(t, m.tracker.dynamicIPs)
 }
@@ -332,9 +332,9 @@ func TestRefreshActiveConnections_RenewsExpiredActiveIP(t *testing.T) {
 		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: 10 * time.Second},
 	}))
 	now = now.Add(71 * time.Second)
-	require.NoError(t, m.refreshActiveConnections(context.Background(), []tcpConnection{
+	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), []tcpConnection{
 		{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"},
-	}))
+	}, m))
 
 	require.Len(t, scripts, 2)
 	require.Equal(t, now.Add(6*time.Minute), m.tracker.dynamicIPs[netip.MustParseAddr("1.1.1.1")])
@@ -430,7 +430,7 @@ func TestManagerSerializesConcurrentTrackerUpdates(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			require.NoError(t, m.refreshActiveConnections(context.Background(), []tcpConnection{{remote: addr, state: "ESTABLISHED"}}))
+			require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), []tcpConnection{{remote: addr, state: "ESTABLISHED"}}, m))
 		}()
 		go func() {
 			defer wg.Done()

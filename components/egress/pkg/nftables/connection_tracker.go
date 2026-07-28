@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/alibaba/opensandbox/egress/pkg/log"
+	"github.com/alibaba/opensandbox/egress/pkg/telemetry"
 	"github.com/alibaba/opensandbox/internal/safego"
 )
 
@@ -72,18 +73,39 @@ func (t *connectionTracker) run(ctx context.Context, interval time.Duration, man
 		case <-ticker.C:
 			connections, err := t.listConnections(ctx)
 			if err != nil {
-				manager.clearPreviousActiveIPs()
+				t.clearPreviousActiveIPs(manager)
 				log.Warnf("nftables: list active TCP connections failed: %v", err)
 				continue
 			}
 			refreshCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err = manager.refreshActiveConnections(refreshCtx, connections)
+			err = t.refreshActiveConnections(refreshCtx, connections, manager)
 			cancel()
 			if err != nil {
 				log.Warnf("nftables: refresh active DNS IPs failed: %v", err)
 			}
 		}
 	}
+}
+
+func (t *connectionTracker) refreshActiveConnections(ctx context.Context, connections []tcpConnection, manager *Manager) error {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	plan := t.refreshCandidates(connections)
+	if len(plan.addresses) > 0 {
+		script := buildRefreshResolvedIPsScript(tableName, plan.addresses)
+		if _, err := manager.run(ctx, script); err != nil {
+			return err
+		}
+		telemetry.RecordNftablesUpdate()
+	}
+	t.recordRefresh(plan)
+	return nil
+}
+
+func (t *connectionTracker) clearPreviousActiveIPs(manager *Manager) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	t.previousActiveIPs = make(map[netip.Addr]struct{})
 }
 
 func (t *connectionTracker) refreshCandidates(connections []tcpConnection) refreshPlan {
@@ -135,13 +157,13 @@ func (t *connectionTracker) recordRefresh(plan refreshPlan) {
 	t.previousActiveIPs = plan.active
 }
 
-func (t *connectionTracker) clearPreviousActiveIPs() {
+func (t *connectionTracker) clearPreviousActiveIPsLocked() {
 	t.previousActiveIPs = make(map[netip.Addr]struct{})
 }
 
 func (t *connectionTracker) clear() {
 	t.dynamicIPs = make(map[netip.Addr]time.Time)
-	t.clearPreviousActiveIPs()
+	t.clearPreviousActiveIPsLocked()
 }
 
 func activeRemoteIPs(connections []tcpConnection) map[netip.Addr]struct{} {
