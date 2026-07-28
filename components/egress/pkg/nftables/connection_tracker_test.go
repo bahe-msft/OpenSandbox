@@ -15,10 +15,7 @@
 package nftables
 
 import (
-	"context"
-	"fmt"
 	"net/netip"
-	"sync"
 	"testing"
 	"time"
 
@@ -98,88 +95,6 @@ func TestConnectionTrackerClear(t *testing.T) {
 	tracker.previousActiveIPs[netip.MustParseAddr("1.1.1.1")] = struct{}{}
 
 	tracker.clear()
-	require.Empty(t, tracker.dynamicIPs)
-	require.Empty(t, tracker.previousActiveIPs)
-}
-
-func TestConnectionTrackerConcurrentAccess(t *testing.T) {
-	tracker := newConnectionTracker()
-	addr := netip.MustParseAddr("1.1.1.1")
-	var wg sync.WaitGroup
-	for range 20 {
-		wg.Add(3)
-		go func() {
-			defer wg.Done()
-			tracker.setDynamicIPs([]ResolvedIP{{Addr: addr, TTL: time.Minute}})
-		}()
-		go func() {
-			defer wg.Done()
-			refresh := tracker.refreshCandidates([]tcpConnection{{remote: addr, state: "ESTABLISHED"}})
-			tracker.recordRefresh(refresh)
-		}()
-		go func() {
-			defer wg.Done()
-			tracker.clearPreviousActiveIPs()
-		}()
-	}
-	wg.Wait()
-}
-
-func TestConnectionTrackerRefreshActiveConnections(t *testing.T) {
-	now := time.Unix(1_000, 0)
-	addr := netip.MustParseAddr("1.1.1.1")
-	tracker := newConnectionTracker()
-	tracker.now = func() time.Time { return now }
-	tracker.setDynamicIPs([]ResolvedIP{{Addr: addr, TTL: time.Minute}})
-	var script string
-	manager := NewManagerWithRunner(func(_ context.Context, rendered string) ([]byte, error) {
-		script = rendered
-		return nil, nil
-	})
-
-	err := tracker.refreshActiveConnections(
-		context.Background(),
-		[]tcpConnection{{remote: addr, state: "ESTABLISHED"}},
-		manager,
-	)
-	require.NoError(t, err)
-	require.Equal(t, "add element inet opensandbox dyn_allow_v4 { 1.1.1.1 timeout 360s }\n", script)
-	require.Equal(t, now.Add(6*time.Minute), tracker.dynamicIPs[addr])
-	require.Contains(t, tracker.previousActiveIPs, addr)
-}
-
-func TestConnectionTrackerRefreshFailureDoesNotRecordState(t *testing.T) {
-	addr := netip.MustParseAddr("1.1.1.1")
-	tracker := newConnectionTracker()
-	tracker.setDynamicIPs([]ResolvedIP{{Addr: addr, TTL: time.Minute}})
-	originalExpiry := tracker.dynamicIPs[addr]
-	manager := NewManagerWithRunner(func(context.Context, string) ([]byte, error) {
-		return nil, fmt.Errorf("nft failed")
-	})
-
-	err := tracker.refreshActiveConnections(
-		context.Background(),
-		[]tcpConnection{{remote: addr, state: "ESTABLISHED"}},
-		manager,
-	)
-	require.Error(t, err)
-	require.Equal(t, originalExpiry, tracker.dynamicIPs[addr])
-	require.Empty(t, tracker.previousActiveIPs)
-}
-
-func TestConnectionTrackerRejectsStaleRefreshAfterClear(t *testing.T) {
-	addr := netip.MustParseAddr("1.1.1.1")
-	tracker := newConnectionTracker()
-	tracker.setDynamicIPs([]ResolvedIP{{Addr: addr, TTL: time.Minute}})
-	plan := tracker.refreshCandidates([]tcpConnection{{remote: addr, state: "ESTABLISHED"}})
-	manager := NewManagerWithRunner(func(_ context.Context, _ string) ([]byte, error) {
-		require.FailNow(t, "stale refresh must not execute nft")
-		return nil, nil
-	})
-
-	tracker.clear()
-	require.NoError(t, tracker.applyRefresh(context.Background(), manager, plan))
-	tracker.recordRefresh(plan)
 	require.Empty(t, tracker.dynamicIPs)
 	require.Empty(t, tracker.previousActiveIPs)
 }

@@ -18,28 +18,23 @@ import (
 	"context"
 	"net/netip"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/alibaba/opensandbox/egress/pkg/log"
-	"github.com/alibaba/opensandbox/egress/pkg/telemetry"
 	"github.com/alibaba/opensandbox/internal/safego"
 )
 
 type connectionTracker struct {
-	mu                sync.Mutex
 	dynamicIPs        map[netip.Addr]time.Time
 	previousActiveIPs map[netip.Addr]struct{}
 	listConnections   func(context.Context) ([]tcpConnection, error)
 	now               func() time.Time
-	generation        uint64
 }
 
 type refreshPlan struct {
-	addresses  []netip.Addr
-	active     map[netip.Addr]struct{}
-	at         time.Time
-	generation uint64
+	addresses []netip.Addr
+	active    map[netip.Addr]struct{}
+	at        time.Time
 }
 
 func newConnectionTracker() *connectionTracker {
@@ -52,8 +47,6 @@ func newConnectionTracker() *connectionTracker {
 }
 
 func (t *connectionTracker) setDynamicIPs(ips []ResolvedIP) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	now := t.now()
 	for _, ip := range ips {
 		addr := ip.Addr.Unmap()
@@ -79,12 +72,12 @@ func (t *connectionTracker) run(ctx context.Context, interval time.Duration, man
 		case <-ticker.C:
 			connections, err := t.listConnections(ctx)
 			if err != nil {
-				t.clearPreviousActiveIPs()
+				manager.clearPreviousActiveIPs()
 				log.Warnf("nftables: list active TCP connections failed: %v", err)
 				continue
 			}
 			refreshCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err = t.refreshActiveConnections(refreshCtx, connections, manager)
+			err = manager.refreshActiveConnections(refreshCtx, connections)
 			cancel()
 			if err != nil {
 				log.Warnf("nftables: refresh active DNS IPs failed: %v", err)
@@ -93,34 +86,7 @@ func (t *connectionTracker) run(ctx context.Context, interval time.Duration, man
 	}
 }
 
-func (t *connectionTracker) refreshActiveConnections(ctx context.Context, connections []tcpConnection, manager *Manager) error {
-	plan := t.refreshCandidates(connections)
-	if len(plan.addresses) > 0 {
-		if err := t.applyRefresh(ctx, manager, plan); err != nil {
-			return err
-		}
-	}
-	t.recordRefresh(plan)
-	return nil
-}
-
-func (t *connectionTracker) applyRefresh(ctx context.Context, manager *Manager, plan refreshPlan) error {
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-	if !t.isCurrent(plan.generation) {
-		return nil
-	}
-	script := buildRefreshResolvedIPsScript(tableName, plan.addresses)
-	if _, err := manager.run(ctx, script); err != nil {
-		return err
-	}
-	telemetry.RecordNftablesUpdate()
-	return nil
-}
-
 func (t *connectionTracker) refreshCandidates(connections []tcpConnection) refreshPlan {
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	active := activeRemoteIPs(connections)
 	now := t.now()
 	for addr, expiresAt := range t.dynamicIPs {
@@ -159,43 +125,23 @@ func (t *connectionTracker) refreshCandidates(connections []tcpConnection) refre
 		addresses = append(addresses, addr)
 	}
 	sort.Slice(addresses, func(i, j int) bool { return addresses[i].Compare(addresses[j]) < 0 })
-	return refreshPlan{addresses: addresses, active: current, at: now, generation: t.generation}
+	return refreshPlan{addresses: addresses, active: current, at: now}
 }
 
 func (t *connectionTracker) recordRefresh(plan refreshPlan) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if plan.generation != t.generation {
-		return
-	}
 	for _, addr := range plan.addresses {
 		t.dynamicIPs[addr] = plan.at.Add(time.Duration(dynSetTimeoutS) * time.Second)
 	}
 	t.previousActiveIPs = plan.active
 }
 
-func (t *connectionTracker) isCurrent(generation uint64) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return generation == t.generation
-}
-
 func (t *connectionTracker) clearPreviousActiveIPs() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.clearPreviousActiveIPsLocked()
-}
-
-func (t *connectionTracker) clearPreviousActiveIPsLocked() {
 	t.previousActiveIPs = make(map[netip.Addr]struct{})
 }
 
 func (t *connectionTracker) clear() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.generation++
 	t.dynamicIPs = make(map[netip.Addr]time.Time)
-	t.clearPreviousActiveIPsLocked()
+	t.clearPreviousActiveIPs()
 }
 
 func activeRemoteIPs(connections []tcpConnection) map[netip.Addr]struct{} {

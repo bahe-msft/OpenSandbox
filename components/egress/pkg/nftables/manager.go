@@ -161,6 +161,27 @@ func (m *Manager) StartConnectionRefresh(ctx context.Context) {
 	m.tracker.start(ctx, m.opts.ConnectionRefreshInterval, m)
 }
 
+func (m *Manager) refreshActiveConnections(ctx context.Context, connections []tcpConnection) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	plan := m.tracker.refreshCandidates(connections)
+	if len(plan.addresses) > 0 {
+		script := buildRefreshResolvedIPsScript(tableName, plan.addresses)
+		if _, err := m.run(ctx, script); err != nil {
+			return err
+		}
+		telemetry.RecordNftablesUpdate()
+	}
+	m.tracker.recordRefresh(plan)
+	return nil
+}
+
+func (m *Manager) clearPreviousActiveIPs() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tracker.clearPreviousActiveIPs()
+}
+
 // RemoveEnforcement drops inet opensandbox; missing table is not an error.
 func (m *Manager) RemoveEnforcement(ctx context.Context) error {
 	m.mu.Lock()
