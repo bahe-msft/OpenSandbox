@@ -21,6 +21,10 @@ This file tracks AKS-specific changes carried by the `aks-dev` branch relative t
 
 ## Unreleased
 
+- _No unreleased AKS-local changes._
+
+## aksdev/20260728
+
 - [#14](https://github.com/bahe-msft/OpenSandbox/pull/14) — Renewed DNS-derived nftables entries while TCP connections remain active to preserve reconnect access without globally extending stale IP authorization.
 - [#15](https://github.com/bahe-msft/OpenSandbox/pull/15) — Upgraded mitmproxy to 11.0.2 to use upstream HTTP/2 flow control and restore fast Bazel Remote Execution downloads.
 
