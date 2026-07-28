@@ -149,7 +149,7 @@ func (m *Manager) AddResolvedIPs(ctx context.Context, ips []ResolvedIP) error {
 		for _, ip := range ips {
 			addr := ip.Addr.Unmap()
 			if addr.IsValid() {
-				m.dynamicIPs[addr] = now.Add(time.Duration(clampTTL(ip.TTL)) * time.Second)
+				m.dynamicIPs[addr] = now.Add(clampTTL(ip.TTL))
 			}
 		}
 		telemetry.RecordNftablesUpdate()

@@ -45,23 +45,26 @@ func buildAddResolvedIPsScript(table string, ips []ResolvedIP) string {
 	for _, r := range ips {
 		elements = append(elements, ResolvedIP{
 			Addr: r.Addr,
-			TTL:  time.Duration(clampTTL(r.TTL)) * time.Second,
+			TTL:  clampTTL(r.TTL),
 		})
 	}
 	return buildResolvedIPElementsScript(table, elements)
 }
 
-func clampTTL(d time.Duration) int {
+func clampTTL(d time.Duration) time.Duration {
 	sec := int(d.Seconds()) + nftTTLSlackSec
 	if sec < minTTLSec {
-		return minTTLSec
+		sec = minTTLSec
 	}
 	if sec > maxTTLSec {
-		return maxTTLSec
+		sec = maxTTLSec
 	}
-	return sec
+	return time.Duration(sec) * time.Second
 }
 
+// Active connection refreshes use the full set timeout rather than the DNS TTL.
+// Activity proves the address is still in use, and the final refresh after the
+// connection closes makes this same bounded timeout the reconnect grace period.
 func buildRefreshResolvedIPsScript(table string, ips []netip.Addr) string {
 	elements := make([]ResolvedIP, 0, len(ips))
 	for _, addr := range ips {
