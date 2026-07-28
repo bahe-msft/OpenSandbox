@@ -41,23 +41,11 @@ type ResolvedIP struct {
 // buildAddResolvedIPsScript returns a nft script fragment that
 // adds resolved IPs to dyn_allow_v4/v6 with timeout.
 func buildAddResolvedIPsScript(table string, ips []ResolvedIP) string {
-	var v4, v6 []string
+	elements := make([]resolvedIPElement, 0, len(ips))
 	for _, r := range ips {
-		sec := clampTTL(r.TTL)
-		if r.Addr.Is4() {
-			v4 = append(v4, fmt.Sprintf("%s timeout %ds", r.Addr.String(), sec))
-		} else if r.Addr.Is6() {
-			v6 = append(v6, fmt.Sprintf("%s timeout %ds", r.Addr.String(), sec))
-		}
+		elements = append(elements, resolvedIPElement{addr: r.Addr, timeout: clampTTL(r.TTL)})
 	}
-	var b strings.Builder
-	if len(v4) > 0 {
-		fmt.Fprintf(&b, "add element inet %s %s { %s }\n", table, dynAllowV4Set, strings.Join(v4, ", "))
-	}
-	if len(v6) > 0 {
-		fmt.Fprintf(&b, "add element inet %s %s { %s }\n", table, dynAllowV6Set, strings.Join(v6, ", "))
-	}
-	return b.String()
+	return buildResolvedIPElementsScript(table, elements)
 }
 
 func clampTTL(d time.Duration) int {
@@ -72,13 +60,27 @@ func clampTTL(d time.Duration) int {
 }
 
 func buildRefreshResolvedIPsScript(table string, ips []netip.Addr) string {
-	var v4, v6 []string
+	elements := make([]resolvedIPElement, 0, len(ips))
 	for _, addr := range ips {
-		addr = addr.Unmap()
+		elements = append(elements, resolvedIPElement{addr: addr, timeout: dynSetTimeoutS})
+	}
+	return buildResolvedIPElementsScript(table, elements)
+}
+
+type resolvedIPElement struct {
+	addr    netip.Addr
+	timeout int
+}
+
+func buildResolvedIPElementsScript(table string, elements []resolvedIPElement) string {
+	var v4, v6 []string
+	for _, element := range elements {
+		addr := element.addr.Unmap()
+		value := fmt.Sprintf("%s timeout %ds", addr, element.timeout)
 		if addr.Is4() {
-			v4 = append(v4, fmt.Sprintf("%s timeout %ds", addr, dynSetTimeoutS))
+			v4 = append(v4, value)
 		} else if addr.Is6() {
-			v6 = append(v6, fmt.Sprintf("%s timeout %ds", addr, dynSetTimeoutS))
+			v6 = append(v6, value)
 		}
 	}
 	var b strings.Builder
