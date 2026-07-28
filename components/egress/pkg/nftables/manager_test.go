@@ -243,7 +243,7 @@ func TestRefreshActiveConnections_RenewsKnownActiveIP(t *testing.T) {
 		{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"},
 		{remote: netip.MustParseAddr("2.2.2.2"), state: "ESTABLISHED"},
 		{remote: netip.MustParseAddr("1.1.1.1"), state: "TIME_WAIT"},
-	}, m.refreshDynamicIPs))
+	}, m.applyDynamicIPRefresh))
 
 	require.Len(t, scripts, 2)
 	require.Equal(t, "add element inet opensandbox dyn_allow_v4 { 1.1.1.1 timeout 360s }\n", scripts[1])
@@ -261,9 +261,9 @@ func TestRefreshActiveConnections_RenewsOnceAfterConnectionCloses(t *testing.T) 
 	active := []tcpConnection{
 		{remote: netip.MustParseAddr("2001:db8::1"), state: "ESTABLISHED"},
 	}
-	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), active, m.refreshDynamicIPs))
-	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), nil, m.refreshDynamicIPs))
-	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), nil, m.refreshDynamicIPs))
+	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), active, m.applyDynamicIPRefresh))
+	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), nil, m.applyDynamicIPRefresh))
+	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), nil, m.applyDynamicIPRefresh))
 
 	require.Len(t, scripts, 3)
 	require.Equal(t, "add element inet opensandbox dyn_allow_v6 { 2001:db8::1 timeout 360s }\n", scripts[1])
@@ -282,7 +282,7 @@ func TestApplyStatic_ClearsTrackedDynamicIPs(t *testing.T) {
 	require.NoError(t, m.ApplyStatic(context.Background(), policy.DefaultDenyPolicy()))
 	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), []tcpConnection{
 		{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"},
-	}, m.refreshDynamicIPs))
+	}, m.applyDynamicIPRefresh))
 
 	require.Len(t, scripts, 2)
 }
@@ -301,7 +301,7 @@ func TestAddResolvedIPs_DoesNotTrackFailedInsert(t *testing.T) {
 	}
 	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), []tcpConnection{
 		{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"},
-	}, m.refreshDynamicIPs))
+	}, m.applyDynamicIPRefresh))
 }
 
 func TestRefreshActiveConnections_ForgetsExpiredInactiveIP(t *testing.T) {
@@ -314,7 +314,7 @@ func TestRefreshActiveConnections_ForgetsExpiredInactiveIP(t *testing.T) {
 		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: 10 * time.Second},
 	}))
 	now = now.Add(71 * time.Second)
-	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), nil, m.refreshDynamicIPs))
+	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), nil, m.applyDynamicIPRefresh))
 
 	require.Empty(t, m.tracker.dynamicIPs)
 }
@@ -333,7 +333,7 @@ func TestRefreshActiveConnections_RenewsExpiredActiveIP(t *testing.T) {
 	now = now.Add(71 * time.Second)
 	require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), []tcpConnection{
 		{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"},
-	}, m.refreshDynamicIPs))
+	}, m.applyDynamicIPRefresh))
 
 	require.Len(t, scripts, 2)
 	require.Equal(t, now.Add(6*time.Minute), m.tracker.dynamicIPs[netip.MustParseAddr("1.1.1.1")])

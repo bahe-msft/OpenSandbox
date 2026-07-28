@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/alibaba/opensandbox/egress/pkg/log"
+	"github.com/alibaba/opensandbox/internal/safego"
 )
 
 type connectionTracker struct {
@@ -64,6 +65,12 @@ func (t *connectionTracker) setDynamicIPs(ips []ResolvedIP) {
 }
 
 func (t *connectionTracker) start(ctx context.Context, interval time.Duration, refresh refreshConnections) {
+	safego.Go(func() {
+		t.run(ctx, interval, refresh)
+	})
+}
+
+func (t *connectionTracker) run(ctx context.Context, interval time.Duration, refresh refreshConnections) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
