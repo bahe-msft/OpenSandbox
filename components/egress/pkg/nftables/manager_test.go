@@ -367,3 +367,47 @@ func TestStartConnectionRefresh_StopsWithContext(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	require.Empty(t, called)
 }
+
+func TestStartConnectionRefresh_PollErrorClearsPriorActivity(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var scripts []string
+	var polls int
+	done := make(chan struct{})
+	m := NewManagerWithRunner(func(_ context.Context, script string) ([]byte, error) {
+		scripts = append(scripts, script)
+		return nil, nil
+	})
+	m.refreshInterval = time.Millisecond
+	m.listConnections = func(context.Context) ([]tcpConnection, error) {
+		polls++
+		switch polls {
+		case 1:
+			return []tcpConnection{{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"}}, nil
+		case 2:
+			return nil, fmt.Errorf("proc unavailable")
+		default:
+			select {
+			case <-done:
+			default:
+				close(done)
+			}
+			return nil, nil
+		}
+	}
+	require.NoError(t, m.AddResolvedIPs(context.Background(), []ResolvedIP{
+		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: time.Minute},
+	}))
+	m.StartConnectionRefresh(ctx)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		require.FailNow(t, "refresh worker did not complete poll sequence")
+	}
+	cancel()
+	time.Sleep(10 * time.Millisecond)
+
+	// Initial insert plus the active renewal. A stale final renewal must not be
+	// emitted after the observation gap.
+	require.Len(t, scripts, 2)
+}

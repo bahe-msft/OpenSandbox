@@ -177,6 +177,7 @@ func (m *Manager) StartConnectionRefresh(ctx context.Context) {
 			case <-ticker.C:
 				connections, err := m.listConnections(ctx)
 				if err != nil {
+					m.clearPreviousActiveIPs()
 					log.Warnf("nftables: list active TCP connections failed: %v", err)
 					continue
 				}
@@ -189,6 +190,12 @@ func (m *Manager) StartConnectionRefresh(ctx context.Context) {
 			}
 		}
 	})
+}
+
+func (m *Manager) clearPreviousActiveIPs() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.previousActiveIPs = make(map[netip.Addr]struct{})
 }
 
 func (m *Manager) refreshActiveConnections(ctx context.Context, connections []tcpConnection) error {
