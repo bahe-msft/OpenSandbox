@@ -41,9 +41,12 @@ type ResolvedIP struct {
 // buildAddResolvedIPsScript returns a nft script fragment that
 // adds resolved IPs to dyn_allow_v4/v6 with timeout.
 func buildAddResolvedIPsScript(table string, ips []ResolvedIP) string {
-	elements := make([]resolvedIPElement, 0, len(ips))
+	elements := make([]ResolvedIP, 0, len(ips))
 	for _, r := range ips {
-		elements = append(elements, resolvedIPElement{addr: r.Addr, timeout: clampTTL(r.TTL)})
+		elements = append(elements, ResolvedIP{
+			Addr: r.Addr,
+			TTL:  time.Duration(clampTTL(r.TTL)) * time.Second,
+		})
 	}
 	return buildResolvedIPElementsScript(table, elements)
 }
@@ -60,23 +63,21 @@ func clampTTL(d time.Duration) int {
 }
 
 func buildRefreshResolvedIPsScript(table string, ips []netip.Addr) string {
-	elements := make([]resolvedIPElement, 0, len(ips))
+	elements := make([]ResolvedIP, 0, len(ips))
 	for _, addr := range ips {
-		elements = append(elements, resolvedIPElement{addr: addr, timeout: dynSetTimeoutS})
+		elements = append(elements, ResolvedIP{
+			Addr: addr,
+			TTL:  dynSetTimeoutS * time.Second,
+		})
 	}
 	return buildResolvedIPElementsScript(table, elements)
 }
 
-type resolvedIPElement struct {
-	addr    netip.Addr
-	timeout int
-}
-
-func buildResolvedIPElementsScript(table string, elements []resolvedIPElement) string {
+func buildResolvedIPElementsScript(table string, elements []ResolvedIP) string {
 	var v4, v6 []string
 	for _, element := range elements {
-		addr := element.addr.Unmap()
-		value := fmt.Sprintf("%s timeout %ds", addr, element.timeout)
+		addr := element.Addr.Unmap()
+		value := fmt.Sprintf("%s timeout %ds", addr, int(element.TTL/time.Second))
 		if addr.Is4() {
 			v4 = append(v4, value)
 		} else if addr.Is6() {
