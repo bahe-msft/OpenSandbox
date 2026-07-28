@@ -131,18 +131,19 @@ func TestConnectionTrackerRefreshActiveConnections(t *testing.T) {
 	tracker := newConnectionTracker()
 	tracker.now = func() time.Time { return now }
 	tracker.setDynamicIPs([]ResolvedIP{{Addr: addr, TTL: time.Minute}})
-	var refreshed []netip.Addr
+	var script string
 
 	err := tracker.refreshActiveConnections(
 		context.Background(),
 		[]tcpConnection{{remote: addr, state: "ESTABLISHED"}},
-		func(_ context.Context, refresh connectionRefresh) error {
-			refreshed = append(refreshed, refresh.addresses...)
+		func(_ context.Context, generation uint64, rendered string) error {
+			require.Equal(t, uint64(0), generation)
+			script = rendered
 			return nil
 		},
 	)
 	require.NoError(t, err)
-	require.Equal(t, []netip.Addr{addr}, refreshed)
+	require.Equal(t, "add element inet opensandbox dyn_allow_v4 { 1.1.1.1 timeout 360s }\n", script)
 	require.Equal(t, now.Add(6*time.Minute), tracker.dynamicIPs[addr])
 	require.Contains(t, tracker.previousActiveIPs, addr)
 }
@@ -156,7 +157,7 @@ func TestConnectionTrackerRefreshFailureDoesNotRecordState(t *testing.T) {
 	err := tracker.refreshActiveConnections(
 		context.Background(),
 		[]tcpConnection{{remote: addr, state: "ESTABLISHED"}},
-		func(context.Context, connectionRefresh) error { return fmt.Errorf("nft failed") },
+		func(context.Context, uint64, string) error { return fmt.Errorf("nft failed") },
 	)
 	require.Error(t, err)
 	require.Equal(t, originalExpiry, tracker.dynamicIPs[addr])
@@ -170,7 +171,7 @@ func TestConnectionTrackerRejectsStaleRefreshAfterClear(t *testing.T) {
 	refresh := tracker.refreshCandidates([]tcpConnection{{remote: addr, state: "ESTABLISHED"}})
 
 	tracker.clear()
-	require.False(t, tracker.isCurrent(refresh))
+	require.False(t, tracker.isCurrent(refresh.generation))
 	tracker.recordRefresh(refresh)
 	require.Empty(t, tracker.dynamicIPs)
 	require.Empty(t, tracker.previousActiveIPs)

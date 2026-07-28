@@ -34,14 +34,14 @@ type connectionTracker struct {
 	generation        uint64
 }
 
-type connectionRefresh struct {
+type refreshRunner func(context.Context, uint64, string) error
+
+type refreshPlan struct {
 	addresses  []netip.Addr
 	active     map[netip.Addr]struct{}
 	at         time.Time
 	generation uint64
 }
-
-type refreshConnections func(context.Context, connectionRefresh) error
 
 func newConnectionTracker() *connectionTracker {
 	return &connectionTracker{
@@ -64,13 +64,13 @@ func (t *connectionTracker) setDynamicIPs(ips []ResolvedIP) {
 	}
 }
 
-func (t *connectionTracker) start(ctx context.Context, interval time.Duration, refresh refreshConnections) {
+func (t *connectionTracker) start(ctx context.Context, interval time.Duration, run refreshRunner) {
 	safego.Go(func() {
-		t.run(ctx, interval, refresh)
+		t.run(ctx, interval, run)
 	})
 }
 
-func (t *connectionTracker) run(ctx context.Context, interval time.Duration, refresh refreshConnections) {
+func (t *connectionTracker) run(ctx context.Context, interval time.Duration, run refreshRunner) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -85,7 +85,7 @@ func (t *connectionTracker) run(ctx context.Context, interval time.Duration, ref
 				continue
 			}
 			refreshCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err = t.refreshActiveConnections(refreshCtx, connections, refresh)
+			err = t.refreshActiveConnections(refreshCtx, connections, run)
 			cancel()
 			if err != nil {
 				log.Warnf("nftables: refresh active DNS IPs failed: %v", err)
@@ -94,18 +94,19 @@ func (t *connectionTracker) run(ctx context.Context, interval time.Duration, ref
 	}
 }
 
-func (t *connectionTracker) refreshActiveConnections(ctx context.Context, connections []tcpConnection, refreshFn refreshConnections) error {
-	refresh := t.refreshCandidates(connections)
-	if len(refresh.addresses) > 0 {
-		if err := refreshFn(ctx, refresh); err != nil {
+func (t *connectionTracker) refreshActiveConnections(ctx context.Context, connections []tcpConnection, run refreshRunner) error {
+	plan := t.refreshCandidates(connections)
+	if len(plan.addresses) > 0 {
+		script := buildRefreshResolvedIPsScript(tableName, plan.addresses)
+		if err := run(ctx, plan.generation, script); err != nil {
 			return err
 		}
 	}
-	t.recordRefresh(refresh)
+	t.recordRefresh(plan)
 	return nil
 }
 
-func (t *connectionTracker) refreshCandidates(connections []tcpConnection) connectionRefresh {
+func (t *connectionTracker) refreshCandidates(connections []tcpConnection) refreshPlan {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	active := activeRemoteIPs(connections)
@@ -146,25 +147,25 @@ func (t *connectionTracker) refreshCandidates(connections []tcpConnection) conne
 		addresses = append(addresses, addr)
 	}
 	sort.Slice(addresses, func(i, j int) bool { return addresses[i].Compare(addresses[j]) < 0 })
-	return connectionRefresh{addresses: addresses, active: current, at: now, generation: t.generation}
+	return refreshPlan{addresses: addresses, active: current, at: now, generation: t.generation}
 }
 
-func (t *connectionTracker) recordRefresh(refresh connectionRefresh) {
+func (t *connectionTracker) recordRefresh(plan refreshPlan) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if refresh.generation != t.generation {
+	if plan.generation != t.generation {
 		return
 	}
-	for _, addr := range refresh.addresses {
-		t.dynamicIPs[addr] = refresh.at.Add(time.Duration(dynSetTimeoutS) * time.Second)
+	for _, addr := range plan.addresses {
+		t.dynamicIPs[addr] = plan.at.Add(time.Duration(dynSetTimeoutS) * time.Second)
 	}
-	t.previousActiveIPs = refresh.active
+	t.previousActiveIPs = plan.active
 }
 
-func (t *connectionTracker) isCurrent(refresh connectionRefresh) bool {
+func (t *connectionTracker) isCurrent(generation uint64) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return refresh.generation == t.generation
+	return generation == t.generation
 }
 
 func (t *connectionTracker) clearPreviousActiveIPs() {
