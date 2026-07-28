@@ -169,9 +169,7 @@ func (m *Manager) StartConnectionRefresh(ctx context.Context) {
 			case <-ticker.C:
 				connections, err := m.tracker.listConnections(ctx)
 				if err != nil {
-					m.mu.Lock()
 					m.tracker.clearPreviousActiveIPs()
-					m.mu.Unlock()
 					log.Warnf("nftables: list active TCP connections failed: %v", err)
 					continue
 				}

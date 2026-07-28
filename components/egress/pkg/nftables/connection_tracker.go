@@ -18,10 +18,12 @@ import (
 	"context"
 	"net/netip"
 	"sort"
+	"sync"
 	"time"
 )
 
 type connectionTracker struct {
+	mu                sync.Mutex
 	dynamicIPs        map[netip.Addr]time.Time
 	previousActiveIPs map[netip.Addr]struct{}
 	listConnections   func(context.Context) ([]tcpConnection, error)
@@ -44,6 +46,8 @@ func newConnectionTracker() *connectionTracker {
 }
 
 func (t *connectionTracker) setDynamicIPs(ips []ResolvedIP) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	now := t.now()
 	for _, ip := range ips {
 		addr := ip.Addr.Unmap()
@@ -54,6 +58,8 @@ func (t *connectionTracker) setDynamicIPs(ips []ResolvedIP) {
 }
 
 func (t *connectionTracker) refreshCandidates(connections []tcpConnection) connectionRefresh {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	active := activeRemoteIPs(connections)
 	now := t.now()
 	for addr, expiresAt := range t.dynamicIPs {
@@ -96,6 +102,8 @@ func (t *connectionTracker) refreshCandidates(connections []tcpConnection) conne
 }
 
 func (t *connectionTracker) recordRefresh(refresh connectionRefresh) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	for _, addr := range refresh.addresses {
 		t.dynamicIPs[addr] = refresh.at.Add(time.Duration(dynSetTimeoutS) * time.Second)
 	}
@@ -103,12 +111,20 @@ func (t *connectionTracker) recordRefresh(refresh connectionRefresh) {
 }
 
 func (t *connectionTracker) clearPreviousActiveIPs() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.clearPreviousActiveIPsLocked()
+}
+
+func (t *connectionTracker) clearPreviousActiveIPsLocked() {
 	t.previousActiveIPs = make(map[netip.Addr]struct{})
 }
 
 func (t *connectionTracker) clear() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.dynamicIPs = make(map[netip.Addr]time.Time)
-	t.clearPreviousActiveIPs()
+	t.clearPreviousActiveIPsLocked()
 }
 
 func activeRemoteIPs(connections []tcpConnection) map[netip.Addr]struct{} {
