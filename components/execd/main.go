@@ -26,6 +26,7 @@ import (
 	_ "github.com/alibaba/opensandbox/internal/safego"
 	_ "go.uber.org/automaxprocs/maxprocs"
 
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/clone3compat"
 	"github.com/alibaba/opensandbox/execd/pkg/flag"
 	"github.com/alibaba/opensandbox/execd/pkg/isolation"
@@ -60,7 +61,12 @@ func main() {
 
 	log.Init(flag.ServerLogLevel)
 
-	ctrl := controller.InitCodeRunner()
+	activityTracker := activity.NewTracker()
+	ctrl, err := controller.InitCodeRunner(activityTracker)
+	if err != nil {
+		log.Error("failed to initialize runtime controller: %v", err)
+		os.Exit(1)
+	}
 
 	// Always store probe result for capabilities endpoint.
 	controller.InitIsolatedProbe(&isolationProbe)
@@ -92,7 +98,13 @@ func main() {
 		}()
 	}
 
-	engine := web.NewRouter(flag.ServerAccessToken)
+	engine, err := web.NewRouter(flag.ServerAccessToken, activityTracker, controller.ActivityConfig{
+		MaxKeepAliveDuration: flag.ActivityMaxKeepAliveDuration,
+	})
+	if err != nil {
+		log.Error("invalid web configuration: %v", err)
+		os.Exit(1)
+	}
 	addr := fmt.Sprintf(":%d", flag.ServerPort)
 	listener, err := net.Listen("tcp4", addr)
 	if err != nil {

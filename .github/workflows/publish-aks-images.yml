@@ -1,0 +1,432 @@
+name: Publish AKS Images
+
+permissions:
+  contents: read
+  packages: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: 'Component to build, or all AKS images'
+        required: true
+        type: choice
+        options:
+          - all
+          - execd
+          - ingress
+          - egress
+          - controller
+          - task-executor
+          - image-committer
+          - server
+        default: 'all'
+      image_tag:
+        description: 'Optional Docker image tag override. Defaults to <component-version>-<aks-tag>-<short-commit> when aks_tag is set, otherwise <component-version>-<short-commit>.'
+        required: false
+        default: ''
+      aks_tag:
+        description: 'Optional AKS changelog tag, for example aksdev/20260726. Included in generated image tags as aksdev-20260726.'
+        required: false
+        default: ''
+      ghcr_owner:
+        description: 'GHCR owner/org for image publishes'
+        required: true
+        default: 'bahe-msft'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      components: ${{ steps.components.outputs.components }}
+    steps:
+      - name: Select components
+        id: components
+        run: |
+          set -euo pipefail
+          COMPONENT="${{ inputs.component }}"
+          if [[ "$COMPONENT" == "all" ]]; then
+            echo 'components=["execd","ingress","egress","controller","task-executor","image-committer","server"]' >> "$GITHUB_OUTPUT"
+          else
+            printf 'components=["%s"]\n' "$COMPONENT" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJson(needs.prepare.outputs.components) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        if: matrix.component != 'server'
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.12'
+          cache: true
+          cache-dependency-path: |
+            components/internal/go.sum
+            components/execd/go.sum
+            components/ingress/go.sum
+            components/egress/go.sum
+            kubernetes/go.sum
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image settings
+        id: settings
+        run: |
+          set -euo pipefail
+
+          sanitize_image_tag_part() {
+            local value="$1"
+            value="${value,,}"
+            value="$(printf '%s' "$value" | sed -E 's/[^a-z0-9_.-]+/-/g; s/^-+//; s/-+$//')"
+            if [[ -z "$value" ]]; then
+              echo "unable to derive a Docker tag segment from AKS tag '$1'" >&2
+              return 1
+            fi
+            echo "$value"
+          }
+
+          component_version() {
+            local component="$1"
+            local version=""
+            case "$component" in
+              execd)
+                version="$(grep -m1 -oE 'execd:v[0-9][^"[:space:]]*' kubernetes/charts/opensandbox-server/values.yaml | cut -d: -f2)"
+                ;;
+              egress)
+                version="$(grep -m1 -oE 'egress:v[0-9][^"[:space:]]*' kubernetes/charts/opensandbox-server/values.yaml | cut -d: -f2)"
+                ;;
+              ingress)
+                version="$(awk '/^[[:space:]]+gateway:/{in_gateway=1} in_gateway && /^[[:space:]]+tag: /{gsub(/"/, "", $2); print $2; exit}' kubernetes/charts/opensandbox-server/values.yaml)"
+                ;;
+              server)
+                version="$(awk '/^server:/{in_server=1} in_server && /^[[:space:]]+image:/{in_image=1; next} in_image && /^[[:space:]]+tag: /{gsub(/"/, "", $2); print $2; exit}' kubernetes/charts/opensandbox-server/values.yaml)"
+                ;;
+              controller|task-executor)
+                version="$(awk -F'"' '/^appVersion:/{print $2; exit}' kubernetes/charts/opensandbox-controller/Chart.yaml)"
+                version="v${version#v}"
+                ;;
+              image-committer)
+                version="$(grep -m1 -oE 'image-committer:v[0-9][^"[:space:]]*' kubernetes/charts/opensandbox-controller/values.yaml | cut -d: -f2)"
+                ;;
+              *)
+                echo "unknown component: $component" >&2
+                return 1
+                ;;
+            esac
+
+            if [[ -z "$version" ]]; then
+              echo "unable to resolve component version for $component" >&2
+              return 1
+            fi
+            echo "$version"
+          }
+
+          COMPONENT="${{ matrix.component }}"
+          COMPONENT_VERSION="$(component_version "$COMPONENT")"
+          SHORT_SHA="${GITHUB_SHA::12}"
+          AKS_TAG="${{ inputs.aks_tag }}"
+          if [[ -z "$AKS_TAG" && "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == aksdev/* ]]; then
+            AKS_TAG="$GITHUB_REF_NAME"
+          fi
+
+          IMAGE_TAG="${{ inputs.image_tag }}"
+          if [[ -z "$IMAGE_TAG" ]]; then
+            if [[ -n "$AKS_TAG" ]]; then
+              AKS_TAG_PART="$(sanitize_image_tag_part "$AKS_TAG")"
+              IMAGE_TAG="${COMPONENT_VERSION}-${AKS_TAG_PART}-${SHORT_SHA}"
+            else
+              IMAGE_TAG="${COMPONENT_VERSION}-${SHORT_SHA}"
+            fi
+          fi
+          if [[ ! "$IMAGE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Docker image tag '$IMAGE_TAG' is invalid. Use aks_tag for values like aksdev/YYYYMMDD so '/' can be sanitized." >&2
+            exit 1
+          fi
+
+          GHCR_OWNER="${{ inputs.ghcr_owner }}"
+          GHCR_OWNER="${GHCR_OWNER,,}"
+          GHCR_REPO="ghcr.io/${GHCR_OWNER}/opensandbox"
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          echo "component=$COMPONENT" >> "$GITHUB_OUTPUT"
+          echo "component_version=$COMPONENT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "aks_tag=$AKS_TAG" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "image=${GHCR_REPO}/${COMPONENT}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$BUILD_TIME" >> "$GITHUB_OUTPUT"
+
+      - name: Cross-compile Go binaries
+        if: matrix.component != 'server'
+        env:
+          COMPONENT: ${{ steps.settings.outputs.component }}
+          COMPONENT_VERSION: ${{ steps.settings.outputs.component_version }}
+          BUILD_TIME: ${{ steps.settings.outputs.build_time }}
+        run: |
+          set -euo pipefail
+
+          SHORT_COMMIT="${GITHUB_SHA::12}"
+          VERSION_LDFLAGS="-buildid= -B none -X github.com/alibaba/opensandbox/internal/version.Version=${COMPONENT_VERSION} -X github.com/alibaba/opensandbox/internal/version.BuildTime=${BUILD_TIME} -X github.com/alibaba/opensandbox/internal/version.GitCommit=${GITHUB_SHA}"
+          K8S_LDFLAGS="-buildid= -B none -X main.commitID=${SHORT_COMMIT} -X main.buildDate=${BUILD_TIME}"
+
+          build_component() {
+            local goarch="$1"
+            local outdir=".build/aks/${COMPONENT}/linux_${goarch}"
+            mkdir -p "$outdir"
+
+            case "$COMPONENT" in
+              execd)
+                (cd components/internal && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "$VERSION_LDFLAGS" -o "../../${outdir}/opensandbox-supervisor" ./cmd/supervisor)
+                (cd components/execd && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "$VERSION_LDFLAGS" -o "../../${outdir}/execd" ./main.go)
+                ;;
+              ingress)
+                (cd components/ingress && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "$VERSION_LDFLAGS" -o "../../${outdir}/ingress" ./main.go)
+                ;;
+              egress)
+                (cd components/egress && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "$VERSION_LDFLAGS" -o "../../${outdir}/egress" .)
+                (cd components/internal && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "$VERSION_LDFLAGS" -o "../../${outdir}/opensandbox-supervisor" ./cmd/supervisor)
+                ;;
+              controller)
+                (cd kubernetes && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "$K8S_LDFLAGS" -o "../${outdir}/server" ./cmd/controller)
+                ;;
+              task-executor)
+                (cd kubernetes && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "$K8S_LDFLAGS" -o "../${outdir}/server" cmd/task-executor/main.go)
+                ;;
+              image-committer)
+                (cd kubernetes && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "-buildid= -B none" -o "../${outdir}/image-committer" ./cmd/image-committer)
+                ;;
+              *)
+                echo "unknown Go component: $COMPONENT" >&2
+                exit 1
+                ;;
+            esac
+          }
+
+          build_component amd64
+          build_component arm64
+
+          find ".build/aks/${COMPONENT}" -maxdepth 3 -type f -print -exec file {} \;
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          df -h
+
+      - name: Build and push image
+        id: build
+        env:
+          COMPONENT: ${{ steps.settings.outputs.component }}
+          IMAGE: ${{ steps.settings.outputs.image }}
+          AKS_TAG: ${{ steps.settings.outputs.aks_tag }}
+          BUILD_METADATA_FILE: ${{ runner.temp }}/opensandbox-aks-image-${{ matrix.component }}.json
+        run: |
+          set -euo pipefail
+
+          PLATFORMS="linux/amd64,linux/arm64"
+          BUILD_ARGS=()
+
+          case "$COMPONENT" in
+            execd)
+              DOCKERFILE="${RUNNER_TEMP}/Dockerfile.execd-aks"
+              CONTEXT="."
+              cat > "$DOCKERFILE" <<'EOF'
+          FROM alpine:latest AS bwrap-builder
+          RUN apk add --no-cache git musl-dev meson ninja gcc libcap-dev libcap-static pkgconfig bash
+          RUN git clone --depth 1 --branch v0.11.2 \
+              https://github.com/containers/bubblewrap /build/bwrap
+          WORKDIR /build/bwrap
+          RUN rm /usr/lib/libcap.so /usr/lib/libcap.so.2 && \
+              meson setup builddir \
+              -Dprefix=/usr \
+              -Dman=disabled \
+              -Dtests=false \
+              -Dsupport_setuid=false \
+              -Ddefault_library=static \
+              -Dc_link_args='-static' && \
+              ninja -C builddir && \
+              cp builddir/bwrap /build/bwrap/bwrap
+
+          FROM alpine:latest
+          ARG TARGETARCH
+          COPY --from=bwrap-builder /build/bwrap/bwrap /usr/local/bin/bwrap
+          COPY .build/aks/execd/linux_${TARGETARCH}/execd .
+          COPY .build/aks/execd/linux_${TARGETARCH}/opensandbox-supervisor ./opensandbox-supervisor
+          COPY components/execd/bootstrap.sh ./bootstrap.sh
+          COPY components/execd/install.bat ./install.bat
+          ENTRYPOINT ["./execd"]
+          EOF
+              ;;
+            ingress)
+              DOCKERFILE="${RUNNER_TEMP}/Dockerfile.ingress-aks"
+              CONTEXT="."
+              cat > "$DOCKERFILE" <<'EOF'
+          FROM alpine:latest
+          ARG TARGETARCH
+          COPY .build/aks/ingress/linux_${TARGETARCH}/ingress .
+          ENTRYPOINT ["./ingress"]
+          EOF
+              ;;
+            egress)
+              DOCKERFILE="${RUNNER_TEMP}/Dockerfile.egress-aks"
+              CONTEXT="."
+              cat > "$DOCKERFILE" <<'EOF'
+          FROM debian:bookworm-slim
+          ARG TARGETARCH
+          RUN apt-get update \
+              && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                  iptables \
+                  iproute2 \
+                  nftables \
+                  ca-certificates \
+                  sudo \
+                  curl \
+                  wget \
+                  net-tools \
+                  dnsutils \
+                  netcat-openbsd \
+                  iputils-ping \
+                  traceroute \
+                  telnet \
+                  tcpdump \
+                  nmap \
+                  htop \
+                  procps \
+                  strace \
+                  lsof \
+                  python3 \
+                  python3-pip \
+              && rm -rf /var/lib/apt/lists/*
+          RUN useradd -r -u 10042 -d /var/lib/mitmproxy -s /usr/sbin/nologin mitmproxy \
+              && mkdir -p /var/lib/mitmproxy/.mitmproxy \
+              && chown -R mitmproxy:mitmproxy /var/lib/mitmproxy \
+              && pip3 install --no-cache-dir --break-system-packages 'mitmproxy>=10,<11' \
+              && (command -v mitmdump && mitmdump --version) \
+              && mkdir -p /var/egress/mitmscripts
+          COPY components/egress/mitmproxy/config.yaml /var/lib/mitmproxy/.mitmproxy/config.yaml
+          RUN chown mitmproxy:mitmproxy /var/lib/mitmproxy/.mitmproxy/config.yaml \
+              && chmod 0644 /var/lib/mitmproxy/.mitmproxy/config.yaml
+          COPY .build/aks/egress/linux_${TARGETARCH}/egress /opt/opensandbox-egress/egress
+          COPY .build/aks/egress/linux_${TARGETARCH}/opensandbox-supervisor /opt/opensandbox-egress/supervisor
+          COPY components/egress/scripts/cleanup.sh /opt/opensandbox-egress/cleanup.sh
+          RUN chmod 0755 /opt/opensandbox-egress/cleanup.sh \
+                      /opt/opensandbox-egress/egress \
+                      /opt/opensandbox-egress/supervisor \
+              && ln -s /opt/opensandbox-egress/egress /egress
+          COPY components/egress/mitmscripts /var/egress/mitmscripts
+          ENTRYPOINT ["/opt/opensandbox-egress/supervisor", \
+                      "--pre-start=/opt/opensandbox-egress/cleanup.sh", \
+                      "--name=egress", \
+                      "--grace-period=20s", \
+                      "--", \
+                      "/opt/opensandbox-egress/egress"]
+          EOF
+              ;;
+            controller)
+              DOCKERFILE="${RUNNER_TEMP}/Dockerfile.kubernetes-aks"
+              CONTEXT="."
+              cat > "$DOCKERFILE" <<'EOF'
+          FROM golang:1.25.12-alpine
+          ARG TARGETARCH
+          ARG USERID=65532
+          WORKDIR /workspace
+          COPY .build/aks/controller/linux_${TARGETARCH}/server .
+          USER $USERID
+          ENTRYPOINT ["/workspace/server"]
+          EOF
+              ;;
+            task-executor)
+              DOCKERFILE="${RUNNER_TEMP}/Dockerfile.kubernetes-aks"
+              CONTEXT="."
+              BUILD_ARGS+=(--build-arg "USERID=0")
+              cat > "$DOCKERFILE" <<'EOF'
+          FROM golang:1.25.12-alpine
+          ARG TARGETARCH
+          ARG USERID=65532
+          WORKDIR /workspace
+          COPY .build/aks/task-executor/linux_${TARGETARCH}/server .
+          USER $USERID
+          ENTRYPOINT ["/workspace/server"]
+          EOF
+              ;;
+            image-committer)
+              DOCKERFILE="${RUNNER_TEMP}/Dockerfile.image-committer-aks"
+              CONTEXT="."
+              cat > "$DOCKERFILE" <<'EOF'
+          FROM alpine:3.19
+          ARG TARGETARCH
+          RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+          RUN apk add --no-cache \
+              curl \
+              jq \
+              nerdctl
+          RUN mkdir -p /var/run/containerd
+          COPY .build/aks/image-committer/linux_${TARGETARCH}/image-committer /usr/local/bin/image-committer
+          RUN chmod +x /usr/local/bin/image-committer
+          WORKDIR /workspace
+          ENTRYPOINT ["/usr/local/bin/image-committer"]
+          EOF
+              ;;
+            server)
+              DOCKERFILE="server/Dockerfile"
+              CONTEXT="server"
+              ;;
+            *)
+              echo "unknown component: $COMPONENT" >&2
+              exit 1
+              ;;
+          esac
+
+          docker buildx build \
+            --platform "$PLATFORMS" \
+            -f "$DOCKERFILE" \
+            -t "$IMAGE" \
+            "${BUILD_ARGS[@]}" \
+            --metadata-file "$BUILD_METADATA_FILE" \
+            --push \
+            "$CONTEXT"
+
+          DIGEST="$(jq -r '."containerimage.digest" // empty' "$BUILD_METADATA_FILE")"
+          if [[ -z "$DIGEST" ]]; then
+            echo "Unable to resolve image digest from $BUILD_METADATA_FILE" >&2
+            cat "$BUILD_METADATA_FILE" >&2
+            exit 1
+          fi
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize image
+        env:
+          IMAGE: ${{ steps.settings.outputs.image }}
+          AKS_TAG: ${{ steps.settings.outputs.aks_tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### Published AKS image"
+            echo
+            echo "- Image: \`${IMAGE}\`"
+            if [[ -n "${AKS_TAG}" ]]; then
+              echo "- AKS tag: \`${AKS_TAG}\`"
+            fi
+            echo "- Digest: \`${DIGEST}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

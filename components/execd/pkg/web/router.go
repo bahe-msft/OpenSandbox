@@ -15,23 +15,34 @@
 package web
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/log"
 	"github.com/alibaba/opensandbox/execd/pkg/web/controller"
 	"github.com/alibaba/opensandbox/execd/pkg/web/model"
 )
 
 // NewRouter builds a Gin engine with all execd routes.
-func NewRouter(accessToken string) *gin.Engine {
+func NewRouter(accessToken string, tracker *activity.Tracker, activityConfig controller.ActivityConfig) (*gin.Engine, error) {
+	if tracker == nil {
+		return nil, errors.New("activity tracker is required")
+	}
+	if err := activityConfig.Validate(); err != nil {
+		return nil, err
+	}
+
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(logMiddleware(), otelHTTPMetricsMiddleware(), accessTokenMiddleware(accessToken), ProxyMiddleware())
+	r.Use(logMiddleware(), otelHTTPMetricsMiddleware(), accessTokenMiddleware(accessToken), activityMiddleware(tracker), ProxyMiddleware(tracker))
 
 	r.GET("/ping", controller.PingHandler)
+	r.GET("/v1/activity", withActivity(tracker, activityConfig, func(c *controller.ActivityController) { c.Get() }))
+	r.POST("/v1/activity/touch", withActivity(tracker, activityConfig, func(c *controller.ActivityController) { c.Touch() }))
 
 	files := r.Group("/files")
 	{
@@ -89,7 +100,7 @@ func NewRouter(accessToken string) *gin.Engine {
 		pty.POST("", withPTY(func(c *controller.PTYController) { c.CreatePTYSession() }))
 		pty.GET("/:sessionId", withPTY(func(c *controller.PTYController) { c.GetPTYSessionStatus() }))
 		pty.DELETE("/:sessionId", withPTY(func(c *controller.PTYController) { c.DeletePTYSession() }))
-		pty.GET("/:sessionId/ws", controller.PTYSessionWebSocket)
+		pty.GET("/:sessionId/ws", controller.PTYSessionWebSocket(tracker))
 	}
 
 	isolated := r.Group("/v1/isolated")
@@ -115,7 +126,13 @@ func NewRouter(accessToken string) *gin.Engine {
 		isolated.GET("/capabilities", withIsolated(func(c *controller.IsolatedSessionController) { c.Capabilities() }))
 	}
 
-	return r
+	return r, nil
+}
+
+func withActivity(tracker *activity.Tracker, config controller.ActivityConfig, fn func(*controller.ActivityController)) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		fn(controller.NewActivityController(ctx, tracker, config))
+	}
 }
 
 func withFilesystem(fn func(*controller.FilesystemController)) gin.HandlerFunc {

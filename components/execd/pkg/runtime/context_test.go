@@ -26,7 +26,7 @@ import (
 )
 
 func TestListContextsAndNewIpynbPath(t *testing.T) {
-	c := NewController("http://example", "token")
+	c := newTestController("http://example", "token")
 	c.jupyterClientMap.Store("session-python", &jupyterKernel{language: Python})
 	c.defaultLanguageSessions.Store(Go, "session-go-default")
 
@@ -50,7 +50,7 @@ func TestListContextsAndNewIpynbPath(t *testing.T) {
 }
 
 func TestNewContextID_UniqueAndLength(t *testing.T) {
-	c := NewController("", "")
+	c := newTestController("", "")
 	id1 := c.newContextID()
 	id2 := c.newContextID()
 
@@ -62,7 +62,7 @@ func TestNewContextID_UniqueAndLength(t *testing.T) {
 }
 
 func TestNewIpynbPath_ErrorWhenCwdIsFile(t *testing.T) {
-	c := NewController("", "")
+	c := newTestController("", "")
 	tmpFile := filepath.Join(t.TempDir(), "file.txt")
 	require.NoError(t, os.WriteFile(tmpFile, []byte("x"), 0o644))
 
@@ -75,14 +75,14 @@ func TestNewIpynbPath_ExpandsHome(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	c := NewController("", "")
+	c := newTestController("", "")
 	path, err := c.newIpynbPath("abc", "~/workspace")
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(home, "workspace", "abc.ipynb"), path)
 }
 
 func TestListContextUnsupportedLanguage(t *testing.T) {
-	c := NewController("", "")
+	c := newTestController("", "")
 	_, err := c.ListContext(Command.String())
 	require.Error(t, err, "expected error for command language")
 	_, err = c.ListContext(BackgroundCommand.String())
@@ -92,14 +92,14 @@ func TestListContextUnsupportedLanguage(t *testing.T) {
 }
 
 func TestDeleteContext_NotFound(t *testing.T) {
-	c := NewController("", "")
+	c := newTestController("", "")
 	err := c.DeleteContext("missing")
 	require.Error(t, err, "expected ErrContextNotFound")
 	require.ErrorIs(t, err, ErrContextNotFound)
 }
 
 func TestGetContext_NotFound(t *testing.T) {
-	c := NewController("", "")
+	c := newTestController("", "")
 
 	_, err := c.GetContext("missing")
 	require.Error(t, err, "expected ErrContextNotFound")
@@ -117,7 +117,7 @@ func TestDeleteContext_RemovesCacheOnSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewController(server.URL, "token")
+	c := newTestController(server.URL, "token")
 	c.jupyterClientMap.Store(sessionID, &jupyterKernel{language: Python})
 	c.defaultLanguageSessions.Store(Python, sessionID)
 
@@ -148,7 +148,7 @@ func TestDeleteLanguageContext_RemovesCacheOnSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := NewController(server.URL, "token")
+	c := newTestController(server.URL, "token")
 	c.jupyterClientMap.Store(session1, &jupyterKernel{language: lang})
 	c.jupyterClientMap.Store(session2, &jupyterKernel{language: lang})
 	c.defaultLanguageSessions.Store(lang, session2)

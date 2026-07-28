@@ -25,12 +25,13 @@ import (
 )
 
 const (
-	jupyterHostEnv             = "JUPYTER_HOST"
-	jupyterTokenEnv            = "JUPYTER_TOKEN"
-	accessTokenEnv             = "EXECD_ACCESS_TOKEN"
-	gracefulShutdownTimeoutEnv = "EXECD_API_GRACE_SHUTDOWN"
-	jupyterIdlePollIntervalEnv = "EXECD_JUPYTER_IDLE_POLL_INTERVAL"
-	isolationConfigEnv         = "EXECD_ISOLATION_CONFIG"
+	jupyterHostEnv               = "JUPYTER_HOST"
+	jupyterTokenEnv              = "JUPYTER_TOKEN"
+	accessTokenEnv               = "EXECD_ACCESS_TOKEN"
+	gracefulShutdownTimeoutEnv   = "EXECD_API_GRACE_SHUTDOWN"
+	jupyterIdlePollIntervalEnv   = "EXECD_JUPYTER_IDLE_POLL_INTERVAL"
+	activityMaxKeepAliveDuration = "EXECD_ACTIVITY_MAX_KEEPALIVE"
+	isolationConfigEnv           = "EXECD_ISOLATION_CONFIG"
 )
 
 // InitFlags registers CLI flags and env overrides.
@@ -41,6 +42,7 @@ func InitFlags() {
 	ServerAccessToken = ""
 	ApiGracefulShutdownTimeout = time.Second * 1
 	JupyterIdlePollInterval = 100 * time.Millisecond
+	ActivityMaxKeepAliveDuration = 24 * time.Hour
 	IsolationConfigPath = ""
 
 	// First, set default values from environment variables
@@ -86,8 +88,21 @@ func InitFlags() {
 		}
 	}
 
+	if maxKeepAlive := os.Getenv(activityMaxKeepAliveDuration); maxKeepAlive != "" {
+		duration, err := time.ParseDuration(maxKeepAlive)
+		if err != nil {
+			stdlog.Panicf("Failed to parse activity max keep-alive duration from env: %v", err)
+		}
+		if duration <= 0 {
+			stdlog.Printf("Invalid %s=%s; fallback to default %s", activityMaxKeepAliveDuration, maxKeepAlive, ActivityMaxKeepAliveDuration)
+		} else {
+			ActivityMaxKeepAliveDuration = duration
+		}
+	}
+
 	flag.DurationVar(&ApiGracefulShutdownTimeout, "graceful-shutdown-timeout", ApiGracefulShutdownTimeout, "API graceful shutdown timeout duration (default: 1s)")
 	flag.DurationVar(&JupyterIdlePollInterval, "jupyter-idle-poll-interval", JupyterIdlePollInterval, "Polling interval after Jupyter idle status before closing stream (default: 100ms)")
+	flag.DurationVar(&ActivityMaxKeepAliveDuration, "activity-max-keepalive", ActivityMaxKeepAliveDuration, "Maximum keep-alive duration accepted by /v1/activity/touch (default: 24h)")
 
 	// Isolation config
 	if v := os.Getenv(isolationConfigEnv); v != "" {
@@ -100,6 +115,10 @@ func InitFlags() {
 	if JupyterIdlePollInterval <= 0 {
 		stdlog.Printf("Invalid --jupyter-idle-poll-interval=%s; fallback to default %s", JupyterIdlePollInterval, 100*time.Millisecond)
 		JupyterIdlePollInterval = 100 * time.Millisecond
+	}
+	if ActivityMaxKeepAliveDuration <= 0 {
+		stdlog.Printf("Invalid --activity-max-keepalive=%s; fallback to default %s", ActivityMaxKeepAliveDuration, 24*time.Hour)
+		ActivityMaxKeepAliveDuration = 24 * time.Hour
 	}
 
 	// Log final values

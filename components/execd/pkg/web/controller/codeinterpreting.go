@@ -25,6 +25,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/alibaba/opensandbox/execd/pkg/activity"
 	"github.com/alibaba/opensandbox/execd/pkg/flag"
 	"github.com/alibaba/opensandbox/execd/pkg/jupyter/execute"
 	"github.com/alibaba/opensandbox/execd/pkg/runtime"
@@ -34,10 +35,13 @@ import (
 
 var codeRunner codeExecutionRunner
 
-func InitCodeRunner() *runtime.Controller {
-	ctrl := runtime.NewController(flag.JupyterServerHost, flag.JupyterServerToken)
+func InitCodeRunner(activityTracker *activity.Tracker) (*runtime.Controller, error) {
+	ctrl, err := runtime.NewController(flag.JupyterServerHost, flag.JupyterServerToken, activityTracker)
+	if err != nil {
+		return nil, err
+	}
 	codeRunner = ctrl
-	return ctrl
+	return ctrl, nil
 }
 
 // CodeInterpretingController handles code execution entrypoints.

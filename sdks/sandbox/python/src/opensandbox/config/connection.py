@@ -65,7 +65,7 @@ class ConnectionConfig(BaseModel):
         default=False, description="Enable debug logging for HTTP requests"
     )
     user_agent: str = Field(
-        default="OpenSandbox-Python-SDK/0.1.14", description="User agent string"
+        default="OpenSandbox-Python-SDK/0.1.15", description="User agent string"
     )
     headers: dict[str, str] = Field(
         default_factory=dict, description="User defined headers"
@@ -114,6 +114,12 @@ class ConnectionConfig(BaseModel):
     def model_post_init(self, __context: object) -> None:
         # If the user explicitly provided `transport`, the SDK must not close it.
         self._owns_transport = "transport" not in self.model_fields_set
+        # Best-effort: attach the SDK host's own IP so the server can see the
+        # client's self-reported address. Never overrides a user-supplied value
+        # and is skipped silently when the IP cannot be determined.
+        from opensandbox.config import client_ip
+
+        client_ip.apply_client_ip(self.headers)
 
     def with_transport_if_missing(self) -> "ConnectionConfig":
         """
