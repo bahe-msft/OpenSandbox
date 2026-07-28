@@ -53,12 +53,7 @@ func buildAddResolvedIPsScript(table string, ips []ResolvedIP) string {
 
 func clampTTL(d time.Duration) time.Duration {
 	sec := int(d.Seconds()) + nftTTLSlackSec
-	if sec < minTTLSec {
-		sec = minTTLSec
-	}
-	if sec > maxTTLSec {
-		sec = maxTTLSec
-	}
+	sec = min(max(sec, minTTLSec), maxTTLSec)
 	return time.Duration(sec) * time.Second
 }
 
