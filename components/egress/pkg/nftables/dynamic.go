@@ -57,9 +57,10 @@ func clampTTL(d time.Duration) time.Duration {
 	return time.Duration(sec) * time.Second
 }
 
-// Active connection refreshes use the full set timeout rather than the DNS TTL.
-// Activity proves the address is still in use, and the final refresh after the
-// connection closes makes this same bounded timeout the reconnect grace period.
+// buildRefreshResolvedIPsScript renders active connection refreshes with the
+// full set timeout rather than the DNS TTL. Activity proves the address is
+// still in use, and the final refresh after the connection closes makes this
+// same bounded timeout the reconnect grace period.
 func buildRefreshResolvedIPsScript(table string, ips []netip.Addr) string {
 	elements := make([]ResolvedIP, 0, len(ips))
 	for _, addr := range ips {
