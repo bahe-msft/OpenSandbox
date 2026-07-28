@@ -107,7 +107,7 @@ func (m *Manager) ApplyStatic(ctx context.Context, p *policy.NetworkPolicy) erro
 			fallback := removeDeleteTableLine(script)
 			if fallback != script {
 				if _, retryErr := m.run(ctx, fallback); retryErr == nil {
-					m.clearDynamicIPsLocked()
+					m.tracker.clear()
 					telemetry.SetNftablesRuleCount(telemetry.NftRuleCountFromPolicy(p))
 					telemetry.RecordNftablesUpdate()
 					return nil
@@ -116,7 +116,7 @@ func (m *Manager) ApplyStatic(ctx context.Context, p *policy.NetworkPolicy) erro
 		}
 		return err
 	}
-	m.clearDynamicIPsLocked()
+	m.tracker.clear()
 	telemetry.SetNftablesRuleCount(telemetry.NftRuleCountFromPolicy(p))
 	telemetry.RecordNftablesUpdate()
 	log.Infof("nftables: static policy applied successfully")
@@ -201,10 +201,6 @@ func (m *Manager) refreshActiveConnections(ctx context.Context, connections []tc
 	return nil
 }
 
-func (m *Manager) clearDynamicIPsLocked() {
-	m.tracker.clear()
-}
-
 // RemoveEnforcement drops inet opensandbox; missing table is not an error.
 func (m *Manager) RemoveEnforcement(ctx context.Context) error {
 	m.mu.Lock()
@@ -218,7 +214,7 @@ func (m *Manager) RemoveEnforcement(ctx context.Context) error {
 		}
 		return err
 	}
-	m.clearDynamicIPsLocked()
+	m.tracker.clear()
 	log.Infof("nftables: removed table inet %s", tableName)
 	return nil
 }
