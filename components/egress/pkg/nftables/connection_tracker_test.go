@@ -15,6 +15,8 @@
 package nftables
 
 import (
+	"context"
+	"fmt"
 	"net/netip"
 	"sync"
 	"testing"
@@ -121,4 +123,55 @@ func TestConnectionTrackerConcurrentAccess(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestConnectionTrackerRefreshActiveConnections(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	addr := netip.MustParseAddr("1.1.1.1")
+	tracker := newConnectionTracker()
+	tracker.now = func() time.Time { return now }
+	tracker.setDynamicIPs([]ResolvedIP{{Addr: addr, TTL: time.Minute}})
+	var refreshed []netip.Addr
+
+	err := tracker.refreshActiveConnections(
+		context.Background(),
+		[]tcpConnection{{remote: addr, state: "ESTABLISHED"}},
+		func(_ context.Context, refresh connectionRefresh) error {
+			refreshed = append(refreshed, refresh.addresses...)
+			return nil
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, []netip.Addr{addr}, refreshed)
+	require.Equal(t, now.Add(6*time.Minute), tracker.dynamicIPs[addr])
+	require.Contains(t, tracker.previousActiveIPs, addr)
+}
+
+func TestConnectionTrackerRefreshFailureDoesNotRecordState(t *testing.T) {
+	addr := netip.MustParseAddr("1.1.1.1")
+	tracker := newConnectionTracker()
+	tracker.setDynamicIPs([]ResolvedIP{{Addr: addr, TTL: time.Minute}})
+	originalExpiry := tracker.dynamicIPs[addr]
+
+	err := tracker.refreshActiveConnections(
+		context.Background(),
+		[]tcpConnection{{remote: addr, state: "ESTABLISHED"}},
+		func(context.Context, connectionRefresh) error { return fmt.Errorf("nft failed") },
+	)
+	require.Error(t, err)
+	require.Equal(t, originalExpiry, tracker.dynamicIPs[addr])
+	require.Empty(t, tracker.previousActiveIPs)
+}
+
+func TestConnectionTrackerRejectsStaleRefreshAfterClear(t *testing.T) {
+	addr := netip.MustParseAddr("1.1.1.1")
+	tracker := newConnectionTracker()
+	tracker.setDynamicIPs([]ResolvedIP{{Addr: addr, TTL: time.Minute}})
+	refresh := tracker.refreshCandidates([]tcpConnection{{remote: addr, state: "ESTABLISHED"}})
+
+	tracker.clear()
+	require.False(t, tracker.isCurrent(refresh))
+	tracker.recordRefresh(refresh)
+	require.Empty(t, tracker.dynamicIPs)
+	require.Empty(t, tracker.previousActiveIPs)
 }

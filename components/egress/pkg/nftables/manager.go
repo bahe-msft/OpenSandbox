@@ -160,43 +160,20 @@ func (m *Manager) AddResolvedIPs(ctx context.Context, ips []ResolvedIP) error {
 // after close provides the same bounded grace period for reconnects.
 func (m *Manager) StartConnectionRefresh(ctx context.Context) {
 	safego.Go(func() {
-		ticker := time.NewTicker(m.opts.ConnectionRefreshInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				connections, err := m.tracker.listConnections(ctx)
-				if err != nil {
-					m.tracker.clearPreviousActiveIPs()
-					log.Warnf("nftables: list active TCP connections failed: %v", err)
-					continue
-				}
-				refreshCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-				err = m.refreshActiveConnections(refreshCtx, connections)
-				cancel()
-				if err != nil {
-					log.Warnf("nftables: refresh active DNS IPs failed: %v", err)
-				}
-			}
-		}
+		m.tracker.start(ctx, m.opts.ConnectionRefreshInterval, m.refreshDynamicIPs)
 	})
 }
 
-func (m *Manager) refreshActiveConnections(ctx context.Context, connections []tcpConnection) error {
+func (m *Manager) refreshDynamicIPs(ctx context.Context, refresh connectionRefresh) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	refresh := m.tracker.refreshCandidates(connections)
-	if len(refresh.addresses) == 0 {
-		m.tracker.recordRefresh(refresh)
+	if !m.tracker.isCurrent(refresh) {
 		return nil
 	}
 	script := buildRefreshResolvedIPsScript(tableName, refresh.addresses)
 	if _, err := m.run(ctx, script); err != nil {
 		return err
 	}
-	m.tracker.recordRefresh(refresh)
 	telemetry.RecordNftablesUpdate()
 	return nil
 }

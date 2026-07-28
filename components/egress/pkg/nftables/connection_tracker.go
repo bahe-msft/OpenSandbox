@@ -20,6 +20,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/alibaba/opensandbox/egress/pkg/log"
 )
 
 type connectionTracker struct {
@@ -28,13 +30,17 @@ type connectionTracker struct {
 	previousActiveIPs map[netip.Addr]struct{}
 	listConnections   func(context.Context) ([]tcpConnection, error)
 	now               func() time.Time
+	generation        uint64
 }
 
 type connectionRefresh struct {
-	addresses []netip.Addr
-	active    map[netip.Addr]struct{}
-	at        time.Time
+	addresses  []netip.Addr
+	active     map[netip.Addr]struct{}
+	at         time.Time
+	generation uint64
 }
+
+type refreshConnections func(context.Context, connectionRefresh) error
 
 func newConnectionTracker() *connectionTracker {
 	return &connectionTracker{
@@ -55,6 +61,41 @@ func (t *connectionTracker) setDynamicIPs(ips []ResolvedIP) {
 			t.dynamicIPs[addr] = now.Add(clampTTL(ip.TTL))
 		}
 	}
+}
+
+func (t *connectionTracker) start(ctx context.Context, interval time.Duration, refresh refreshConnections) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			connections, err := t.listConnections(ctx)
+			if err != nil {
+				t.clearPreviousActiveIPs()
+				log.Warnf("nftables: list active TCP connections failed: %v", err)
+				continue
+			}
+			refreshCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			err = t.refreshActiveConnections(refreshCtx, connections, refresh)
+			cancel()
+			if err != nil {
+				log.Warnf("nftables: refresh active DNS IPs failed: %v", err)
+			}
+		}
+	}
+}
+
+func (t *connectionTracker) refreshActiveConnections(ctx context.Context, connections []tcpConnection, refreshFn refreshConnections) error {
+	refresh := t.refreshCandidates(connections)
+	if len(refresh.addresses) > 0 {
+		if err := refreshFn(ctx, refresh); err != nil {
+			return err
+		}
+	}
+	t.recordRefresh(refresh)
+	return nil
 }
 
 func (t *connectionTracker) refreshCandidates(connections []tcpConnection) connectionRefresh {
@@ -98,16 +139,25 @@ func (t *connectionTracker) refreshCandidates(connections []tcpConnection) conne
 		addresses = append(addresses, addr)
 	}
 	sort.Slice(addresses, func(i, j int) bool { return addresses[i].Compare(addresses[j]) < 0 })
-	return connectionRefresh{addresses: addresses, active: current, at: now}
+	return connectionRefresh{addresses: addresses, active: current, at: now, generation: t.generation}
 }
 
 func (t *connectionTracker) recordRefresh(refresh connectionRefresh) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if refresh.generation != t.generation {
+		return
+	}
 	for _, addr := range refresh.addresses {
 		t.dynamicIPs[addr] = refresh.at.Add(time.Duration(dynSetTimeoutS) * time.Second)
 	}
 	t.previousActiveIPs = refresh.active
+}
+
+func (t *connectionTracker) isCurrent(refresh connectionRefresh) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return refresh.generation == t.generation
 }
 
 func (t *connectionTracker) clearPreviousActiveIPs() {
@@ -123,6 +173,7 @@ func (t *connectionTracker) clearPreviousActiveIPsLocked() {
 func (t *connectionTracker) clear() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.generation++
 	t.dynamicIPs = make(map[netip.Addr]time.Time)
 	t.clearPreviousActiveIPsLocked()
 }
