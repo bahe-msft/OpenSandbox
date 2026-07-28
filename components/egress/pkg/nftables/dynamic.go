@@ -22,11 +22,14 @@ import (
 )
 
 const (
-	dynAllowV4Set = "dyn_allow_v4"
-	dynAllowV6Set = "dyn_allow_v6"
-	// Keep resolved addresses available for reconnects by applications that hold
-	// connections longer than the DNS TTL and reconnect without resolving again.
-	dynSetTimeoutS = 24 * 60 * 60
+	dynAllowV4Set  = "dyn_allow_v4"
+	dynAllowV6Set  = "dyn_allow_v6"
+	dynSetTimeoutS = 360
+	// nftTTLSlackSec is added to the DNS TTL before clamping, so allow entries
+	// slightly outlive the resolver cache and reduce races with short TTLs.
+	nftTTLSlackSec = 60
+	minTTLSec      = 60
+	maxTTLSec      = 360 // max DNS TTL (300) + nftTTLSlackSec
 )
 
 // ResolvedIP is a single IP learned from DNS with TTL for dynamic nft set.
@@ -58,5 +61,32 @@ func buildAddResolvedIPsScript(table string, ips []ResolvedIP) string {
 }
 
 func clampTTL(d time.Duration) int {
-	return dynSetTimeoutS
+	sec := int(d.Seconds()) + nftTTLSlackSec
+	if sec < minTTLSec {
+		return minTTLSec
+	}
+	if sec > maxTTLSec {
+		return maxTTLSec
+	}
+	return sec
+}
+
+func buildRefreshResolvedIPsScript(table string, ips []netip.Addr) string {
+	var v4, v6 []string
+	for _, addr := range ips {
+		addr = addr.Unmap()
+		if addr.Is4() {
+			v4 = append(v4, fmt.Sprintf("%s timeout %ds", addr, dynSetTimeoutS))
+		} else if addr.Is6() {
+			v6 = append(v6, fmt.Sprintf("%s timeout %ds", addr, dynSetTimeoutS))
+		}
+	}
+	var b strings.Builder
+	if len(v4) > 0 {
+		fmt.Fprintf(&b, "add element inet %s %s { %s }\n", table, dynAllowV4Set, strings.Join(v4, ", "))
+	}
+	if len(v6) > 0 {
+		fmt.Fprintf(&b, "add element inet %s %s { %s }\n", table, dynAllowV6Set, strings.Join(v6, ", "))
+	}
+	return b.String()
 }

@@ -17,25 +17,30 @@ package nftables
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/alibaba/opensandbox/egress/pkg/constants"
 	"github.com/alibaba/opensandbox/egress/pkg/log"
 	"github.com/alibaba/opensandbox/egress/pkg/policy"
 	"github.com/alibaba/opensandbox/egress/pkg/telemetry"
+	"github.com/alibaba/opensandbox/internal/safego"
 )
 
 const (
-	tableName     = "opensandbox"
-	chainName     = "egress"
-	allowV4Set    = "allow_v4"
-	allowV6Set    = "allow_v6"
-	denyV4Set     = "deny_v4"
-	denyV6Set     = "deny_v6"
-	dohBlockV4Set = "doh_block_v4"
-	dohBlockV6Set = "doh_block_v6"
+	tableName                 = "opensandbox"
+	chainName                 = "egress"
+	allowV4Set                = "allow_v4"
+	allowV6Set                = "allow_v6"
+	denyV4Set                 = "deny_v4"
+	denyV6Set                 = "deny_v6"
+	dohBlockV4Set             = "doh_block_v4"
+	dohBlockV6Set             = "doh_block_v6"
+	connectionRefreshInterval = 30 * time.Second
 )
 
 type runner func(ctx context.Context, script string) ([]byte, error)
@@ -48,25 +53,42 @@ type Options struct {
 }
 
 type Manager struct {
-	run  runner
-	opts Options
-	mu   sync.Mutex
+	run               runner
+	opts              Options
+	mu                sync.Mutex
+	dynamicIPs        map[netip.Addr]time.Time
+	previousActiveIPs map[netip.Addr]struct{}
+	listConnections   func(context.Context) ([]tcpConnection, error)
+	refreshInterval   time.Duration
+	now               func() time.Time
 }
 
 func NewManager() *Manager {
-	return &Manager{run: defaultRunner, opts: Options{BlockDoT: true}}
+	return newManager(defaultRunner, Options{BlockDoT: true})
 }
 
 func NewManagerWithRunner(r runner) *Manager {
-	return &Manager{run: r, opts: Options{BlockDoT: true}}
+	return newManager(r, Options{BlockDoT: true})
 }
 
 func NewManagerWithRunnerAndOptions(r runner, opts Options) *Manager {
-	return &Manager{run: r, opts: opts}
+	return newManager(r, opts)
 }
 
 func NewManagerWithOptions(opts Options) *Manager {
-	return &Manager{run: defaultRunner, opts: opts}
+	return newManager(defaultRunner, opts)
+}
+
+func newManager(r runner, opts Options) *Manager {
+	return &Manager{
+		run:               r,
+		opts:              opts,
+		dynamicIPs:        make(map[netip.Addr]time.Time),
+		previousActiveIPs: make(map[netip.Addr]struct{}),
+		listConnections:   listTCPConnections,
+		refreshInterval:   connectionRefreshInterval,
+		now:               time.Now,
+	}
 }
 
 func (m *Manager) ApplyStatic(ctx context.Context, p *policy.NetworkPolicy) error {
@@ -87,6 +109,7 @@ func (m *Manager) ApplyStatic(ctx context.Context, p *policy.NetworkPolicy) erro
 			fallback := removeDeleteTableLine(script)
 			if fallback != script {
 				if _, retryErr := m.run(ctx, fallback); retryErr == nil {
+					m.clearDynamicIPsLocked()
 					telemetry.SetNftablesRuleCount(telemetry.NftRuleCountFromPolicy(p))
 					telemetry.RecordNftablesUpdate()
 					return nil
@@ -95,6 +118,7 @@ func (m *Manager) ApplyStatic(ctx context.Context, p *policy.NetworkPolicy) erro
 		}
 		return err
 	}
+	m.clearDynamicIPsLocked()
 	telemetry.SetNftablesRuleCount(telemetry.NftRuleCountFromPolicy(p))
 	telemetry.RecordNftablesUpdate()
 	log.Infof("nftables: static policy applied successfully")
@@ -115,9 +139,126 @@ func (m *Manager) AddResolvedIPs(ctx context.Context, ips []ResolvedIP) error {
 	log.Debugf("nftables: adding %d resolved IP(s) to dynamic allow sets with script statement %s", len(ips), script)
 	_, err := m.run(ctx, script)
 	if err == nil {
+		now := m.now()
+		for _, ip := range ips {
+			addr := ip.Addr.Unmap()
+			if addr.IsValid() {
+				m.dynamicIPs[addr] = now.Add(time.Duration(clampTTL(ip.TTL)) * time.Second)
+			}
+		}
 		telemetry.RecordNftablesUpdate()
 	}
 	return err
+}
+
+// StartConnectionRefresh keeps DNS-learned IPs authorized while a TCP
+// connection to them is active. The normal set timeout remains as the grace
+// period after the connection closes.
+func (m *Manager) StartConnectionRefresh(ctx context.Context) {
+	safego.Go(func() {
+		ticker := time.NewTicker(m.refreshInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				connections, err := m.listConnections(ctx)
+				if err != nil {
+					log.Warnf("nftables: list active TCP connections failed: %v", err)
+					continue
+				}
+				refreshCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				err = m.refreshActiveConnections(refreshCtx, connections)
+				cancel()
+				if err != nil {
+					log.Warnf("nftables: refresh active DNS IPs failed: %v", err)
+				}
+			}
+		}
+	})
+}
+
+func (m *Manager) refreshActiveConnections(ctx context.Context, connections []tcpConnection) error {
+	active := activeRemoteIPs(connections)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := m.now()
+	for addr, expiresAt := range m.dynamicIPs {
+		if !expiresAt.After(now) {
+			if _, isActive := active[addr]; isActive {
+				continue
+			}
+			if _, wasActive := m.previousActiveIPs[addr]; wasActive {
+				continue
+			}
+			delete(m.dynamicIPs, addr)
+			delete(m.previousActiveIPs, addr)
+		}
+	}
+
+	current := make(map[netip.Addr]struct{})
+	refresh := make(map[netip.Addr]struct{})
+	for addr := range active {
+		if _, ok := m.dynamicIPs[addr]; ok {
+			current[addr] = struct{}{}
+			refresh[addr] = struct{}{}
+		}
+	}
+	// A final refresh when activity ends makes the existing timeout the
+	// reconnect grace period instead of extending every DNS answer globally.
+	for addr := range m.previousActiveIPs {
+		if _, stillActive := current[addr]; !stillActive {
+			if _, known := m.dynamicIPs[addr]; known {
+				refresh[addr] = struct{}{}
+			}
+		}
+	}
+	if len(refresh) == 0 {
+		m.previousActiveIPs = current
+		return nil
+	}
+
+	addresses := make([]netip.Addr, 0, len(refresh))
+	for addr := range refresh {
+		addresses = append(addresses, addr)
+	}
+	sort.Slice(addresses, func(i, j int) bool { return addresses[i].Compare(addresses[j]) < 0 })
+	script := buildRefreshResolvedIPsScript(tableName, addresses)
+	if _, err := m.run(ctx, script); err != nil {
+		return err
+	}
+	for addr := range refresh {
+		m.dynamicIPs[addr] = now.Add(time.Duration(dynSetTimeoutS) * time.Second)
+	}
+	m.previousActiveIPs = current
+	telemetry.RecordNftablesUpdate()
+	return nil
+}
+
+func activeRemoteIPs(connections []tcpConnection) map[netip.Addr]struct{} {
+	active := make(map[netip.Addr]struct{})
+	for _, connection := range connections {
+		if !activeTCPState(connection.state) || !connection.remote.IsValid() {
+			continue
+		}
+		active[connection.remote.Unmap()] = struct{}{}
+	}
+	return active
+}
+
+func activeTCPState(state string) bool {
+	switch state {
+	case "ESTABLISHED", "SYN_SENT", "SYN_RECV", "FIN_WAIT1", "FIN_WAIT2", "CLOSE_WAIT", "CLOSING", "LAST_ACK":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *Manager) clearDynamicIPsLocked() {
+	m.dynamicIPs = make(map[netip.Addr]time.Time)
+	m.previousActiveIPs = make(map[netip.Addr]struct{})
 }
 
 // RemoveEnforcement drops inet opensandbox; missing table is not an error.
@@ -133,6 +274,7 @@ func (m *Manager) RemoveEnforcement(ctx context.Context) error {
 		}
 		return err
 	}
+	m.clearDynamicIPsLocked()
 	log.Infof("nftables: removed table inet %s", tableName)
 	return nil
 }

@@ -51,8 +51,8 @@ func TestApplyStatic_BuildsRuleset_DefaultDeny(t *testing.T) {
 	expectContains(t, rendered, "add rule inet opensandbox egress oifname \"lo\" accept")
 	expectContains(t, rendered, "add rule inet opensandbox egress tcp dport 853 drop")
 	expectContains(t, rendered, "add rule inet opensandbox egress udp dport 853 drop")
-	expectContains(t, rendered, "add set inet opensandbox dyn_allow_v4 { type ipv4_addr; timeout 86400s; }")
-	expectContains(t, rendered, "add set inet opensandbox dyn_allow_v6 { type ipv6_addr; timeout 86400s; }")
+	expectContains(t, rendered, "add set inet opensandbox dyn_allow_v4 { type ipv4_addr; timeout 360s; }")
+	expectContains(t, rendered, "add set inet opensandbox dyn_allow_v6 { type ipv6_addr; timeout 360s; }")
 	expectContains(t, rendered, "add element inet opensandbox allow_v4 { 1.1.1.1, 2.2.0.0/16 }")
 	expectContains(t, rendered, "add element inet opensandbox deny_v6 { 2001:db8::/32 }")
 	expectContains(t, rendered, "add rule inet opensandbox egress ip daddr @dyn_allow_v4 accept")
@@ -183,11 +183,11 @@ func TestAddResolvedIPs_BuildsDynamicElements(t *testing.T) {
 		{Addr: netip.MustParseAddr("2001:db8::1"), TTL: 60 * time.Second},
 	}
 	require.NoError(t, m.AddResolvedIPs(context.Background(), ips), "AddResolvedIPs returned error")
-	expectContains(t, rendered, "add element inet opensandbox dyn_allow_v4 { 1.1.1.1 timeout 86400s }")
-	expectContains(t, rendered, "add element inet opensandbox dyn_allow_v6 { 2001:db8::1 timeout 86400s }")
+	expectContains(t, rendered, "add element inet opensandbox dyn_allow_v4 { 1.1.1.1 timeout 180s }")
+	expectContains(t, rendered, "add element inet opensandbox dyn_allow_v6 { 2001:db8::1 timeout 120s }")
 }
 
-func TestAddResolvedIPs_UsesReconnectSafeTTL(t *testing.T) {
+func TestAddResolvedIPs_ClampsTTL(t *testing.T) {
 	var rendered string
 	m := NewManagerWithRunner(func(_ context.Context, script string) ([]byte, error) {
 		rendered = script
@@ -198,8 +198,8 @@ func TestAddResolvedIPs_UsesReconnectSafeTTL(t *testing.T) {
 		{Addr: netip.MustParseAddr("10.0.0.2"), TTL: 9999 * time.Second},
 	}
 	require.NoError(t, m.AddResolvedIPs(context.Background(), ips), "AddResolvedIPs returned error")
-	expectContains(t, rendered, "10.0.0.1 timeout 86400s")
-	expectContains(t, rendered, "10.0.0.2 timeout 86400s")
+	expectContains(t, rendered, "10.0.0.1 timeout 70s")
+	expectContains(t, rendered, "10.0.0.2 timeout 360s")
 }
 
 func TestAddResolvedIPs_EmptyNoOp(t *testing.T) {
@@ -227,4 +227,143 @@ func TestApplyStatic_NormalizesOverlappingAllow(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, m.ApplyStatic(context.Background(), p))
 	expectContains(t, rendered, "add element inet opensandbox allow_v4 { 100.64.0.0/10 }")
+}
+
+func TestRefreshActiveConnections_RenewsKnownActiveIP(t *testing.T) {
+	var scripts []string
+	m := NewManagerWithRunner(func(_ context.Context, script string) ([]byte, error) {
+		scripts = append(scripts, script)
+		return nil, nil
+	})
+	require.NoError(t, m.AddResolvedIPs(context.Background(), []ResolvedIP{
+		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: time.Minute},
+	}))
+
+	require.NoError(t, m.refreshActiveConnections(context.Background(), []tcpConnection{
+		{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"},
+		{remote: netip.MustParseAddr("2.2.2.2"), state: "ESTABLISHED"},
+		{remote: netip.MustParseAddr("1.1.1.1"), state: "TIME_WAIT"},
+	}))
+
+	require.Len(t, scripts, 2)
+	require.Equal(t, "add element inet opensandbox dyn_allow_v4 { 1.1.1.1 timeout 360s }\n", scripts[1])
+}
+
+func TestRefreshActiveConnections_RenewsOnceAfterConnectionCloses(t *testing.T) {
+	var scripts []string
+	m := NewManagerWithRunner(func(_ context.Context, script string) ([]byte, error) {
+		scripts = append(scripts, script)
+		return nil, nil
+	})
+	require.NoError(t, m.AddResolvedIPs(context.Background(), []ResolvedIP{
+		{Addr: netip.MustParseAddr("2001:db8::1"), TTL: time.Minute},
+	}))
+	active := []tcpConnection{
+		{remote: netip.MustParseAddr("2001:db8::1"), state: "ESTABLISHED"},
+	}
+	require.NoError(t, m.refreshActiveConnections(context.Background(), active))
+	require.NoError(t, m.refreshActiveConnections(context.Background(), nil))
+	require.NoError(t, m.refreshActiveConnections(context.Background(), nil))
+
+	require.Len(t, scripts, 3)
+	require.Equal(t, "add element inet opensandbox dyn_allow_v6 { 2001:db8::1 timeout 360s }\n", scripts[1])
+	require.Equal(t, scripts[1], scripts[2])
+}
+
+func TestApplyStatic_ClearsTrackedDynamicIPs(t *testing.T) {
+	var scripts []string
+	m := NewManagerWithRunner(func(_ context.Context, script string) ([]byte, error) {
+		scripts = append(scripts, script)
+		return nil, nil
+	})
+	require.NoError(t, m.AddResolvedIPs(context.Background(), []ResolvedIP{
+		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: time.Minute},
+	}))
+	require.NoError(t, m.ApplyStatic(context.Background(), policy.DefaultDenyPolicy()))
+	require.NoError(t, m.refreshActiveConnections(context.Background(), []tcpConnection{
+		{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"},
+	}))
+
+	require.Len(t, scripts, 2)
+}
+
+func TestAddResolvedIPs_DoesNotTrackFailedInsert(t *testing.T) {
+	m := NewManagerWithRunner(func(_ context.Context, _ string) ([]byte, error) {
+		return nil, fmt.Errorf("nft failed")
+	})
+	require.Error(t, m.AddResolvedIPs(context.Background(), []ResolvedIP{
+		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: time.Minute},
+	}))
+
+	m.run = func(_ context.Context, _ string) ([]byte, error) {
+		require.FailNow(t, "failed insert must not become refresh eligible")
+		return nil, nil
+	}
+	require.NoError(t, m.refreshActiveConnections(context.Background(), []tcpConnection{
+		{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"},
+	}))
+}
+
+func TestRefreshActiveConnections_ForgetsExpiredInactiveIP(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	m := NewManagerWithRunner(func(_ context.Context, _ string) ([]byte, error) {
+		return nil, nil
+	})
+	m.now = func() time.Time { return now }
+	require.NoError(t, m.AddResolvedIPs(context.Background(), []ResolvedIP{
+		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: 10 * time.Second},
+	}))
+	now = now.Add(71 * time.Second)
+	require.NoError(t, m.refreshActiveConnections(context.Background(), nil))
+
+	require.Empty(t, m.dynamicIPs)
+}
+
+func TestRefreshActiveConnections_RenewsExpiredActiveIP(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	var scripts []string
+	m := NewManagerWithRunner(func(_ context.Context, script string) ([]byte, error) {
+		scripts = append(scripts, script)
+		return nil, nil
+	})
+	m.now = func() time.Time { return now }
+	require.NoError(t, m.AddResolvedIPs(context.Background(), []ResolvedIP{
+		{Addr: netip.MustParseAddr("1.1.1.1"), TTL: 10 * time.Second},
+	}))
+	now = now.Add(71 * time.Second)
+	require.NoError(t, m.refreshActiveConnections(context.Background(), []tcpConnection{
+		{remote: netip.MustParseAddr("1.1.1.1"), state: "ESTABLISHED"},
+	}))
+
+	require.Len(t, scripts, 2)
+	require.Equal(t, now.Add(6*time.Minute), m.dynamicIPs[netip.MustParseAddr("1.1.1.1")])
+}
+
+func TestStartConnectionRefresh_StopsWithContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	called := make(chan struct{}, 1)
+	m := NewManagerWithRunner(func(_ context.Context, _ string) ([]byte, error) {
+		return nil, nil
+	})
+	m.refreshInterval = time.Millisecond
+	m.listConnections = func(context.Context) ([]tcpConnection, error) {
+		select {
+		case called <- struct{}{}:
+		default:
+		}
+		return nil, nil
+	}
+	m.StartConnectionRefresh(ctx)
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		require.FailNow(t, "refresh worker did not run")
+	}
+	cancel()
+	time.Sleep(10 * time.Millisecond)
+	for len(called) > 0 {
+		<-called
+	}
+	time.Sleep(10 * time.Millisecond)
+	require.Empty(t, called)
 }
