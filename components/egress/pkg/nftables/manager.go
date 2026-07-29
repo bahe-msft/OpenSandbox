@@ -152,6 +152,8 @@ func (m *Manager) AddResolvedIPs(ctx context.Context, ips []ResolvedIP) error {
 //   - a connection that starts and closes entirely between polls cannot be
 //     observed and requires a later DNS lookup to restore its expired entry;
 //   - delayed polls or nft failures can extend the temporary reconnect gap;
+//   - a connection-listing failure resets prior activity observations, so the
+//     final refresh is skipped for connections active before that gap;
 //   - only TCP is tracked here; UDP and QUIC rely on DNS-driven entry refresh.
 //
 // Existing connections survive these gaps through conntrack. A successful

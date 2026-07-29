@@ -368,6 +368,39 @@ func TestStartConnectionRefresh_StopsWithContext(t *testing.T) {
 	require.Empty(t, called)
 }
 
+func TestStartConnectionRefresh_ContextCancellationPreservesPriorActivity(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	done := make(chan struct{})
+	addr := netip.MustParseAddr("1.1.1.1")
+	m := NewManagerWithRunner(func(_ context.Context, _ string) ([]byte, error) {
+		return nil, nil
+	})
+	m.tracker.previousActiveIPs[addr] = struct{}{}
+	m.tracker.listConnections = func(ctx context.Context) ([]tcpConnection, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	go func() {
+		defer close(done)
+		m.tracker.run(ctx, time.Millisecond, m)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		require.FailNow(t, "refresh worker did not start polling")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		require.FailNow(t, "refresh worker did not stop")
+	}
+	require.Contains(t, m.tracker.previousActiveIPs, addr)
+}
+
 func TestStartConnectionRefresh_PollErrorClearsPriorActivity(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

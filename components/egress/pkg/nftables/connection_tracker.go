@@ -73,6 +73,9 @@ func (t *connectionTracker) run(ctx context.Context, interval time.Duration, man
 		case <-ticker.C:
 			connections, err := t.listConnections(ctx)
 			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				t.clearPreviousActiveIPs(manager)
 				log.Warnf("nftables: list active TCP connections failed: %v", err)
 				continue
@@ -151,6 +154,8 @@ func (t *connectionTracker) refreshCandidates(connections []tcpConnection) refre
 }
 
 func (t *connectionTracker) recordRefresh(plan refreshPlan) {
+	// plan.at is captured immediately before the nft refresh. Keep candidate
+	// selection and recording adjacent so local expiry tracks the nft timeout.
 	for _, addr := range plan.addresses {
 		t.dynamicIPs[addr] = plan.at.Add(time.Duration(dynSetTimeoutS) * time.Second)
 	}
