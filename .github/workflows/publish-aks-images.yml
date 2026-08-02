@@ -19,6 +19,7 @@ on:
           - controller
           - task-executor
           - image-committer
+          - image-committer-azure
           - server
         default: 'all'
       image_tag:
@@ -46,7 +47,7 @@ jobs:
           set -euo pipefail
           COMPONENT="${{ inputs.component }}"
           if [[ "$COMPONENT" == "all" ]]; then
-            echo 'components=["execd","ingress","egress","controller","task-executor","image-committer","server"]' >> "$GITHUB_OUTPUT"
+            echo 'components=["execd","ingress","egress","controller","task-executor","image-committer","image-committer-azure","server"]' >> "$GITHUB_OUTPUT"
           else
             printf 'components=["%s"]\n' "$COMPONENT" >> "$GITHUB_OUTPUT"
           fi
@@ -126,7 +127,7 @@ jobs:
                 version="$(awk -F'"' '/^appVersion:/{print $2; exit}' kubernetes/charts/opensandbox-controller/Chart.yaml)"
                 version="v${version#v}"
                 ;;
-              image-committer)
+              image-committer|image-committer-azure)
                 version="$(grep -m1 -oE 'image-committer:v[0-9][^"[:space:]]*' kubernetes/charts/opensandbox-controller/values.yaml | cut -d: -f2)"
                 ;;
               *)
@@ -214,6 +215,9 @@ jobs:
                 ;;
               image-committer)
                 (cd kubernetes && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "-buildid= -B none" -o "../${outdir}/image-committer" ./cmd/image-committer)
+                ;;
+              image-committer-azure)
+                (cd kubernetes && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "-buildid= -B none" -o "../${outdir}/image-committer" ./cmd/image-committer-azure)
                 ;;
               *)
                 echo "unknown Go component: $COMPONENT" >&2
@@ -376,15 +380,22 @@ jobs:
               cat > "$DOCKERFILE" <<'EOF'
           FROM alpine:3.19
           ARG TARGETARCH
-          RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
-          RUN apk add --no-cache \
-              curl \
-              jq \
-              nerdctl
+          RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
+              && apk add --no-cache ca-certificates
           RUN mkdir -p /var/run/containerd
           COPY .build/aks/image-committer/linux_${TARGETARCH}/image-committer /usr/local/bin/image-committer
           RUN chmod +x /usr/local/bin/image-committer
           WORKDIR /workspace
+          ENTRYPOINT ["/usr/local/bin/image-committer"]
+          EOF
+              ;;
+            image-committer-azure)
+              DOCKERFILE="${RUNNER_TEMP}/Dockerfile.image-committer-azure-aks"
+              CONTEXT="."
+              cat > "$DOCKERFILE" <<'EOF'
+          FROM gcr.io/distroless/static-debian12:nonroot
+          ARG TARGETARCH
+          COPY .build/aks/image-committer-azure/linux_${TARGETARCH}/image-committer /usr/local/bin/image-committer
           ENTRYPOINT ["/usr/local/bin/image-committer"]
           EOF
               ;;

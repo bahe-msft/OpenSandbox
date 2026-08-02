@@ -1,4 +1,4 @@
-// Copyright 2025 Alibaba Group Holding Ltd.
+// Copyright 2026 Alibaba Group Holding Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,21 +25,25 @@ import (
 	imagecommittercli "github.com/alibaba/OpenSandbox/sandbox-k8s/internal/imagecommitter/cli"
 )
 
-const (
-	terminationMessagePath = "/dev/termination-log"
-	registryConfigPath     = "/var/run/opensandbox/registry/config.json"
-)
+const terminationMessagePath = "/dev/termination-log"
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	provider := imagecommitter.DockerConfigCredentialProvider{Path: registryConfigPath, ErrorOutput: os.Stderr}
-	if err := imagecommittercli.Run(ctx, os.Args[1:], imagecommittercli.Config{
-		CredentialProvider:     provider,
-		TerminationMessagePath: terminationMessagePath,
-		Output:                 os.Stdout,
-		ErrorOutput:            os.Stderr,
-	}); err != nil {
+	var provider imagecommitter.CredentialProvider
+	var err error
+	if len(os.Args) < 2 || os.Args[1] != "unpause" {
+		provider, err = newACRCredentialProvider()
+	}
+	if err == nil {
+		err = imagecommittercli.Run(ctx, os.Args[1:], imagecommittercli.Config{
+			CredentialProvider:     provider,
+			TerminationMessagePath: terminationMessagePath,
+			Output:                 os.Stdout,
+			ErrorOutput:            os.Stderr,
+		})
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
 		os.Exit(1)
 	}

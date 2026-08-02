@@ -54,8 +54,14 @@ OPERATOR_SDK_VERSION ?= v1.42.0
 CONTROLLER_IMG ?= controller:dev
 # TASK_EXECUTOR_IMG defines the image for the task-executor service.
 TASK_EXECUTOR_IMG ?= task-executor:dev
-# IMAGE_COMMITTER_IMG defines the image for the image-committer service.
+# IMAGE_COMMITTER_IMG defines the image for the default image-committer service.
 IMAGE_COMMITTER_IMG ?= image-committer:dev
+# IMAGE_COMMITTER_AZURE_IMG defines the Azure image variant that authenticates with ACR through azidentity.
+IMAGE_COMMITTER_AZURE_IMG ?= image-committer-azure:dev
+# IMAGE_COMMITTER_SERVICE_ACCOUNT is assigned to image-committer commit Jobs.
+IMAGE_COMMITTER_SERVICE_ACCOUNT ?=
+# IMAGE_COMMITTER_POD_LABELS is a JSON object assigned to image-committer commit Job Pods.
+IMAGE_COMMITTER_POD_LABELS ?=
 # SNAPSHOT_REGISTRY defines the OCI registry used by the controller for snapshot images.
 SNAPSHOT_REGISTRY ?= docker-registry.default.svc.cluster.local:5000
 
@@ -303,9 +309,17 @@ docker-build-task-executor: ## Build docker image with task-executor.
 docker-build-image-committer: ## Build docker image for image commit operations.
 	$(CONTAINER_TOOL) build $(DOCKER_BUILD_ARGS) -f Dockerfile.image-committer -t ${IMAGE_COMMITTER_IMG} .
 
+.PHONY: docker-build-image-committer-azure
+docker-build-image-committer-azure: ## Build the distroless Azure image-committer with azidentity ACR authentication.
+	$(CONTAINER_TOOL) build $(DOCKER_BUILD_ARGS) -f Dockerfile.image-committer-azure -t ${IMAGE_COMMITTER_AZURE_IMG} .
+
 .PHONY: docker-push-image-committer
 docker-push-image-committer: ## Push docker image for image-committer.
 	$(CONTAINER_TOOL) push ${IMAGE_COMMITTER_IMG}
+
+.PHONY: docker-push-image-committer-azure
+docker-push-image-committer-azure: ## Push the Azure image-committer.
+	$(CONTAINER_TOOL) push ${IMAGE_COMMITTER_AZURE_IMG}
 
 .PHONY: docker-push
 # docker-push: ## Push docker image with the manager.
@@ -375,6 +389,8 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 	$(KUSTOMIZE) build config/default | \
 		sed 's|--snapshot-registry=docker-registry.default.svc.cluster.local:5000|--snapshot-registry=$(SNAPSHOT_REGISTRY)|' | \
 		sed 's|--image-committer-image=image-committer:dev|--image-committer-image=$(IMAGE_COMMITTER_IMG)|' | \
+		sed 's|--image-committer-service-account=|--image-committer-service-account=$(IMAGE_COMMITTER_SERVICE_ACCOUNT)|' | \
+		sed 's|--image-committer-pod-labels=|--image-committer-pod-labels=$(IMAGE_COMMITTER_POD_LABELS)|' | \
 		sed 's|--image-committer-pull-secret=|--image-committer-pull-secret=$(IMAGE_COMMITTER_PULL_SECRET)|' | \
 		$(KUBECTL) apply -f -
 
