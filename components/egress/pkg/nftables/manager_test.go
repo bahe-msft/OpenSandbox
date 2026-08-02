@@ -422,20 +422,25 @@ func TestManagerSerializesConcurrentTrackerUpdates(t *testing.T) {
 	})
 	addr := netip.MustParseAddr("1.1.1.1")
 	var wg sync.WaitGroup
+	errs := make(chan error, 60)
 	for range 20 {
 		wg.Add(3)
 		go func() {
 			defer wg.Done()
-			require.NoError(t, m.AddResolvedIPs(context.Background(), []ResolvedIP{{Addr: addr, TTL: time.Minute}}))
+			errs <- m.AddResolvedIPs(context.Background(), []ResolvedIP{{Addr: addr, TTL: time.Minute}})
 		}()
 		go func() {
 			defer wg.Done()
-			require.NoError(t, m.tracker.refreshActiveConnections(context.Background(), []tcpConnection{{remote: addr, state: "ESTABLISHED"}}, m))
+			errs <- m.tracker.refreshActiveConnections(context.Background(), []tcpConnection{{remote: addr, state: "ESTABLISHED"}}, m)
 		}()
 		go func() {
 			defer wg.Done()
-			require.NoError(t, m.ApplyStatic(context.Background(), policy.DefaultDenyPolicy()))
+			errs <- m.ApplyStatic(context.Background(), policy.DefaultDenyPolicy())
 		}()
 	}
 	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
 }
