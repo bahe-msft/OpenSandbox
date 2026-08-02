@@ -21,6 +21,10 @@ This file tracks AKS-specific changes carried by the `aks-dev` branch relative t
 
 ## Unreleased
 
+- _No unreleased AKS-local changes._
+
+## aksdev/20260802-1
+
 - [#21](https://github.com/bahe-msft/OpenSandbox/pull/21) — Added a containerd-native image committer and an Azure variant that pushes snapshots to ACR with AKS Workload Identity.
 
 ## aksdev/20260802
