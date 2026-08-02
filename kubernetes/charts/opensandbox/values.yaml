@@ -12,6 +12,7 @@ opensandbox-controller:
       # DockerHub: opensandbox/image-committer:v0.1.1
       imageCommitterImage: sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/image-committer:v0.1.1
       imageCommitterServiceAccount: ""
+      imageCommitterPodLabels: {}
       commitJobTimeout: 10m
       registry: ""
       registryInsecure: false

@@ -505,6 +505,7 @@ func TestBuildCommitJob_ExecutesImageCommitterDirectlyWithIsolatedArgs(t *testin
 	r := newTestSnapshotReconciler(snapshot)
 	r.SnapshotRegistryInsecure = true
 	r.ImageCommitterServiceAccount = "snapshot-committer"
+	r.ImageCommitterPodLabels = map[string]string{"azure.workload.identity/use": "true"}
 
 	job, err := r.buildCommitJob(snapshot, "pod-uid")
 	require.NoError(t, err)
@@ -521,6 +522,7 @@ func TestBuildCommitJob_ExecutesImageCommitterDirectlyWithIsolatedArgs(t *testin
 	assert.Contains(t, container.Env, corev1.EnvVar{Name: "SOURCE_POD_UID", Value: "pod-uid"})
 	assert.Contains(t, container.Env, corev1.EnvVar{Name: "SNAPSHOT_REGISTRY_INSECURE", Value: "true"})
 	assert.Equal(t, "snapshot-committer", job.Spec.Template.Spec.ServiceAccountName)
+	assert.Equal(t, map[string]string{"azure.workload.identity/use": "true"}, job.Spec.Template.Labels)
 	assert.Contains(t, container.VolumeMounts, corev1.VolumeMount{Name: "containerd-fifo", MountPath: ContainerdFIFODir})
 
 	var fifoVolume *corev1.Volume

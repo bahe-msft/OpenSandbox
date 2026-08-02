@@ -80,6 +80,7 @@ kubectl delete crd sandboxsnapshots.sandbox.opensandbox.io
 | `controller.kubeClient.burst` | Burst for Kubernetes client rate limiter | `200` |
 | `controller.snapshot.imageCommitterImage` | Image used by snapshot commit Jobs | `image-committer:dev` |
 | `controller.snapshot.imageCommitterServiceAccount` | ServiceAccount assigned to snapshot commit Jobs | `""` |
+| `controller.snapshot.imageCommitterPodLabels` | Labels assigned to snapshot commit Job Pods | `{}` |
 | `controller.snapshot.commitJobTimeout` | Timeout duration for snapshot commit Jobs | `10m` |
 | `controller.snapshot.registry` | OCI registry prefix used for snapshot images | `""` |
 | `controller.snapshot.registryInsecure` | Use insecure registry mode for snapshot pushes | `false` |
@@ -171,6 +172,8 @@ controller:
   snapshot:
     imageCommitterImage: my-registry/image-committer:v0.1.1
     imageCommitterServiceAccount: snapshot-committer
+    imageCommitterPodLabels:
+      azure.workload.identity/use: "true"
     commitJobTimeout: 15m
     registry: my-registry/snapshots
     registryInsecure: false
@@ -183,6 +186,7 @@ These values render directly to the controller flags:
 
 - `--image-committer-image`
 - `--image-committer-service-account`
+- `--image-committer-pod-labels`
 - `--commit-job-timeout`
 - `--snapshot-registry`
 - `--snapshot-registry-insecure`

@@ -95,6 +95,9 @@ type SandboxSnapshotReconciler struct {
 	// implementation can consume admission-injected workload identity.
 	ImageCommitterServiceAccount string
 
+	// ImageCommitterPodLabels are assigned to commit Job Pods.
+	ImageCommitterPodLabels map[string]string
+
 	// SnapshotRegistryInsecure controls whether image-committer uses insecure registry mode.
 	SnapshotRegistryInsecure bool
 }

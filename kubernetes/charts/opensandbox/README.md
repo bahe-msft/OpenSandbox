@@ -71,6 +71,8 @@ opensandbox-controller:
       registryInsecure: false
       snapshotPushSecret: registry-snapshot-push-secret
       imageCommitterServiceAccount: snapshot-committer
+      imageCommitterPodLabels:
+        azure.workload.identity/use: "true"
       resumePullSecret: registry-pull-secret
 
 opensandbox-server:

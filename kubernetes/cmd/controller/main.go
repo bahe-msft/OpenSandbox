@@ -16,6 +16,7 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -30,6 +31,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/validation"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
@@ -207,6 +209,9 @@ func main() {
 	var imageCommitterServiceAccount string
 	flag.StringVar(&imageCommitterServiceAccount, "image-committer-service-account", "", "K8s ServiceAccount assigned to image-committer commit Jobs.")
 
+	var imageCommitterPodLabelsJSON string
+	flag.StringVar(&imageCommitterPodLabelsJSON, "image-committer-pod-labels", "", "JSON object of labels assigned to image-committer commit Job Pods.")
+
 	var containerdSocketPath string
 	flag.StringVar(&containerdSocketPath, "containerd-socket-path", controller.ContainerdSocketPath, "Containerd socket path")
 
@@ -250,6 +255,12 @@ func main() {
 	ctrl.SetLogger(logger)
 
 	setupLog.Info("Starting controller", "commitID", commitID, "buildDate", buildDate)
+
+	imageCommitterPodLabels, err := parseImageCommitterPodLabels(imageCommitterPodLabelsJSON)
+	if err != nil {
+		setupLog.Error(err, "invalid image committer Pod labels")
+		os.Exit(1)
+	}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -469,6 +480,7 @@ func main() {
 		SnapshotPushSecret:           snapshotPushSecret,
 		ImageCommitterPullSecret:     imageCommitterPullSecret,
 		ImageCommitterServiceAccount: imageCommitterServiceAccount,
+		ImageCommitterPodLabels:      imageCommitterPodLabels,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SandboxSnapshot")
 		os.Exit(1)
@@ -505,4 +517,23 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func parseImageCommitterPodLabels(raw string) (map[string]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var labels map[string]string
+	if err := json.Unmarshal([]byte(raw), &labels); err != nil {
+		return nil, fmt.Errorf("parse labels JSON: %w", err)
+	}
+	for key, value := range labels {
+		if errors := validation.IsQualifiedName(key); len(errors) > 0 {
+			return nil, fmt.Errorf("invalid label key %q: %s", key, strings.Join(errors, "; "))
+		}
+		if errors := validation.IsValidLabelValue(value); len(errors) > 0 {
+			return nil, fmt.Errorf("invalid value for label %q: %s", key, strings.Join(errors, "; "))
+		}
+	}
+	return labels, nil
 }
