@@ -1267,6 +1267,17 @@ spec:
         assert result.endpoint == "10.0.0.1:8080"
         assert result.headers is None
 
+    def test_get_internal_endpoint_info_parses_json_annotation(self):
+        provider = BatchSandboxProvider(MagicMock())
+        workload = {
+            "metadata": {"annotations": {"sandbox.opensandbox.io/endpoints": '["10.0.0.1"]'}}
+        }
+
+        result = provider.get_internal_endpoint_info(workload, 44772, "sandbox-123")
+
+        assert result.endpoint == "10.0.0.1:44772"
+        assert result.headers is None
+
     def test_get_endpoint_info_uses_first_ip(self):
         provider = BatchSandboxProvider(MagicMock())
         workload = {
