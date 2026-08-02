@@ -5,7 +5,7 @@ description: Pause sandbox state to an OCI image and resume from snapshot on Kub
 
 # Pause and Resume Guide
 
-This guide explains how to use the pause and resume features for Kubernetes-backed sandboxes in OpenSandbox. Pause commits the sandbox's root filesystem as an OCI image and releases cluster resources. Resume restores the sandbox from that image.
+This guide explains how to use the pause and resume features for Kubernetes-backed sandboxes in OpenSandbox. The snapshot-based behavior described in this guide applies to the `BatchSandbox` provider: pause commits the sandbox's root filesystem as an OCI image and releases cluster resources, and resume restores the sandbox from that image. The AgentSandbox provider instead uses native replica suspension, as described in the warning below.
 
 ## Table of Contents
 
@@ -31,6 +31,15 @@ This guide explains how to use the pause and resume features for Kubernetes-back
 | **Resume** | Reuses the same `BatchSandbox`, rewrites its template to the latest snapshot image, and recreates the runtime from that image |
 | **sandboxId** | Stable across pause/resume cycles — callers use the same ID throughout the sandbox lifetime |
 | **Replica support** | Currently limited to `BatchSandbox.spec.replicas=1`. Server-created Kubernetes sandboxes use `replicas: 1`; direct CRs with another replica count are rejected by the controller pause entry. |
+
+::: warning AgentSandbox provider semantics
+When `kubernetes.workload_provider = "agent-sandbox"`, pause and resume use the
+AgentSandbox CR's native suspension mechanism (`spec.replicas` 1 → 0 → 1).
+Unlike the BatchSandbox flow described below, this does not create an
+OpenSandbox `SandboxSnapshot` or commit the container root filesystem. Only
+state placed on persistent volumes managed by the AgentSandbox is retained;
+container rootfs changes, processes, memory, and open connections are lost.
+:::
 
 ### Key Design Principle
 

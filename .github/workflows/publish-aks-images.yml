@@ -19,6 +19,7 @@ on:
           - controller
           - task-executor
           - image-committer
+          - idle-controller
           - server
         default: 'all'
       image_tag:
@@ -46,7 +47,7 @@ jobs:
           set -euo pipefail
           COMPONENT="${{ inputs.component }}"
           if [[ "$COMPONENT" == "all" ]]; then
-            echo 'components=["execd","ingress","egress","controller","task-executor","image-committer","server"]' >> "$GITHUB_OUTPUT"
+            echo 'components=["execd","ingress","egress","controller","task-executor","image-committer","idle-controller","server"]' >> "$GITHUB_OUTPUT"
           else
             printf 'components=["%s"]\n' "$COMPONENT" >> "$GITHUB_OUTPUT"
           fi
@@ -75,6 +76,7 @@ jobs:
             components/execd/go.sum
             components/ingress/go.sum
             components/egress/go.sum
+            components/idle-controller/go.sum
             kubernetes/go.sum
 
       - name: Set up QEMU
@@ -128,6 +130,9 @@ jobs:
                 ;;
               image-committer)
                 version="$(grep -m1 -oE 'image-committer:v[0-9][^"[:space:]]*' kubernetes/charts/opensandbox-controller/values.yaml | cut -d: -f2)"
+                ;;
+              idle-controller)
+                version="$(tr -d '[:space:]' < components/idle-controller/VERSION)"
                 ;;
               *)
                 echo "unknown component: $component" >&2
@@ -214,6 +219,9 @@ jobs:
                 ;;
               image-committer)
                 (cd kubernetes && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "-buildid= -B none" -o "../${outdir}/image-committer" ./cmd/image-committer)
+                ;;
+              idle-controller)
+                (cd components/idle-controller && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "-buildid= -B none" -o "../../${outdir}/idle-controller" ./cmd/idle-controller)
                 ;;
               *)
                 echo "unknown Go component: $COMPONENT" >&2
@@ -386,6 +394,17 @@ jobs:
           RUN chmod +x /usr/local/bin/image-committer
           WORKDIR /workspace
           ENTRYPOINT ["/usr/local/bin/image-committer"]
+          EOF
+              ;;
+            idle-controller)
+              DOCKERFILE="${RUNNER_TEMP}/Dockerfile.idle-controller-aks"
+              CONTEXT="."
+              cat > "$DOCKERFILE" <<'EOF'
+          FROM gcr.io/distroless/static-debian12:nonroot
+          ARG TARGETARCH
+          COPY .build/aks/idle-controller/linux_${TARGETARCH}/idle-controller /idle-controller
+          USER 65532:65532
+          ENTRYPOINT ["/idle-controller"]
           EOF
               ;;
             server)

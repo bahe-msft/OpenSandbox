@@ -462,6 +462,94 @@ spec:
         assert result["reason"] == "SandboxReady"
         assert result["message"] == "Ready"
 
+    @pytest.mark.parametrize(
+        ("replicas", "suspended_status", "expected_state"),
+        [
+            (0, "False", "Pausing"),
+            (0, "True", "Paused"),
+            (1, "True", "Resuming"),
+        ],
+    )
+    def test_get_status_suspend_resume_states(self, replicas, suspended_status, expected_state):
+        provider = AgentSandboxProvider(MagicMock())
+        workload = {
+            "spec": {"replicas": replicas},
+            "status": {
+                "conditions": [
+                    {
+                        "type": "Suspended",
+                        "status": suspended_status,
+                        "reason": "PodTerminated" if suspended_status == "True" else "PodNotTerminated",
+                        "message": "suspend state",
+                        "lastTransitionTime": "2025-12-31T10:00:00Z",
+                    },
+                    {"type": "Ready", "status": "False", "reason": "SandboxSuspended"},
+                ]
+            },
+            "metadata": {"creationTimestamp": "2025-12-31T09:00:00Z"},
+        }
+
+        assert provider.get_status(workload)["state"] == expected_state
+
+    def test_pause_sandbox_scales_to_zero(self, mock_k8s_client):
+        provider = AgentSandboxProvider(mock_k8s_client)
+        mock_k8s_client.get_custom_object.return_value = {
+            "metadata": {"name": "test-id"},
+            "spec": {"replicas": 1},
+            "status": {"conditions": [{"type": "Ready", "status": "True"}]},
+        }
+
+        provider.pause_sandbox("test-id", "test-ns")
+
+        assert mock_k8s_client.patch_custom_object.call_args.kwargs["body"] == {"spec": {"replicas": 0}}
+        mock_k8s_client.get_custom_object.assert_called_once()
+
+    def test_pause_sandbox_rejects_non_running_state(self, mock_k8s_client):
+        provider = AgentSandboxProvider(mock_k8s_client)
+        mock_k8s_client.get_custom_object.return_value = {
+            "metadata": {"name": "test-id"},
+            "spec": {"replicas": 0},
+            "status": {
+                "conditions": [{"type": "Suspended", "status": "True", "reason": "PodTerminated"}]
+            },
+        }
+
+        with pytest.raises(ValueError, match="Cannot pause sandbox in state Paused"):
+            provider.pause_sandbox("test-id", "test-ns")
+
+        mock_k8s_client.patch_custom_object.assert_not_called()
+
+    def test_resume_sandbox_scales_to_one(self, mock_k8s_client):
+        provider = AgentSandboxProvider(mock_k8s_client)
+        mock_k8s_client.get_custom_object.return_value = {
+            "metadata": {"name": "test-id"},
+            "spec": {"replicas": 0},
+            "status": {
+                "conditions": [
+                    {"type": "Suspended", "status": "True", "reason": "PodTerminated"},
+                    {"type": "Ready", "status": "False", "reason": "SandboxSuspended"},
+                ]
+            },
+        }
+
+        provider.resume_sandbox("test-id", "test-ns")
+
+        assert mock_k8s_client.patch_custom_object.call_args.kwargs["body"] == {"spec": {"replicas": 1}}
+        mock_k8s_client.get_custom_object.assert_called_once()
+
+    def test_resume_sandbox_rejects_non_paused_state(self, mock_k8s_client):
+        provider = AgentSandboxProvider(mock_k8s_client)
+        mock_k8s_client.get_custom_object.return_value = {
+            "metadata": {"name": "test-id"},
+            "spec": {"replicas": 1},
+            "status": {"conditions": [{"type": "Ready", "status": "True"}]},
+        }
+
+        with pytest.raises(ValueError, match="Cannot resume sandbox in state Running"):
+            provider.resume_sandbox("test-id", "test-ns")
+
+        mock_k8s_client.patch_custom_object.assert_not_called()
+
     def test_get_status_expired_condition(self):
         provider = AgentSandboxProvider(MagicMock())
         workload = {
