@@ -15,11 +15,47 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestLoadImageCommitterPodTemplate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pod-template.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+metadata:
+  labels:
+    azure.workload.identity/use: "true"
+spec:
+  serviceAccountName: snapshot-committer
+  containers:
+    - name: commit
+      resources:
+        requests:
+          cpu: 100m
+`), 0o600))
+
+	template, err := loadImageCommitterPodTemplate(path)
+	require.NoError(t, err)
+	assert.Equal(t, "true", template.Labels["azure.workload.identity/use"])
+	assert.Equal(t, "snapshot-committer", template.Spec.ServiceAccountName)
+	require.Len(t, template.Spec.Containers, 1)
+	assert.Equal(t, "100m", template.Spec.Containers[0].Resources.Requests.Cpu().String())
+
+	template, err = loadImageCommitterPodTemplate("")
+	require.NoError(t, err)
+	assert.Nil(t, template)
+}
+
+func TestLoadImageCommitterPodTemplateRejectsUnknownFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pod-template.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("spec:\n  unknownField: true\n"), 0o600))
+	_, err := loadImageCommitterPodTemplate(path)
+	require.Error(t, err)
+}
 
 func TestParseImageCommitterPodLabels(t *testing.T) {
 	labels, err := parseImageCommitterPodLabels(`{"azure.workload.identity/use":"true","app":"committer"}`)

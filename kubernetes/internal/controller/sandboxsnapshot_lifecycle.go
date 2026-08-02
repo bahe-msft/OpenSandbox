@@ -424,10 +424,153 @@ func (r *SandboxSnapshotReconciler) buildCommitJob(snapshot *sandboxv1alpha1.San
 		},
 	}
 
+	if err := r.applyImageCommitterPodTemplate(&job.Spec.Template); err != nil {
+		return nil, err
+	}
 	if err := ctrl.SetControllerReference(snapshot, job, r.Scheme); err != nil {
 		return nil, fmt.Errorf("failed to set controller reference: %w", err)
 	}
 	return job, nil
+}
+
+func (r *SandboxSnapshotReconciler) applyImageCommitterPodTemplate(generated *corev1.PodTemplateSpec) error {
+	if generated == nil {
+		return fmt.Errorf("generated image-committer Pod template is required")
+	}
+
+	var overlay *corev1.PodTemplateSpec
+	if r.ImageCommitterPodTemplate != nil {
+		overlay = r.ImageCommitterPodTemplate.DeepCopy()
+	} else {
+		overlay = &corev1.PodTemplateSpec{}
+	}
+
+	generated.Labels = mergeStringMaps(overlay.Labels, generated.Labels, r.ImageCommitterPodLabels)
+	generated.Annotations = mergeStringMaps(overlay.Annotations, generated.Annotations)
+
+	generatedContainer := generated.Spec.Containers[0]
+	commitContainer := corev1.Container{Name: CommitJobContainerName}
+	commitCount := 0
+	containers := make([]corev1.Container, 0, len(overlay.Spec.Containers)+1)
+	for _, container := range overlay.Spec.Containers {
+		if container.Name != CommitJobContainerName {
+			containers = append(containers, container)
+			continue
+		}
+		commitCount++
+		commitContainer = container
+	}
+	if commitCount > 1 {
+		return fmt.Errorf("image-committer Pod template contains multiple %q containers", CommitJobContainerName)
+	}
+
+	commitContainer.Name = generatedContainer.Name
+	commitContainer.Image = generatedContainer.Image
+	commitContainer.ImagePullPolicy = generatedContainer.ImagePullPolicy
+	commitContainer.Command = generatedContainer.Command
+	commitContainer.Args = generatedContainer.Args
+	commitContainer.Env = mergeEnvVars(commitContainer.Env, generatedContainer.Env)
+	commitContainer.VolumeMounts = mergeVolumeMounts(commitContainer.VolumeMounts, generatedContainer.VolumeMounts)
+	commitContainer.SecurityContext = generatedContainer.SecurityContext
+	commitContainer.TerminationMessagePath = "/dev/termination-log"
+	commitContainer.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+	containers = append([]corev1.Container{commitContainer}, containers...)
+
+	overlay.Spec.Containers = containers
+	overlay.Spec.Volumes = mergeVolumes(overlay.Spec.Volumes, generated.Spec.Volumes)
+	overlay.Spec.ImagePullSecrets = mergeLocalObjectReferences(overlay.Spec.ImagePullSecrets, generated.Spec.ImagePullSecrets)
+	overlay.Spec.RestartPolicy = generated.Spec.RestartPolicy
+	overlay.Spec.NodeName = generated.Spec.NodeName
+	if r.ImageCommitterServiceAccount != "" {
+		overlay.Spec.ServiceAccountName = r.ImageCommitterServiceAccount
+	}
+
+	generated.Spec = overlay.Spec
+	return nil
+}
+
+func mergeStringMaps(maps ...map[string]string) map[string]string {
+	var result map[string]string
+	for _, values := range maps {
+		for key, value := range values {
+			if result == nil {
+				result = make(map[string]string)
+			}
+			result[key] = value
+		}
+	}
+	return result
+}
+
+func mergeEnvVars(base, required []corev1.EnvVar) []corev1.EnvVar {
+	result := append([]corev1.EnvVar(nil), base...)
+	for _, value := range required {
+		replaced := false
+		for i := range result {
+			if result[i].Name == value.Name {
+				result[i] = value
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func mergeVolumeMounts(base, required []corev1.VolumeMount) []corev1.VolumeMount {
+	result := append([]corev1.VolumeMount(nil), base...)
+	for _, value := range required {
+		replaced := false
+		for i := range result {
+			if result[i].Name == value.Name {
+				result[i] = value
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func mergeVolumes(base, required []corev1.Volume) []corev1.Volume {
+	result := append([]corev1.Volume(nil), base...)
+	for _, value := range required {
+		replaced := false
+		for i := range result {
+			if result[i].Name == value.Name {
+				result[i] = value
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+func mergeLocalObjectReferences(base, required []corev1.LocalObjectReference) []corev1.LocalObjectReference {
+	result := append([]corev1.LocalObjectReference(nil), base...)
+	for _, value := range required {
+		found := false
+		for _, existing := range result {
+			if existing.Name == value.Name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func (r *SandboxSnapshotReconciler) ensureUnpauseJob(ctx context.Context, snapshot *sandboxv1alpha1.SandboxSnapshot, sourcePodUID string) error {

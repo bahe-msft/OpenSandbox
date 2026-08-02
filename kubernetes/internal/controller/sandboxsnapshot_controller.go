@@ -19,6 +19,7 @@ import (
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -97,6 +98,9 @@ type SandboxSnapshotReconciler struct {
 
 	// ImageCommitterPodLabels are assigned to commit Job Pods.
 	ImageCommitterPodLabels map[string]string
+
+	// ImageCommitterPodTemplate overlays operator-controlled commit Job Pod settings.
+	ImageCommitterPodTemplate *corev1.PodTemplateSpec
 
 	// SnapshotRegistryInsecure controls whether image-committer uses insecure registry mode.
 	SnapshotRegistryInsecure bool

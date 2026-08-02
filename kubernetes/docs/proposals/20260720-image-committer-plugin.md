@@ -185,13 +185,16 @@ implementation also supports the existing Docker config mount at:
 |---|---|---|---|
 | `--image-committer-service-account` | `controller.snapshot.imageCommitterServiceAccount` | `""` | ServiceAccount name assigned to commit Jobs |
 | `--image-committer-pod-labels` | `controller.snapshot.imageCommitterPodLabels` | `""` / `{}` | Labels assigned to commit Job Pods |
+| `--image-committer-pod-template-file` | `controller.snapshot.imageCommitterPodTemplate` | `""` / `{}` | PodTemplateSpec overlay for commit Job Pods |
 
 An empty ServiceAccount setting preserves Kubernetes defaulting. When set, the
 ServiceAccount must exist in every sandbox namespace where a commit Job may be
 created. The ServiceAccount's cloud annotations or associations select the
 specific workload identity, role, or managed identity available to the plugin.
 Pod labels let operators trigger provider admission webhooks without hard-coding
-provider-specific metadata in the controller.
+provider-specific metadata in the controller. The Pod template provides the
+general extension point for metadata, identity, resources, scheduling, init
+containers, and additional containers.
 
 ##### Runtime resources
 
@@ -206,14 +209,16 @@ The commit Job provides:
   identity inputs,
 - optional registry credential inputs.
 
-The Job runs on the same node as the source Pod. OpenSandbox sets the configured
-commit Job ServiceAccount and Pod labels. Cluster admission webhooks remain
+The Job runs on the same node as the source Pod. OpenSandbox applies the
+operator-controlled Pod template and then restores controller-owned invariants:
+the committer image, command, arguments, security context, required environment
+and mounts, source node, and restart policy. Cluster admission webhooks remain
 responsible for projected tokens and environment variables. The plugin must
 document its ServiceAccount, admission, and identity prerequisites.
 
-The initial extension is intentionally limited to ServiceAccount and Pod label
-selection. A follow-up may define a generic commit Job template override for
-annotations, environment, volumes, and other provider-specific settings.
+The standalone ServiceAccount and Pod label settings are convenience overlays
+and take precedence over matching template fields. The template applies only to
+commit Jobs; recovery unpause Jobs retain a minimal controller-owned Pod spec.
 
 #### Expected behavior
 
@@ -467,8 +472,8 @@ SDK's default credential chain.
 The controller only provides generic credential inputs:
 
 - the existing Docker config mount when `--snapshot-push-secret` is configured,
-- the configured commit Job ServiceAccount and Pod labels, plus any projected
-  or admission-injected workload identity inputs.
+- the configured commit Job Pod template, ServiceAccount, and Pod labels, plus
+  any projected or admission-injected workload identity inputs.
 
 For workload identity, the operator sets
 `--image-committer-service-account` to the ServiceAccount carrying the desired
@@ -499,6 +504,8 @@ This proposal adds these controller and Helm settings:
   `controller.snapshot.imageCommitterServiceAccount`
 - `--image-committer-pod-labels` /
   `controller.snapshot.imageCommitterPodLabels`
+- `--image-committer-pod-template-file` /
+  `controller.snapshot.imageCommitterPodTemplate`
 
 It also adds `IMAGE_COMMITTER_API_VERSION` and `SOURCE_POD_UID` to the internal
 commit Job environment. These are not CRD or lifecycle API fields.

@@ -155,6 +155,7 @@ Configure the controller manager deployment with snapshot flags:
 | `--snapshot-push-secret` | string | `""` | Kubernetes Secret name for pushing snapshots. Must be `kubernetes.io/dockerconfigjson` type. |
 | `--image-committer-service-account` | string | `""` | ServiceAccount assigned to commit Jobs. It must exist in every sandbox namespace where snapshots run. |
 | `--image-committer-pod-labels` | JSON object | `""` | Labels assigned to commit Job Pods, for example `{"azure.workload.identity/use":"true"}`. |
+| `--image-committer-pod-template-file` | string | `""` | Path to a PodTemplateSpec overlay for commit Job Pods. |
 | `--resume-pull-secret` | string | `""` | Kubernetes Secret name injected into resumed sandboxes for pulling snapshot images. Can be the same as push secret. |
 | `--image-committer-image` | string | `"image-committer:dev"` | Image used by commit Jobs. |
 | `--commit-job-timeout` | duration | `"10m"` | Timeout for commit Jobs. |
@@ -166,6 +167,7 @@ The `opensandbox-controller` Helm chart now exposes the snapshot-related control
 - `controller.snapshot.imageCommitterImage`
 - `controller.snapshot.imageCommitterServiceAccount`
 - `controller.snapshot.imageCommitterPodLabels`
+- `controller.snapshot.imageCommitterPodTemplate`
 - `controller.snapshot.commitJobTimeout`
 - `controller.snapshot.registry`
 - `controller.snapshot.registryInsecure`
@@ -226,13 +228,22 @@ Configure the controller with that image and a ServiceAccount associated with an
 controller:
   snapshot:
     imageCommitterImage: <registry>/opensandbox/image-committer-azure:<tag>
-    imageCommitterServiceAccount: snapshot-committer
-    imageCommitterPodLabels:
-      azure.workload.identity/use: "true"
+    imageCommitterPodTemplate:
+      metadata:
+        labels:
+          azure.workload.identity/use: "true"
+      spec:
+        serviceAccountName: snapshot-committer
+        containers:
+          - name: commit
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
     registry: <registry>.azurecr.io/opensandbox-snapshots
 ```
 
-The ACR variant uses `azidentity.NewDefaultAzureCredential`, then exchanges the Azure access token for an ACR refresh token. In AKS, configure Workload Identity so the default chain selects the webhook-injected credential; if it is unavailable, the chain may try other supported sources such as managed identity. The ServiceAccount annotation selects the Azure identity, while `imageCommitterPodLabels` adds the `azure.workload.identity/use: "true"` label that triggers the standard AKS Workload Identity webhook.
+The ACR variant uses `azidentity.NewDefaultAzureCredential`, then exchanges the Azure access token for an ACR refresh token. In AKS, configure Workload Identity so the default chain selects the webhook-injected credential; if it is unavailable, the chain may try other supported sources such as managed identity. The Pod template's ServiceAccount selects the Azure identity, while its `azure.workload.identity/use: "true"` label triggers the standard AKS Workload Identity webhook.
 
 The ServiceAccount must exist in every sandbox namespace. `--snapshot-push-secret` is not required for the ACR commit Job, but resumed Pods still need working ACR pull authentication through `--resume-pull-secret`, kubelet managed identity, or another cluster image-pull configuration.
 
@@ -345,7 +356,9 @@ The commit Job mounts the host containerd socket from the source node and runs a
 
 The built-in image committer uses containerd APIs directly for container lookup, task pause/unpause, writable-snapshot image creation, and registry push. The Job also retains the host `/run/containerd/fifo` mount so compatible implementations can use containerd task exec. Any preparation command used by the built-in implementation is best effort and does not change the commit interface.
 
-When `--image-committer-service-account` is set, the controller assigns that ServiceAccount only to commit Jobs. `--image-committer-pod-labels` adds labels required by workload-identity admission, such as `azure.workload.identity/use: "true"` on AKS. The ServiceAccount and required admission configuration must exist in every sandbox namespace. Unpause Jobs receive neither the ServiceAccount nor these labels because they do not access the registry.
+The operator-controlled Pod template can add labels, annotations, a ServiceAccount, scheduling settings, init containers, sidecars, and settings on the required `commit` container such as resources, `env`, and `envFrom`. The controller always overrides the committer image, command, arguments, security context, required environment variables and mounts, source node, and restart policy. Additional regular sidecars must terminate for the Job to complete.
+
+The standalone `--image-committer-service-account` and `--image-committer-pod-labels` settings remain convenient overlays and take precedence over matching template fields. The ServiceAccount and required admission configuration must exist in every sandbox namespace. Unpause Jobs do not receive the commit Pod template because they do not access the registry.
 
 If the commit Job fails, the controller creates a best-effort `<snapshotName>-unpause` Job on the same node to unpause any source containers that may have been left paused by an abrupt committer exit.
 

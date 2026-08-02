@@ -81,6 +81,7 @@ kubectl delete crd sandboxsnapshots.sandbox.opensandbox.io
 | `controller.snapshot.imageCommitterImage` | Image used by snapshot commit Jobs | `image-committer:dev` |
 | `controller.snapshot.imageCommitterServiceAccount` | ServiceAccount assigned to snapshot commit Jobs | `""` |
 | `controller.snapshot.imageCommitterPodLabels` | Labels assigned to snapshot commit Job Pods | `{}` |
+| `controller.snapshot.imageCommitterPodTemplate` | PodTemplateSpec overlay for snapshot commit Job Pods | `{}` |
 | `controller.snapshot.commitJobTimeout` | Timeout duration for snapshot commit Jobs | `10m` |
 | `controller.snapshot.registry` | OCI registry prefix used for snapshot images | `""` |
 | `controller.snapshot.registryInsecure` | Use insecure registry mode for snapshot pushes | `false` |
@@ -171,9 +172,18 @@ The chart exposes the snapshot-related settings below:
 controller:
   snapshot:
     imageCommitterImage: my-registry/image-committer:v0.1.1
-    imageCommitterServiceAccount: snapshot-committer
-    imageCommitterPodLabels:
-      azure.workload.identity/use: "true"
+    imageCommitterPodTemplate:
+      metadata:
+        labels:
+          azure.workload.identity/use: "true"
+      spec:
+        serviceAccountName: snapshot-committer
+        containers:
+          - name: commit
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
     commitJobTimeout: 15m
     registry: my-registry/snapshots
     registryInsecure: false
@@ -187,6 +197,7 @@ These values render directly to the controller flags:
 - `--image-committer-image`
 - `--image-committer-service-account`
 - `--image-committer-pod-labels`
+- `--image-committer-pod-template-file`
 - `--commit-job-timeout`
 - `--snapshot-registry`
 - `--snapshot-registry-insecure`

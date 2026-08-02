@@ -70,6 +70,7 @@ spec:
           - --image-committer-image=image-committer:dev
           - --image-committer-service-account=
           - --image-committer-pod-labels=
+          - --image-committer-pod-template-file=
           - --commit-job-timeout=2m
           - --image-committer-pull-secret=
         image: controller:dev
