@@ -526,19 +526,23 @@ class AgentSandboxProvider(WorkloadProvider):
 
         return None
 
-    def get_internal_endpoint_info(
+    def get_internal_endpoint(
         self, workload: Dict[str, Any], port: int, sandbox_id: str
     ) -> Optional[Endpoint]:
-        """Resolve a direct endpoint from Agent Sandbox status."""
-        pod_ips = (workload.get("status") or {}).get("podIPs")
-        if not isinstance(pod_ips, list):
+        """Resolve the internal endpoint from the Sandbox CR status."""
+        workload_status = workload.get("status")
+        if not isinstance(workload_status, dict):
             return None
 
-        pod_ip = next(
-            (value for value in pod_ips if isinstance(value, str) and value),
-            None,
-        )
-        return Endpoint(endpoint=f"{pod_ip}:{port}") if pod_ip else None
+        pod_ips = workload_status.get("podIPs")
+        if not isinstance(pod_ips, list) or not pod_ips:
+            return None
+
+        for pod_ip in pod_ips:
+            if isinstance(pod_ip, str) and pod_ip:
+                host = f"[{pod_ip}]" if ":" in pod_ip else pod_ip
+                return Endpoint(endpoint=f"{host}:{port}")
+        return None
 
     def get_endpoint_info(self, workload: Dict[str, Any], port: int, sandbox_id: str) -> Optional[Endpoint]:
         ingress_endpoint = format_ingress_endpoint(self.ingress_config, sandbox_id, port)

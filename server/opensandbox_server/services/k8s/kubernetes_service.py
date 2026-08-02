@@ -1428,7 +1428,8 @@ class KubernetesSandboxService(K8sDiagnosticsMixin, SandboxService, ExtensionSer
         Args:
             sandbox_id: Unique sandbox identifier
             port: Port number
-            resolve_internal: If True, return the workload's internal Pod IP.
+            resolve_internal: If True, bypass ingress and return the provider's
+                internal workload endpoint for use by the server-side proxy.
             expires: Unix epoch seconds for a signed route token.
                 Requires ingress gateway mode with secure_access keys configured.
 
@@ -1478,7 +1479,7 @@ class KubernetesSandboxService(K8sDiagnosticsMixin, SandboxService, ExtensionSer
             if expires is not None:
                 endpoint = self._build_signed_endpoint(sandbox_id, port, expires)
             elif resolve_internal:
-                endpoint = self.workload_provider.get_internal_endpoint_info(
+                endpoint = self.workload_provider.get_internal_endpoint(
                     workload, port, sandbox_id
                 )
             else:

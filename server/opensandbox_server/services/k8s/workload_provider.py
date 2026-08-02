@@ -185,16 +185,14 @@ class WorkloadProvider(ABC):
         """
         pass
 
-    def get_internal_endpoint_info(
-        self, workload: Any, port: int, sandbox_id: str
-    ) -> Optional[Endpoint]:
-        """Get a direct workload endpoint, bypassing ingress routing.
+    def get_internal_endpoint(self, workload: Any, port: int, sandbox_id: str) -> Optional[Endpoint]:
+        """Get the workload endpoint used by the server-side proxy.
 
-        Providers that support direct internal resolution should override this method.
-        Returning ``None`` by default keeps existing custom providers compatible
-        without accidentally using an ingress endpoint for internal proxying.
+        Providers with ingress-aware endpoint resolution should override this
+        method to return an address that bypasses ingress. The default preserves
+        compatibility for custom providers that only implement get_endpoint_info.
         """
-        return None
+        return self.get_endpoint_info(workload, port, sandbox_id)
 
     def pause_sandbox(self, sandbox_id: str, namespace: str) -> None:
         """

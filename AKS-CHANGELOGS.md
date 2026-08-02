@@ -21,7 +21,7 @@ This file tracks AKS-specific changes carried by the `aks-dev` branch relative t
 
 ## Unreleased
 
-- _No unreleased AKS-local changes._
+- [#19](https://github.com/bahe-msft/OpenSandbox/pull/19) — Replaced the Agent Sandbox internal endpoint fix from [#18](https://github.com/bahe-msft/OpenSandbox/pull/18) with the implementation from [opensandbox-group#1424](https://github.com/opensandbox-group/OpenSandbox/pull/1424), including IPv6 Pod endpoint formatting while preserving BatchSandbox endpoint resolution.
 
 ## aksdev/20260728
 
