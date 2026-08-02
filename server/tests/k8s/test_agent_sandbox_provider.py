@@ -657,18 +657,6 @@ spec:
         assert result["state"] == "Pending"
         assert result["reason"] in {"POD_SCHEDULED", "POD_PENDING"}
 
-    def test_get_internal_endpoint_info_uses_first_non_empty_status_pod_ip(
-        self, mock_k8s_client
-    ):
-        provider = AgentSandboxProvider(mock_k8s_client)
-        workload = {"status": {"podIPs": ["", "10.0.0.2"]}}
-
-        endpoint = provider.get_internal_endpoint_info(workload, 44772, "sandbox-123")
-
-        assert endpoint.endpoint == "10.0.0.2:44772"
-        assert endpoint.headers is None
-        mock_k8s_client.list_pods.assert_not_called()
-
     def test_get_endpoint_info_prefers_running_pod(self, mock_k8s_client):
         provider = AgentSandboxProvider(mock_k8s_client)
         mock_k8s_client.list_pods.return_value = [
