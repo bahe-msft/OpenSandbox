@@ -25,13 +25,13 @@ This file tracks AKS-specific changes carried by the `aks-dev` branch relative t
 
 ## aksdev/20260728
 
-- [#14](https://github.com/bahe-msft/OpenSandbox/pull/14) — Renewed DNS-derived nftables entries while TCP connections remain active to preserve reconnect access without globally extending stale IP authorization.
-- [#15](https://github.com/bahe-msft/OpenSandbox/pull/15) — Upgraded mitmproxy to 11.0.2 to use upstream HTTP/2 flow control and restore fast Bazel Remote Execution downloads.
+- [#14](https://github.com/bahe-msft/OpenSandbox/pull/14) — Renewed DNS-derived nftables entries while TCP connections remain active to preserve reconnect access without globally extending stale IP authorization. **Merged upstream:** [opensandbox-group#1399](https://github.com/opensandbox-group/OpenSandbox/pull/1399).
+- [#15](https://github.com/bahe-msft/OpenSandbox/pull/15) — Upgraded mitmproxy to 11.0.2 to use upstream HTTP/2 flow control and restore fast Bazel Remote Execution downloads. **Merged upstream:** [opensandbox-group#1396](https://github.com/opensandbox-group/OpenSandbox/pull/1396).
 
 ## aksdev/20260726-1
 
 - [`f6f70ad`](https://github.com/bahe-msft/OpenSandbox/commit/f6f70add8bc7111c41b9f75ead3ee5dbd10e7396) — Cross-compiled Go binaries before Docker packaging to avoid slow arm64 Go builds under QEMU.
 - [`cdffbfe`](https://github.com/bahe-msft/OpenSandbox/commit/cdffbfe2787c4b9911cad72f8ea594b244dbc2b6) — Skipped code-interpreter and removed the Windows execd binary from AKS image publishing to reduce publish time.
 - [#11](https://github.com/bahe-msft/OpenSandbox/pull/11) / [`2fc47c2`](https://github.com/bahe-msft/OpenSandbox/commit/2fc47c266df6fbb76a9ec3776a026a8c33065822) — Added a dedicated GHCR workflow for publishing AKS images with AKS tag-aware image tags.
-- [#8](https://github.com/bahe-msft/OpenSandbox/pull/8) / [`a53e0f7`](https://github.com/bahe-msft/OpenSandbox/commit/a53e0f766bb728174df486f4272201a909e8f00e) — Added a PTY shell fallback so execd can start interactive sessions when `bash` is unavailable.
-- [#7](https://github.com/bahe-msft/OpenSandbox/pull/7) / [`0f16ab8`](https://github.com/bahe-msft/OpenSandbox/commit/0f16ab85c5e6356ab8a3d313db546af665cc4375) — Synced the Kata guest filesystem before snapshot commits to improve image-committer consistency.
+- [#8](https://github.com/bahe-msft/OpenSandbox/pull/8) / [`a53e0f7`](https://github.com/bahe-msft/OpenSandbox/commit/a53e0f766bb728174df486f4272201a909e8f00e) — Added a PTY shell fallback so execd can start interactive sessions when `bash` is unavailable. **Merged upstream:** [opensandbox-group#1359](https://github.com/opensandbox-group/OpenSandbox/pull/1359).
+- [#7](https://github.com/bahe-msft/OpenSandbox/pull/7) / [`0f16ab8`](https://github.com/bahe-msft/OpenSandbox/commit/0f16ab85c5e6356ab8a3d313db546af665cc4375) — Synced the Kata guest filesystem before snapshot commits to improve image-committer consistency. **Merged upstream:** [opensandbox-group#1356](https://github.com/opensandbox-group/OpenSandbox/pull/1356).
