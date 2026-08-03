@@ -28,6 +28,7 @@ import (
 	"syscall"
 
 	containerd "github.com/containerd/containerd"
+	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/distribution/reference"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -92,7 +93,7 @@ func (p DockerConfigCredentialProvider) Credential(_ context.Context, registryHo
 		}
 		return credential, nil
 	}
-	p.warn("no registry credential found for %s; attempting push without credentials", registryHost)
+	p.warn("no registry credential found for %s; attempting registry access without credentials", registryHost)
 	return RegistryCredential{}, nil
 }
 
@@ -102,9 +103,9 @@ func (p DockerConfigCredentialProvider) warn(format string, args ...any) {
 	}
 }
 
-// InsecureRegistryFunc reports whether the target may skip TLS verification
-// and fall back to plain HTTP.
-type InsecureRegistryFunc func(targetReference string) bool
+// InsecureRegistryFunc reports whether a registry reference may skip TLS
+// verification and fall back to plain HTTP.
+type InsecureRegistryFunc func(imageReference string) bool
 
 // ContainerdImagePusher pushes image content through containerd's resolver.
 type ContainerdImagePusher struct {
@@ -142,6 +143,11 @@ func (p *ContainerdImagePusher) Push(ctx context.Context, image LocalImage) (oci
 }
 
 func (p *ContainerdImagePusher) push(ctx context.Context, image LocalImage, host string, credential RegistryCredential, scheme string, skipVerify bool) error {
+	resolver := newDockerResolver(host, credential, scheme, skipVerify)
+	return p.client.Push(ctx, image.Reference, image.Target, containerd.WithResolver(resolver))
+}
+
+func newDockerResolver(host string, credential RegistryCredential, scheme string, skipVerify bool) remotes.Resolver {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if skipVerify {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // explicitly configured insecure registry
@@ -174,7 +180,7 @@ func (p *ContainerdImagePusher) push(ctx context.Context, image LocalImage, host
 		docker.WithAuthHeader(headers),
 		docker.WithAuthCreds(credentials),
 	)
-	resolver := docker.NewResolver(docker.ResolverOptions{Hosts: func(requestedHost string) ([]docker.RegistryHost, error) {
+	return docker.NewResolver(docker.ResolverOptions{Hosts: func(requestedHost string) ([]docker.RegistryHost, error) {
 		actualHost := requestedHost
 		if requestedHost == "docker.io" {
 			actualHost = "registry-1.docker.io"
@@ -189,7 +195,6 @@ func (p *ContainerdImagePusher) push(ctx context.Context, image LocalImage, host
 			Header:       headers.Clone(),
 		}}, nil
 	}})
-	return p.client.Push(ctx, image.Reference, image.Target, containerd.WithResolver(resolver))
 }
 
 func shouldFallbackToPlainHTTP(err error) bool {
@@ -199,9 +204,21 @@ func shouldFallbackToPlainHTTP(err error) bool {
 func registryHost(imageReference string) (string, error) {
 	named, err := reference.ParseNormalizedNamed(imageReference)
 	if err != nil {
-		return "", fmt.Errorf("parse target image %q: %w", imageReference, err)
+		return "", fmt.Errorf("parse image reference %q: %w", imageReference, err)
 	}
 	return reference.Domain(named), nil
+}
+
+func referenceWithDigest(imageReference string, descriptor ocispec.Descriptor) (string, error) {
+	named, err := reference.ParseNormalizedNamed(imageReference)
+	if err != nil {
+		return "", fmt.Errorf("parse source image %q: %w", imageReference, err)
+	}
+	canonical, err := reference.WithDigest(reference.TrimNamed(named), descriptor.Digest)
+	if err != nil {
+		return "", fmt.Errorf("pin source image %q to digest %s: %w", imageReference, descriptor.Digest, err)
+	}
+	return canonical.String(), nil
 }
 
 func normalizeRegistryHost(value string) string {

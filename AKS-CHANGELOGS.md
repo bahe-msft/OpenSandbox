@@ -21,6 +21,7 @@ This file tracks AKS-specific changes carried by the `aks-dev` branch relative t
 
 ## Unreleased
 
+- [#24](https://github.com/bahe-msft/OpenSandbox/pull/24) — Recovered missing source-image content by digest before snapshot commits, including authenticated ACR recovery with Workload Identity.
 - [#23](https://github.com/bahe-msft/OpenSandbox/pull/23) — Fixed AKS ingress image publishing after the Kubernetes dependency update raised the required `golang.org/x/time` version.
 
 ## aksdev/20260802-1
