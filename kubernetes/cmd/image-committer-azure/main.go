@@ -31,16 +31,19 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	var provider imagecommitter.CredentialProvider
+	var sourceProvider imagecommitter.CredentialProvider
 	var err error
 	if len(os.Args) < 2 || os.Args[1] != "unpause" {
 		provider, err = newACRCredentialProvider()
+		sourceProvider = acrSourceCredentialProvider{provider: provider}
 	}
 	if err == nil {
 		err = imagecommittercli.Run(ctx, os.Args[1:], imagecommittercli.Config{
-			CredentialProvider:     provider,
-			TerminationMessagePath: terminationMessagePath,
-			Output:                 os.Stdout,
-			ErrorOutput:            os.Stderr,
+			CredentialProvider:       provider,
+			SourceCredentialProvider: sourceProvider,
+			TerminationMessagePath:   terminationMessagePath,
+			Output:                   os.Stdout,
+			ErrorOutput:              os.Stderr,
 		})
 	}
 	if err != nil {

@@ -28,6 +28,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+
+	"github.com/alibaba/OpenSandbox/sandbox-k8s/pkg/imagecommitter"
 )
 
 type fakeAzureCredential struct {
@@ -81,6 +83,39 @@ func TestACRCredentialProviderRejectsNonACRHost(t *testing.T) {
 	provider := &acrCredentialProvider{credential: fakeAzureCredential{}}
 	if _, err := provider.Credential(context.Background(), "attacker.example.com"); err == nil {
 		t.Fatal("non-ACR host should be rejected before obtaining or sending a token")
+	}
+}
+
+type recordingCredentialProvider struct {
+	hosts []string
+}
+
+func (p *recordingCredentialProvider) Credential(_ context.Context, host string) (imagecommitter.RegistryCredential, error) {
+	p.hosts = append(p.hosts, host)
+	return imagecommitter.RegistryCredential{RefreshToken: "token"}, nil
+}
+
+func TestACRSourceCredentialProviderUsesIdentityOnlyForACR(t *testing.T) {
+	delegate := &recordingCredentialProvider{}
+	provider := acrSourceCredentialProvider{provider: delegate}
+
+	credential, err := provider.Credential(context.Background(), "registry.azurecr.io")
+	if err != nil {
+		t.Fatalf("ACR credential failed: %v", err)
+	}
+	if credential.RefreshToken != "token" || len(delegate.hosts) != 1 || delegate.hosts[0] != "registry.azurecr.io" {
+		t.Fatalf("ACR credential was not delegated: credential=%#v hosts=%v", credential, delegate.hosts)
+	}
+
+	credential, err = provider.Credential(context.Background(), "mcr.microsoft.com")
+	if err != nil {
+		t.Fatalf("public source credential failed: %v", err)
+	}
+	if credential != (imagecommitter.RegistryCredential{}) {
+		t.Fatalf("public source credential = %#v, want anonymous", credential)
+	}
+	if len(delegate.hosts) != 1 {
+		t.Fatalf("non-ACR source was delegated: hosts=%v", delegate.hosts)
 	}
 }
 

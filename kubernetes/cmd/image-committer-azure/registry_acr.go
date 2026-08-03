@@ -47,6 +47,20 @@ type acrCredentialProvider struct {
 	exchangeEndpoint func(registryHost string) string
 }
 
+// acrSourceCredentialProvider uses Workload Identity for private ACR source
+// images and leaves other registries anonymous. The target provider remains
+// strict so credentials can never be sent to a non-ACR snapshot registry.
+type acrSourceCredentialProvider struct {
+	provider imagecommitter.CredentialProvider
+}
+
+func (p acrSourceCredentialProvider) Credential(ctx context.Context, registryHost string) (imagecommitter.RegistryCredential, error) {
+	if !isAzureContainerRegistryHost(registryHost) {
+		return imagecommitter.RegistryCredential{}, nil
+	}
+	return p.provider.Credential(ctx, registryHost)
+}
+
 // newACRCredentialProvider creates a provider using azidentity's default
 // credential chain. In Kubernetes, Workload Identity is preferred when its
 // webhook-injected environment and projected token are available.
