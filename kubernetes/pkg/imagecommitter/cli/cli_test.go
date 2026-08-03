@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/alibaba/OpenSandbox/sandbox-k8s/internal/imagecommitter"
+	"github.com/alibaba/OpenSandbox/sandbox-k8s/pkg/imagecommitter"
 )
 
 func TestParseCommitOperation(t *testing.T) {
@@ -71,18 +71,6 @@ func TestParseOperationRejectsInvalidInput(t *testing.T) {
 		if _, _, _, err := parseOperation(args); err == nil {
 			t.Fatalf("parseOperation(%v) unexpectedly succeeded", args)
 		}
-	}
-}
-
-func TestValidateAPIVersion(t *testing.T) {
-	if err := validateAPIVersion(""); err != nil {
-		t.Fatalf("empty version should use v1 compatibility: %v", err)
-	}
-	if err := validateAPIVersion("v1"); err != nil {
-		t.Fatalf("v1 should be supported: %v", err)
-	}
-	if err := validateAPIVersion("v2"); err == nil {
-		t.Fatal("unsupported version should fail")
 	}
 }
 

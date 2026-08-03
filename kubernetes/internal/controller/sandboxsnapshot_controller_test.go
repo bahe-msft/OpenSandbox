@@ -281,7 +281,6 @@ func TestSandboxSnapshotHandleCommitting_CreatesUnpauseJobWhenCommitJobFailed(t 
 	cleanupContainer := cleanupJob.Spec.Template.Spec.Containers[0]
 	assert.Equal(t, []string{"/usr/local/bin/image-committer"}, cleanupContainer.Command)
 	assert.Equal(t, []string{"unpause", "source-pod", "default", "main", "sidecar"}, cleanupContainer.Args)
-	assert.Contains(t, cleanupContainer.Env, corev1.EnvVar{Name: "IMAGE_COMMITTER_API_VERSION", Value: ImageCommitterAPIVersion})
 	assert.Contains(t, cleanupContainer.Env, corev1.EnvVar{Name: "SOURCE_POD_UID", Value: "source-pod-uid"})
 	assert.Empty(t, cleanupJob.Spec.Template.Spec.ServiceAccountName)
 	assert.Equal(t, "node-a", cleanupJob.Spec.Template.Spec.NodeName)
@@ -506,11 +505,13 @@ func TestBuildCommitJob_ExecutesImageCommitterDirectlyWithIsolatedArgs(t *testin
 	r.SnapshotRegistryInsecure = true
 	r.ImageCommitterPodTemplate = &corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels:      map[string]string{"azure.workload.identity/use": "true"},
+			Labels:      map[string]string{"identity.example/use": "true"},
 			Annotations: map[string]string{"example.com/template": "enabled"},
 		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName: "snapshot-committer",
+			NodeName:           "must-be-overridden",
+			RestartPolicy:      corev1.RestartPolicyAlways,
 			Tolerations:        []corev1.Toleration{{Key: "snapshot", Operator: corev1.TolerationOpExists}},
 			Containers: []corev1.Container{
 				{
@@ -538,11 +539,12 @@ func TestBuildCommitJob_ExecutesImageCommitterDirectlyWithIsolatedArgs(t *testin
 		"default",
 		"main;echo nope:registry.example.com/test:tag",
 	}, container.Args)
-	assert.Contains(t, container.Env, corev1.EnvVar{Name: "IMAGE_COMMITTER_API_VERSION", Value: ImageCommitterAPIVersion})
 	assert.Contains(t, container.Env, corev1.EnvVar{Name: "SOURCE_POD_UID", Value: "pod-uid"})
 	assert.Contains(t, container.Env, corev1.EnvVar{Name: "SNAPSHOT_REGISTRY_INSECURE", Value: "true"})
 	assert.Equal(t, "snapshot-committer", job.Spec.Template.Spec.ServiceAccountName)
-	assert.Equal(t, map[string]string{"azure.workload.identity/use": "true"}, job.Spec.Template.Labels)
+	assert.Equal(t, "node-1", job.Spec.Template.Spec.NodeName)
+	assert.Equal(t, corev1.RestartPolicyNever, job.Spec.Template.Spec.RestartPolicy)
+	assert.Equal(t, map[string]string{"identity.example/use": "true"}, job.Spec.Template.Labels)
 	assert.Equal(t, map[string]string{"example.com/template": "enabled"}, job.Spec.Template.Annotations)
 	assert.Contains(t, container.Env, corev1.EnvVar{Name: "CUSTOM_ENV", Value: "custom"})
 	assert.Equal(t, r.imageCommitterImage(), container.Image)

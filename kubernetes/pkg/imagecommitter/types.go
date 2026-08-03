@@ -20,9 +20,6 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-// APIVersion is the current executable contract version.
-const APIVersion = "v1"
-
 const (
 	PodNameLabel       = "io.kubernetes.pod.name"
 	PodNamespaceLabel  = "io.kubernetes.pod.namespace"
@@ -78,7 +75,6 @@ type ExecRequest struct {
 // ExecResult is the result of a successfully created exec process.
 type ExecResult struct {
 	ExitCode uint32
-	Output   []byte
 }
 
 // LocalImage identifies image content assembled in containerd.

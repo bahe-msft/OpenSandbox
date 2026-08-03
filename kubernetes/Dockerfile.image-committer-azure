@@ -24,7 +24,7 @@ COPY go.mod go.sum ./
 RUN GOPROXY=https://goproxy.cn,direct go mod download
 
 COPY cmd/image-committer-azure/ cmd/image-committer-azure/
-COPY internal/imagecommitter/ internal/imagecommitter/
+COPY pkg/imagecommitter/ pkg/imagecommitter/
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /usr/local/bin/image-committer ./cmd/image-committer-azure/
 

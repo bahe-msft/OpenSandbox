@@ -30,7 +30,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 
-	"github.com/alibaba/OpenSandbox/sandbox-k8s/internal/imagecommitter"
+	"github.com/alibaba/OpenSandbox/sandbox-k8s/pkg/imagecommitter"
 )
 
 // The double slash preserves ARM's trailing-slash resource identifier in the

@@ -56,10 +56,6 @@ const (
 	// use containerd task exec with FIFO-backed process I/O.
 	ContainerdFIFODir = "/run/containerd/fifo"
 
-	// ImageCommitterAPIVersion is the executable contract passed to commit and
-	// unpause Jobs.
-	ImageCommitterAPIVersion = "v1"
-
 	// LabelSandboxSnapshotName is the label key for sandbox snapshot name
 	LabelSandboxSnapshotName = "sandbox.opensandbox.io/sandbox-snapshot-name"
 )
@@ -91,13 +87,6 @@ type SandboxSnapshotReconciler struct {
 	// ImageCommitterPullSecret is the K8s Secret name used to pull the image-committer image in commit Jobs.
 	// Required when imageCommitterImage lives in a private registry.
 	ImageCommitterPullSecret string
-
-	// ImageCommitterServiceAccount is assigned to commit Jobs so an
-	// implementation can consume admission-injected workload identity.
-	ImageCommitterServiceAccount string
-
-	// ImageCommitterPodLabels are assigned to commit Job Pods.
-	ImageCommitterPodLabels map[string]string
 
 	// ImageCommitterPodTemplate overlays operator-controlled commit Job Pod settings.
 	ImageCommitterPodTemplate *corev1.PodTemplateSpec
