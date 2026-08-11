@@ -23,6 +23,10 @@ This file tracks AKS-specific changes carried by the `aks-dev` branch relative t
 
 - _No unreleased AKS-local changes._
 
+## aksdev/20260811
+
+- [opensandbox-group#1431](https://github.com/opensandbox-group/OpenSandbox/pull/1431) — Synced the reusable image-committer interface, preserved config-digest compatibility, and kept source-registry transport secure by default after AKS Kata/devmapper validation.
+
 ## aksdev/20260803
 
 - [#24](https://github.com/bahe-msft/OpenSandbox/pull/24) — Recovered missing source-image content by digest before snapshot commits, including authenticated ACR recovery with Workload Identity.
