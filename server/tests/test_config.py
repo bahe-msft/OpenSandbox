@@ -903,6 +903,13 @@ def test_egress_credential_provider_config():
     )
     assert cfg.credential_providers[0].args == ["--token-file", "/custom/token"]
 
+    with pytest.raises(ValueError, match="4096 bytes"):
+        EgressConfig(
+            credential_providers=[
+                {"name": "opensandbox-psat", "args": ["é" * 2049]}
+            ]
+        )
+
     with pytest.raises(ValueError, match="unique"):
         EgressConfig(
             credential_providers=[

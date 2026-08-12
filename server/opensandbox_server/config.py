@@ -737,8 +737,8 @@ class CredentialProviderConfig(BaseModel):
     @field_validator("args")
     @classmethod
     def validate_args(cls, args: list[str]) -> list[str]:
-        if any(not arg or "\x00" in arg or len(arg) > 4096 for arg in args):
-            raise ValueError("credential provider args must be non-empty, NUL-free, and at most 4096 characters")
+        if any(not arg or "\x00" in arg or len(arg.encode("utf-8")) > 4096 for arg in args):
+            raise ValueError("credential provider args must be non-empty, NUL-free, and at most 4096 bytes")
         return args
 
 

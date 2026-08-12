@@ -21,7 +21,7 @@ This file tracks AKS-specific changes carried by the `aks-dev` branch relative t
 
 ## Unreleased
 
-- _No unreleased AKS-local changes._
+- [#26](https://github.com/bahe-msft/OpenSandbox/pull/26) — Added typed egress credential plugins with a built-in rotating projected ServiceAccount token provider, request-scoped injection, and operator-controlled provider arguments.
 
 ## aksdev/20260811
 
