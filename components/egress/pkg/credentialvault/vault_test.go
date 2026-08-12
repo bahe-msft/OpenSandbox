@@ -381,7 +381,36 @@ func TestDynamicResolutionDoesNotHoldVaultLock(t *testing.T) {
 		t.Fatal("vault patch blocked behind dynamic provider resolution")
 	}
 	close(source.release)
-	require.NoError(t, <-resolved)
+	require.ErrorContains(t, <-resolved, "expectedRevision")
+}
+
+func TestDynamicResolutionRejectsDeleteRecreateWithSameRevision(t *testing.T) {
+	source := &blockingCredentialSource{started: make(chan struct{}), release: make(chan struct{})}
+	registry := NewSourceRegistry()
+	registry.Register("blocking", func(json.RawMessage) (CredentialSource, error) { return source, nil })
+	store := NewStoreWithRegistry(nil, func() bool { return true }, registry)
+	pol := testCredentialPolicy(t, `{"defaultAction":"deny","egress":[{"action":"allow","target":"code.example.com"}]}`)
+	request := CreateRequest{
+		Credentials: []Credential{{Name: "dynamic", Source: mustMarshal(map[string]string{"type": "blocking"})}},
+		Bindings: []Binding{{
+			Name: "dynamic-binding", Match: Match{Hosts: []string{"code.example.com"}},
+			Auth: Auth{Type: "apiKey", Name: "X-Identity", Credential: "dynamic"},
+		}},
+	}
+	_, err := store.Create(request, pol)
+	require.NoError(t, err)
+
+	resolved := make(chan error, 1)
+	go func() {
+		_, resolveErr := store.ResolveBindingWithContext(context.Background(), "dynamic-binding", 1)
+		resolved <- resolveErr
+	}()
+	<-source.started
+	require.NoError(t, store.Delete())
+	_, err = store.Create(request, pol)
+	require.NoError(t, err)
+	close(source.release)
+	require.ErrorContains(t, <-resolved, "expectedRevision")
 }
 
 func TestCredentialVaultPatchRejectsDeletingReferencedCredential(t *testing.T) {

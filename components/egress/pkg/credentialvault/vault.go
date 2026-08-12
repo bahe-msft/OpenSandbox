@@ -68,6 +68,7 @@ type Store struct {
 	mu           sync.RWMutex
 	exists       bool
 	revision     int64
+	generation   uint64 // monotonic internal identity; unlike revision, never resets on delete/create
 	credentials  map[string]record
 	bindings     map[string]Binding
 	mitmGate     *mitmproxy.HealthGate
@@ -257,6 +258,7 @@ func (v *Store) Create(req CreateRequest, pol *policy.NetworkPolicy) (State, err
 
 	v.exists = true
 	v.revision = 1
+	v.generation++
 	v.credentials = credentials
 	v.bindings = bindings
 	return v.sanitizedLocked(), nil
@@ -287,6 +289,7 @@ func (v *Store) Patch(req MutationRequest, pol *policy.NetworkPolicy) (State, er
 	}
 
 	v.revision = nextRevision
+	v.generation++
 	v.credentials = credentials
 	v.bindings = bindings
 	return v.sanitizedLocked(), nil
@@ -300,6 +303,7 @@ func (v *Store) Delete() error {
 	}
 	v.exists = false
 	v.revision = 0
+	v.generation++
 	v.credentials = make(map[string]record)
 	v.bindings = make(map[string]Binding)
 	return nil
@@ -371,6 +375,7 @@ func (v *Store) ResolveBindingWithContext(ctx context.Context, name string, expe
 		v.mu.RUnlock()
 		return ActiveSnapshot{}, fmt.Errorf("expectedRevision %d does not match current revision %d", expectedRevision, v.revision)
 	}
+	generation := v.generation
 	binding, ok := v.bindings[name]
 	if !ok {
 		v.mu.RUnlock()
@@ -379,7 +384,17 @@ func (v *Store) ResolveBindingWithContext(ctx context.Context, name string, expe
 	credentials := cloneCredentialRecords(v.credentials)
 	v.mu.RUnlock()
 
-	return renderActiveSnapshot(ctx, expectedRevision, credentials, map[string]Binding{name: binding}, false)
+	snapshot, err := renderActiveSnapshot(ctx, expectedRevision, credentials, map[string]Binding{name: binding}, false)
+	if err != nil {
+		return ActiveSnapshot{}, err
+	}
+	v.mu.RLock()
+	unchanged := v.exists && v.generation == generation
+	v.mu.RUnlock()
+	if !unchanged {
+		return ActiveSnapshot{}, fmt.Errorf("expectedRevision %d changed during credential resolution", expectedRevision)
+	}
+	return snapshot, nil
 }
 
 func renderActiveSnapshot(ctx context.Context, revision int64, credentials map[string]record, bindings map[string]Binding, deferDynamic bool) (ActiveSnapshot, error) {

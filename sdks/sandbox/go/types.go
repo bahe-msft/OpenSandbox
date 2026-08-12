@@ -284,8 +284,6 @@ type InlineCredentialSource struct {
 	Value string               `json:"value"`
 }
 
-// MarshalJSON defaults the only supported source type so callers can use the
-// natural zero-value form InlineCredentialSource{Value: secret}.
 // PluginCredentialSource returns a source selecting a trusted provider by name.
 // It returns the existing source representation to preserve Credential.Source
 // source compatibility.
@@ -293,6 +291,8 @@ func PluginCredentialSource(name string) InlineCredentialSource {
 	return InlineCredentialSource{Type: CredentialSourcePlugin, Value: name}
 }
 
+// MarshalJSON defaults an omitted source type to inline so existing callers can
+// continue using InlineCredentialSource{Value: secret}.
 func (s InlineCredentialSource) MarshalJSON() ([]byte, error) {
 	type inlineCredentialSource InlineCredentialSource
 	source := inlineCredentialSource(s)
