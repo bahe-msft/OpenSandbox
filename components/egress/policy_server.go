@@ -26,6 +26,7 @@ import (
 	"net/netip"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -85,7 +86,11 @@ func startPolicyServer(
 		stopAlwaysReload: make(chan struct{}),
 		mitmGate:         mitmGate,
 	}
-	handler.credentialVault = credentialvault.NewStore(mitmGate, func() bool { return strings.TrimSpace(token) != "" })
+	sourceRegistry := credentialvault.NewSourceRegistry()
+	if err := credentialvault.RegisterExecCredentialProviders(sourceRegistry, credentialvault.DefaultCredentialProviderDir, os.Getenv(constants.EnvCredentialProviderConfig)); err != nil {
+		return nil, fmt.Errorf("credential provider registration: %w", err)
+	}
+	handler.credentialVault = credentialvault.NewStoreWithRegistry(mitmGate, func() bool { return strings.TrimSpace(token) != "" }, sourceRegistry)
 	handler.credentialVaultRequireTLS = constants.IsTruthy(os.Getenv(constants.EnvCredentialVaultRequireTLS))
 	handler.setAlwaysRules(alwaysDeny, alwaysAllow)
 
@@ -110,7 +115,7 @@ func startPolicyServer(
 		if err != nil {
 			return nil, fmt.Errorf("lookup credential proxy user %q: %w", mitmproxy.RunAsUser, err)
 		}
-		activeSrv, cleanupActiveSocket, err = credentialvault.StartActiveSocketServer(handler.handleCredentialVaultActive, socketPath, int(mitmGID))
+		activeSrv, cleanupActiveSocket, err = credentialvault.StartActiveSocketServer(handler.handleCredentialVaultPrivate, socketPath, int(mitmGID))
 		if err != nil {
 			return nil, fmt.Errorf("credential vault active socket: %w", err)
 		}
@@ -234,7 +239,7 @@ func (s *policyServer) handleCredentialVault(w http.ResponseWriter, r *http.Requ
 func (s *policyServer) handleCredentialVaultSubresource(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/credential-vault/")
 	switch {
-	case path == "_active":
+	case path == "_active" || path == "_resolve":
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", "GET")
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -402,8 +407,30 @@ func (s *policyServer) handleCredentialVaultBinding(w http.ResponseWriter, name 
 	http.Error(w, "binding not found", http.StatusNotFound)
 }
 
-func (s *policyServer) handleCredentialVaultActive(w http.ResponseWriter) {
-	snapshot, err := s.credentialVault.ActiveSnapshot()
+func (s *policyServer) handleCredentialVaultPrivate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var (
+		snapshot credentialvault.ActiveSnapshot
+		err      error
+	)
+	switch r.URL.Path {
+	case "/credential-vault/_active":
+		snapshot, err = s.credentialVault.ActiveSnapshotWithContext(r.Context())
+	case "/credential-vault/_resolve":
+		revision, parseErr := strconv.ParseInt(r.URL.Query().Get("revision"), 10, 64)
+		if parseErr != nil || revision <= 0 || strings.TrimSpace(r.URL.Query().Get("binding")) == "" {
+			http.Error(w, "invalid credential binding resolution request", http.StatusBadRequest)
+			return
+		}
+		snapshot, err = s.credentialVault.ResolveBindingWithContext(r.Context(), r.URL.Query().Get("binding"), revision)
+	default:
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
 	if err != nil {
 		credentialvault.WriteError(w, err)
 		return

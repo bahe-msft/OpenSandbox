@@ -161,14 +161,19 @@ class CredentialProxyConfig(BaseModel):
 
 class InlineCredentialSource(BaseModel):
     """
-    Write-only inline credential material for Credential Vault.
+    Backward-compatible inline or plugin Credential Vault source.
     """
 
     value: str = Field(repr=False, description="Inline credential value.")
-    type: Literal["inline"] = Field(
+    type: Literal["inline", "plugin"] = Field(
         default="inline",
         description="Credential source type. Defaults to inline for the Python SDK.",
     )
+
+    @classmethod
+    def plugin(cls, name: str) -> "InlineCredentialSource":
+        """Create a source selecting a trusted egress credential plugin."""
+        return cls(type="plugin", value=name)
 
     @field_validator("value")
     @classmethod

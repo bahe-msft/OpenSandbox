@@ -31,6 +31,18 @@ type CredentialSource interface {
 	Resolve(ctx context.Context) (string, error)
 }
 
+// dynamicCredentialSource marks sources whose resolved value may change
+// without a Credential Vault revision change. Secret-bearing active snapshots
+// referencing one of these sources must not be cached by mitmproxy.
+type dynamicCredentialSource interface {
+	Dynamic() bool
+}
+
+func sourceIsDynamic(source CredentialSource) bool {
+	dynamic, ok := source.(dynamicCredentialSource)
+	return ok && dynamic.Dynamic()
+}
+
 // CredentialSourceFactory creates a CredentialSource from raw JSON source
 // configuration. The raw bytes are the full "source" object from the API
 // request (including the "type" field).

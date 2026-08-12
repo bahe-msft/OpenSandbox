@@ -895,6 +895,23 @@ def test_egress_config_mode_literal():
     assert cfg.mode == EGRESS_MODE_DNS_NFT
 
 
+def test_egress_credential_provider_config():
+    cfg = EgressConfig(
+        credential_providers=[
+            {"name": "opensandbox-psat", "args": ["--token-file", "/custom/token"]}
+        ]
+    )
+    assert cfg.credential_providers[0].args == ["--token-file", "/custom/token"]
+
+    with pytest.raises(ValueError, match="unique"):
+        EgressConfig(
+            credential_providers=[
+                {"name": "opensandbox-psat"},
+                {"name": "opensandbox-psat"},
+            ]
+        )
+
+
 def test_log_config_defaults():
     """LogConfig should have sensible defaults."""
     cfg = LogConfig()

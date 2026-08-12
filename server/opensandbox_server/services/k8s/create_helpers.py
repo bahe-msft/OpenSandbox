@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -22,6 +23,7 @@ from typing import Callable, Dict, Optional
 from opensandbox_server.api.schema import CreateSandboxRequest
 from opensandbox_server.config import AppConfig, EGRESS_MODE_DNS
 from opensandbox_server.services.constants import (
+    OPENSANDBOX_EGRESS_CREDENTIAL_PROVIDER_CONFIG,
     OPENSANDBOX_EGRESS_MITMPROXY_SSL_INSECURE,
     SANDBOX_EGRESS_AUTH_TOKEN_METADATA_KEY,
     SANDBOX_SECURE_ACCESS_TOKEN_METADATA_KEY,
@@ -112,6 +114,12 @@ def _build_create_workload_context(
             dropped_keys,
         )
         egress_env = {}
+
+    if request.network_policy and app_config.egress and app_config.egress.credential_providers:
+        egress_env[OPENSANDBOX_EGRESS_CREDENTIAL_PROVIDER_CONFIG] = json.dumps(
+            [provider.model_dump(mode="json") for provider in app_config.egress.credential_providers],
+            separators=(",", ":"),
+        )
 
     return _CreateWorkloadContext(
         labels=labels,

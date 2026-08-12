@@ -17,6 +17,7 @@ package mitmproxy
 import (
 	"testing"
 
+	"github.com/alibaba/opensandbox/egress/pkg/constants"
 	"github.com/stretchr/testify/require"
 )
 
@@ -93,12 +94,14 @@ func TestBuildMitmdumpEnvSetsMitmproxyHome(t *testing.T) {
 	env := buildMitmdumpEnv(
 		[]string{
 			"PATH=/usr/bin",
+			constants.EnvCredentialProviderConfig + "=[secret operator config]",
 		},
 		"/home/mitmproxy",
 	)
 
 	require.Contains(t, env, "PATH=/usr/bin")
 	require.Contains(t, env, "HOME=/home/mitmproxy")
+	require.NotContains(t, env, constants.EnvCredentialProviderConfig+"=[secret operator config]")
 }
 
 func TestCredentialProxyMessageStripsMitmTimestamp(t *testing.T) {

@@ -728,6 +728,20 @@ class StorageConfig(BaseModel):
 
 DEFAULT_EGRESS_DISABLE_IPV6 = True
 
+class CredentialProviderConfig(BaseModel):
+    """Operator-controlled arguments for an egress credential provider."""
+
+    name: str = Field(..., pattern=r"^[a-z][a-z0-9-]{0,63}$")
+    args: list[str] = Field(default_factory=list, max_length=32)
+
+    @field_validator("args")
+    @classmethod
+    def validate_args(cls, args: list[str]) -> list[str]:
+        if any(not arg or "\x00" in arg or len(arg) > 4096 for arg in args):
+            raise ValueError("credential provider args must be non-empty, NUL-free, and at most 4096 characters")
+        return args
+
+
 class EgressConfig(BaseModel):
     """Egress sidecar configuration."""
 
@@ -751,6 +765,14 @@ class EgressConfig(BaseModel):
             "(e.g. IPv4-only CNI or experimenting with IPv6 egress despite gaps)."
         ),
     )
+    credential_providers: list[CredentialProviderConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_credential_providers(self) -> "EgressConfig":
+        names = [provider.name for provider in self.credential_providers]
+        if len(names) != len(set(names)):
+            raise ValueError("credential provider names must be unique")
+        return self
 
 
 class RuntimeConfig(BaseModel):
@@ -1172,6 +1194,7 @@ __all__ = [
     "StoreConfig",
     "KubernetesRuntimeConfig",
     "EgressConfig",
+    "CredentialProviderConfig",
     "EGRESS_MODE_DNS",
     "EGRESS_MODE_DNS_NFT",
     "SecureRuntimeConfig",

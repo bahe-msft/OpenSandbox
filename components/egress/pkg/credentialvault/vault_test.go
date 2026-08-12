@@ -15,8 +15,10 @@
 package credentialvault
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/alibaba/opensandbox/egress/pkg/policy"
 	"github.com/stretchr/testify/require"
@@ -63,6 +65,27 @@ func testCredentialVaultRequest() CreateRequest {
 	}
 }
 
+type blockingCredentialSource struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *blockingCredentialSource) Type() string  { return "blocking" }
+func (s *blockingCredentialSource) Dynamic() bool { return true }
+func (s *blockingCredentialSource) Resolve(ctx context.Context) (string, error) {
+	select {
+	case <-s.started:
+	default:
+		close(s.started)
+	}
+	select {
+	case <-s.release:
+		return "resolved", nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
 func TestCredentialVaultCreateSanitizesAndRendersActiveSnapshot(t *testing.T) {
 	store := NewStore(nil, func() bool { return true })
 	pol := testCredentialPolicy(t, `{"defaultAction":"deny","egress":[{"action":"allow","target":"code.example.com"}]}`)
@@ -77,6 +100,7 @@ func TestCredentialVaultCreateSanitizesAndRendersActiveSnapshot(t *testing.T) {
 	payload, err := store.ActiveSnapshot()
 	require.NoError(t, err)
 	require.Equal(t, int64(1), payload.Revision)
+	require.True(t, payload.Cacheable)
 	require.Equal(t, []InjectionHeader{{Name: "Private-Token", Value: "secret-token"}}, payload.Bindings[0].Headers)
 	require.Contains(t, payload.Redactions, "secret-token")
 }
@@ -318,6 +342,46 @@ func TestCredentialVaultRejectsNonStandardPorts(t *testing.T) {
 			require.NoError(t, err, "ports=%v", tc.ports)
 		}
 	}
+}
+
+func TestDynamicResolutionDoesNotHoldVaultLock(t *testing.T) {
+	source := &blockingCredentialSource{started: make(chan struct{}), release: make(chan struct{})}
+	registry := NewSourceRegistry()
+	registry.Register("blocking", func(json.RawMessage) (CredentialSource, error) { return source, nil })
+	store := NewStoreWithRegistry(nil, func() bool { return true }, registry)
+	pol := testCredentialPolicy(t, `{"defaultAction":"deny","egress":[{"action":"allow","target":"code.example.com"}]}`)
+	_, err := store.Create(CreateRequest{
+		Credentials: []Credential{{Name: "dynamic", Source: mustMarshal(map[string]string{"type": "blocking"})}},
+		Bindings: []Binding{{
+			Name:  "dynamic-binding",
+			Match: Match{Hosts: []string{"code.example.com"}},
+			Auth:  Auth{Type: "apiKey", Name: "X-Identity", Credential: "dynamic"},
+		}},
+	}, pol)
+	require.NoError(t, err)
+
+	resolved := make(chan error, 1)
+	go func() {
+		_, resolveErr := store.ResolveBindingWithContext(context.Background(), "dynamic-binding", 1)
+		resolved <- resolveErr
+	}()
+	<-source.started
+
+	patched := make(chan error, 1)
+	go func() {
+		_, patchErr := store.Patch(MutationRequest{Credentials: &CredentialMutationSet{Add: []Credential{{
+			Name: "inline", Source: mustMarshal(map[string]string{"type": "inline", "value": "value"}),
+		}}}}, pol)
+		patched <- patchErr
+	}()
+	select {
+	case patchErr := <-patched:
+		require.NoError(t, patchErr)
+	case <-time.After(time.Second):
+		t.Fatal("vault patch blocked behind dynamic provider resolution")
+	}
+	close(source.release)
+	require.NoError(t, <-resolved)
 }
 
 func TestCredentialVaultPatchRejectsDeletingReferencedCredential(t *testing.T) {

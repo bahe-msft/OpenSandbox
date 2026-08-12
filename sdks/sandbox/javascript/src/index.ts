@@ -55,6 +55,7 @@ export type {
   Endpoint,
   Host,
   InlineCredentialSource,
+  PluginCredentialSource,
   ListSnapshotsParams,
   ListSnapshotsResponse,
   ListSandboxesParams,

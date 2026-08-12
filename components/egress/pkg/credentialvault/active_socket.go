@@ -25,7 +25,7 @@ import (
 )
 
 func StartActiveSocketServer(
-	activeHandler func(http.ResponseWriter),
+	activeHandler http.HandlerFunc,
 	socketPath string,
 	socketGID int,
 ) (*http.Server, func(context.Context) error, error) {
@@ -76,14 +76,8 @@ func StartActiveSocketServer(
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/credential-vault/_active", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", "GET")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		activeHandler(w)
-	})
+	mux.HandleFunc("/credential-vault/_active", activeHandler)
+	mux.HandleFunc("/credential-vault/_resolve", activeHandler)
 
 	srv := &http.Server{Handler: mux}
 	errCh := make(chan error, 1)

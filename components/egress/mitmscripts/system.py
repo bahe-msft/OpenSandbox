@@ -93,14 +93,24 @@ class ActiveVault:
         revision: int,
         bindings: list[dict[str, Any]],
         redactions: list[str],
+        cacheable: bool = True,
     ) -> None:
         self.revision = revision
         self.bindings = bindings
         self.redactions = redactions
+        self.cacheable = cacheable
 
 
 _vault_cache: ActiveVault | None = None
 _vault_cache_loaded_at = 0.0
+
+
+class ActiveVaultUnavailable(Exception):
+    """The private credential broker could not produce an active snapshot."""
+
+
+class ActiveVaultRevisionChanged(ActiveVaultUnavailable):
+    """The cached binding metadata no longer matches the active revision."""
 
 
 class UnixSocketHTTPConnection(http_client.HTTPConnection):
@@ -155,14 +165,20 @@ def tls_clienthello(data: ClientHelloData) -> None:
 def _load_active_vault() -> ActiveVault | None:
     global _vault_cache, _vault_cache_loaded_at
     now = time.monotonic()
-    if _vault_cache is not None and now - _vault_cache_loaded_at < VAULT_CACHE_TTL_SECONDS:
+    if (
+        _vault_cache is not None
+        and _vault_cache.cacheable
+        and now - _vault_cache_loaded_at < VAULT_CACHE_TTL_SECONDS
+    ):
         return _vault_cache
 
     socket_path = (
         os.environ.get(CREDENTIAL_PROXY_SOCKET_ENV, "").strip()
         or DEFAULT_CREDENTIAL_PROXY_SOCKET
     )
-    connection = UnixSocketHTTPConnection(socket_path, timeout=0.25)
+    # Exec credential providers may take up to one second. Keep a small margin
+    # for local snapshot construction and Unix-socket transfer.
+    connection = UnixSocketHTTPConnection(socket_path, timeout=1.25)
     try:
         connection.request("GET", ACTIVE_VAULT_PATH)
         response = connection.getresponse()
@@ -175,27 +191,78 @@ def _load_active_vault() -> ActiveVault | None:
             ctx.log.warn(
                 f"credential proxy: active vault lookup failed with HTTP {response.status}"
             )
-            _vault_cache = None
-            _vault_cache_loaded_at = now
-            return None
+            raise ActiveVaultUnavailable()
         payload = json.loads(body.decode("utf-8"))
-    except Exception as exc:  # noqa: BLE001 - mitm addon must not crash traffic handling
-        ctx.log.warn(f"credential proxy: active vault lookup failed: {exc}")
+    except ActiveVaultUnavailable:
         _vault_cache = None
         _vault_cache_loaded_at = now
-        return None
+        raise
+    except Exception:  # noqa: BLE001 - fail closed without leaking broker details
+        _vault_cache = None
+        _vault_cache_loaded_at = now
+        ctx.log.warn("credential proxy: active vault lookup failed")
+        raise ActiveVaultUnavailable() from None
     finally:
         connection.close()
 
     bindings = payload.get("bindings") or []
     redactions = [v for v in (payload.get("redactions") or []) if isinstance(v, str) and v]
-    _vault_cache = ActiveVault(
+    vault = ActiveVault(
         revision=int(payload.get("revision") or 0),
         bindings=bindings,
         redactions=redactions,
+        # Older/local test providers omit this field and retain historical
+        # inline-snapshot caching behavior. Dynamic sources explicitly set false.
+        cacheable=payload.get("cacheable") is not False,
     )
-    _vault_cache_loaded_at = now
-    return _vault_cache
+    if vault.cacheable:
+        _vault_cache = vault
+        _vault_cache_loaded_at = now
+    else:
+        _vault_cache = None
+        _vault_cache_loaded_at = now
+    return vault
+
+
+def _resolve_dynamic_binding(
+    vault: ActiveVault, binding: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    socket_path = (
+        os.environ.get(CREDENTIAL_PROXY_SOCKET_ENV, "").strip()
+        or DEFAULT_CREDENTIAL_PROXY_SOCKET
+    )
+    binding_name = str(binding.get("name") or "")
+    path = (
+        f"/credential-vault/_resolve?binding={quote(binding_name, safe='')}"
+        f"&revision={vault.revision}"
+    )
+    connection = UnixSocketHTTPConnection(socket_path, timeout=1.25)
+    try:
+        connection.request("GET", path)
+        response = connection.getresponse()
+        body = response.read()
+        if response.status == 409:
+            raise ActiveVaultRevisionChanged()
+        if response.status != 200:
+            raise ActiveVaultUnavailable()
+        payload = json.loads(body.decode("utf-8"))
+        if int(payload.get("revision") or 0) != vault.revision:
+            raise ActiveVaultRevisionChanged()
+        bindings = payload.get("bindings") or []
+        if len(bindings) != 1 or bindings[0].get("name") != binding_name:
+            raise ActiveVaultUnavailable()
+        redactions = [
+            value
+            for value in (payload.get("redactions") or [])
+            if isinstance(value, str) and value
+        ]
+        return bindings[0], redactions
+    except ActiveVaultUnavailable:
+        raise
+    except Exception:
+        raise ActiveVaultUnavailable() from None
+    finally:
+        connection.close()
 
 
 def _request_host(flow: http.HTTPFlow) -> str:
@@ -638,7 +705,11 @@ def requestheaders(flow: http.HTTPFlow) -> None:
     made: with ``stream_large_bodies=1m`` the ``request`` hook fires only
     after a body above 1 MiB has been streamed upstream.
     """
-    vault = _load_active_vault()
+    try:
+        vault = _load_active_vault()
+    except ActiveVaultUnavailable:
+        _reject_request(flow, b"credential source unavailable\n")
+        return
     if vault is None:
         return
 
@@ -672,6 +743,34 @@ def requestheaders(flow: http.HTTPFlow) -> None:
     binding = _select_binding(flow, vault)
     if not binding:
         return
+    if binding.get("dynamic"):
+        try:
+            binding, dynamic_redactions = _resolve_dynamic_binding(vault, binding)
+        except ActiveVaultRevisionChanged:
+            # A user mutation raced with the short metadata cache. Reload once,
+            # reselect against the same request, and resolve the new revision.
+            global _vault_cache, _vault_cache_loaded_at
+            _vault_cache = None
+            _vault_cache_loaded_at = 0.0
+            try:
+                refreshed = _load_active_vault()
+                if refreshed is None:
+                    return
+                binding = _select_binding(flow, refreshed)
+                if not binding:
+                    return
+                if binding.get("dynamic"):
+                    binding, dynamic_redactions = _resolve_dynamic_binding(refreshed, binding)
+                else:
+                    dynamic_redactions = refreshed.redactions
+                vault = refreshed
+            except ActiveVaultUnavailable:
+                _reject_request(flow, b"credential source unavailable\n")
+                return
+        except ActiveVaultUnavailable:
+            _reject_request(flow, b"credential source unavailable\n")
+            return
+        vault = ActiveVault(vault.revision, [binding], dynamic_redactions, cacheable=False)
     flow.metadata[FLOW_BINDING_KEY] = binding
     # Persist the redactions of the matched revision: body substitutions run
     # later in the request hook, and reloading the vault there could return a

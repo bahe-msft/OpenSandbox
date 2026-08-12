@@ -522,7 +522,9 @@ components:
         name:
           type: string
         source:
-          $ref: '#/components/schemas/InlineCredentialSource'
+          oneOf:
+            - $ref: '#/components/schemas/InlineCredentialSource'
+            - $ref: '#/components/schemas/PluginCredentialSource'
       additionalProperties: false
     InlineCredentialSource:
       type: object
@@ -534,6 +536,21 @@ components:
         value:
           type: string
           writeOnly: true
+      additionalProperties: false
+    PluginCredentialSource:
+      type: object
+      required: [type, value]
+      description: |
+        Egress exec credential provider source. `value` selects a trusted
+        provider executable basename installed in the egress credential-provider
+        directory. Callers cannot provide executable paths or arguments.
+      properties:
+        type:
+          type: string
+          enum: [plugin]
+        value:
+          type: string
+          pattern: '^[a-z][a-z0-9-]{0,63}$'
       additionalProperties: false
     CredentialBinding:
       type: object

@@ -162,7 +162,12 @@ func buildMitmdumpArgs(cfg Config) []string {
 
 func buildMitmdumpEnv(base []string, home string) []string {
 	env := make([]string, 0, len(base)+1)
-	env = append(env, base...)
+	for _, entry := range base {
+		if strings.HasPrefix(entry, constants.EnvCredentialProviderConfig+"=") {
+			continue
+		}
+		env = append(env, entry)
+	}
 	env = append(env, "HOME="+home)
 	return env
 }

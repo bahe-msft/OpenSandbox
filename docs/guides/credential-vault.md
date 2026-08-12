@@ -265,6 +265,74 @@ language style:
 The vault APIs return sanitized metadata. Plaintext credential values are
 write-only and are not returned by `get`, `list`, or patch responses.
 
+### Exec credential providers
+
+The egress image may install trusted provider executables under
+`/usr/libexec/opensandbox/credential-providers/`. Each executable basename is a
+valid `plugin` source value. For example, an executable named
+`opensandbox-psat` is selected with:
+
+```json
+{"type": "plugin", "value": "opensandbox-psat"}
+```
+
+The official egress image includes the `opensandbox-psat` provider. It reads
+`/var/run/secrets/opensandbox/serviceaccount/token` by default, so mount a
+projected token directory only into egress (do not use `subPath`, which prevents
+rotation updates):
+
+```yaml
+volumeMounts:
+  - name: opensandbox-psat
+    mountPath: /var/run/secrets/opensandbox/serviceaccount
+    readOnly: true
+```
+
+The binary also supports an operator-only `--token-file` flag. Configure it in
+the lifecycle server without exposing it through Credential Vault:
+
+```toml
+[[egress.credential_providers]]
+name = "opensandbox-psat"
+args = ["--token-file", "/custom/projected/token"]
+```
+
+The server injects this reserved configuration only into the egress container.
+Sandbox create requests and Credential Vault callers cannot set or override
+provider arguments.
+
+The caller cannot provide a path, arguments, or environment. The provider
+directory and executables must be owned by the egress process owner and cannot
+be group/world-writable. Egress invokes providers directly—with no shell—using
+an empty environment, a one-second timeout, bounded concurrency, and bounded
+output.
+
+Provider stdin is one serialized `CredentialRequest` protobuf message and
+stdout must be one serialized `CredentialResponse` message, without framing or
+additional output. Both messages use `api_version =
+"credentialprovider.opensandbox.io/v1"`. The versioned contract is
+[`credential_provider.proto`](https://github.com/alibaba/OpenSandbox/blob/main/components/egress/pkg/credentialprovider/v1/credential_provider.proto).
+Responses support UTF-8, base64, and unpadded base64url rendering of binary
+credential data. Provider metadata may use mitmproxy's short cache, but the
+provider is invoked only after its binding matches a request. Provider failures
+therefore fail closed for that request without blocking unrelated destinations.
+A provider may return `cacheable=true` with a valid future expiry for safe
+provider-result caching.
+
+An Agentgateway identity binding can then reference the provider without
+exposing its output to the sandbox:
+
+```json
+{
+  "name": "agentgateway-identity",
+  "source": {"type": "plugin", "value": "opensandbox-psat"}
+}
+```
+
+Bind it to an exact HTTPS Agentgateway host, method, and path using `apiKey` or
+`customHeaders`. Agentgateway must consume and remove the identity header before
+forwarding the request to a provider backend.
+
 ## Claude Code With Anthropic
 
 This example installs Claude Code in the sandbox and calls the official
