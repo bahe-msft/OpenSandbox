@@ -37,6 +37,7 @@ from opensandbox_server.api.schema import Endpoint, NetworkPolicy
 from opensandbox_server.services.constants import (
     EGRESS_MODE_ENV,
     EGRESS_RULES_ENV,
+    OPENSANDBOX_EGRESS_CREDENTIAL_PROVIDER_CONFIG,
     OPENSANDBOX_EGRESS_MITMPROXY_TRANSPARENT,
     OPENSANDBOX_EGRESS_SANDBOX_ID,
     OPENSANDBOX_EGRESS_TOKEN,
@@ -416,6 +417,12 @@ class DockerNetworkingMixin:
         ]
         if credential_proxy_enabled:
             sidecar_env.append(f"{OPENSANDBOX_EGRESS_MITMPROXY_TRANSPARENT}=true")
+        if self.app_config.egress.credential_providers:
+            provider_config = json.dumps(
+                [provider.model_dump(mode="json") for provider in self.app_config.egress.credential_providers],
+                separators=(",", ":"),
+            )
+            sidecar_env.append(f"{OPENSANDBOX_EGRESS_CREDENTIAL_PROVIDER_CONFIG}={provider_config}")
 
         if extra_env:
             skip_keys = {OPENSANDBOX_EGRESS_MITMPROXY_TRANSPARENT} if credential_proxy_enabled else set()

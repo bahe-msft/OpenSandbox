@@ -58,6 +58,11 @@ RUN if [ -n "${CC}" ]; then export CC; fi; \
               -X 'github.com/alibaba/opensandbox/internal/version.GitCommit=${GIT_COMMIT}'" \
     -o /out/egress .
 
+# Built-in typed credential provider for projected ServiceAccount tokens.
+RUN CGO_ENABLED="${CGO_ENABLED}" go build ${GOFLAGS} -trimpath -buildvcs=false \
+    -ldflags "${LDFLAGS} -buildid= -B none" \
+    -o /out/opensandbox-psat ./cmd/opensandbox-psat
+
 # Build the opensandbox-supervisor binary from the internal module.
 # Installed alongside /egress so a future ENTRYPOINT switch can wrap egress
 # without changing this stage again.
@@ -110,7 +115,8 @@ RUN useradd -r -u 10042 -d /var/lib/mitmproxy -s /usr/sbin/nologin mitmproxy \
     && chown -R mitmproxy:mitmproxy /var/lib/mitmproxy \
     && pip3 install --no-cache-dir --break-system-packages 'mitmproxy==11.0.2' \
     && (command -v mitmdump && mitmdump --version) \
-    && mkdir -p /var/egress/mitmscripts
+    && mkdir -p /var/egress/mitmscripts \
+    && install -d -o root -g root -m 0755 /usr/libexec/opensandbox/credential-providers
 
 # Static mitmproxy options (mode, listen_host, connection_strategy, stream_large_bodies,
 # http2, ignore_hosts, ssl_verify_upstream_trusted_confdir). mitmdump auto-loads
@@ -134,6 +140,8 @@ RUN chmod 0755 /opt/opensandbox-egress/cleanup.sh \
             /opt/opensandbox-egress/supervisor \
     && ln -s /opt/opensandbox-egress/egress /egress
 
+COPY --from=builder --chown=root:root --chmod=0500 /out/opensandbox-psat \
+    /usr/libexec/opensandbox/credential-providers/opensandbox-psat
 COPY components/egress/mitmscripts /var/egress/mitmscripts
 
 # Supervisor wraps the egress binary: restarts on crash with backoff and

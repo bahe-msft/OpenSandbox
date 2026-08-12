@@ -68,6 +68,7 @@ type Store struct {
 	mu           sync.RWMutex
 	exists       bool
 	revision     int64
+	generation   uint64 // monotonic internal identity; unlike revision, never resets on delete/create
 	credentials  map[string]record
 	bindings     map[string]Binding
 	mitmGate     *mitmproxy.HealthGate
@@ -181,6 +182,7 @@ type ActiveSnapshot struct {
 	Revision   int64           `json:"revision"`
 	Bindings   []ActiveBinding `json:"bindings"`
 	Redactions []string        `json:"redactions,omitempty"`
+	Cacheable  bool            `json:"cacheable"`
 }
 
 type ActiveBinding struct {
@@ -188,6 +190,7 @@ type ActiveBinding struct {
 	Match         Match                   `json:"match"`
 	Headers       []InjectionHeader       `json:"headers"`
 	Substitutions []InjectionSubstitution `json:"substitutions,omitempty"`
+	Dynamic       bool                    `json:"dynamic,omitempty"`
 }
 
 type InjectionHeader struct {
@@ -255,6 +258,7 @@ func (v *Store) Create(req CreateRequest, pol *policy.NetworkPolicy) (State, err
 
 	v.exists = true
 	v.revision = 1
+	v.generation++
 	v.credentials = credentials
 	v.bindings = bindings
 	return v.sanitizedLocked(), nil
@@ -285,6 +289,7 @@ func (v *Store) Patch(req MutationRequest, pol *policy.NetworkPolicy) (State, er
 	}
 
 	v.revision = nextRevision
+	v.generation++
 	v.credentials = credentials
 	v.bindings = bindings
 	return v.sanitizedLocked(), nil
@@ -298,6 +303,7 @@ func (v *Store) Delete() error {
 	}
 	v.exists = false
 	v.revision = 0
+	v.generation++
 	v.credentials = make(map[string]record)
 	v.bindings = make(map[string]Binding)
 	return nil
@@ -344,36 +350,92 @@ func (v *Store) ActiveSnapshot() (ActiveSnapshot, error) {
 
 func (v *Store) ActiveSnapshotWithContext(ctx context.Context) (ActiveSnapshot, error) {
 	v.mu.RLock()
-	defer v.mu.RUnlock()
 	if !v.exists {
+		v.mu.RUnlock()
 		return ActiveSnapshot{}, ErrNotFound
 	}
-	snapshot := ActiveSnapshot{
-		Revision: v.revision,
-		Bindings: make([]ActiveBinding, 0, len(v.bindings)),
+	revision := v.revision
+	credentials := cloneCredentialRecords(v.credentials)
+	bindings := cloneCredentialBindings(v.bindings)
+	v.mu.RUnlock()
+
+	return renderActiveSnapshot(ctx, revision, credentials, bindings, true)
+}
+
+// ResolveBindingWithContext resolves exactly one binding from an active
+// revision. It is used by the private mitmproxy socket after binding selection,
+// so dynamic providers are never invoked for unrelated destinations.
+func (v *Store) ResolveBindingWithContext(ctx context.Context, name string, expectedRevision int64) (ActiveSnapshot, error) {
+	v.mu.RLock()
+	if !v.exists {
+		v.mu.RUnlock()
+		return ActiveSnapshot{}, ErrNotFound
 	}
+	if expectedRevision != v.revision {
+		v.mu.RUnlock()
+		return ActiveSnapshot{}, fmt.Errorf("expectedRevision %d does not match current revision %d", expectedRevision, v.revision)
+	}
+	generation := v.generation
+	binding, ok := v.bindings[name]
+	if !ok {
+		v.mu.RUnlock()
+		return ActiveSnapshot{}, fmt.Errorf("binding not found")
+	}
+	credentials := cloneCredentialRecords(v.credentials)
+	v.mu.RUnlock()
+
+	snapshot, err := renderActiveSnapshot(ctx, expectedRevision, credentials, map[string]Binding{name: binding}, false)
+	if err != nil {
+		return ActiveSnapshot{}, err
+	}
+	v.mu.RLock()
+	unchanged := v.exists && v.generation == generation
+	v.mu.RUnlock()
+	if !unchanged {
+		return ActiveSnapshot{}, fmt.Errorf("expectedRevision %d changed during credential resolution", expectedRevision)
+	}
+	return snapshot, nil
+}
+
+func renderActiveSnapshot(ctx context.Context, revision int64, credentials map[string]record, bindings map[string]Binding, deferDynamic bool) (ActiveSnapshot, error) {
+	snapshot := ActiveSnapshot{Revision: revision, Bindings: make([]ActiveBinding, 0, len(bindings)), Cacheable: true}
 	redactions := make(map[string]struct{})
-	names := make([]string, 0, len(v.bindings))
-	for name := range v.bindings {
+	names := make([]string, 0, len(bindings))
+	for name := range bindings {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		b := v.bindings[name]
-		headers, values, err := renderInjectionHeaders(ctx, b.Auth, v.credentials)
+		b := bindings[name]
+		dynamic := bindingUsesDynamicSource(b, credentials)
+		if deferDynamic && dynamic {
+			snapshot.Bindings = append(snapshot.Bindings, ActiveBinding{Name: b.Name, Match: b.Match, Dynamic: true})
+			continue
+		}
+		resolvedCredentials := cloneCredentialRecords(credentials)
+		seenCredentials := make(map[string]struct{})
+		for _, credentialName := range credentialRefsForAuth(b.Auth) {
+			if _, seen := seenCredentials[credentialName]; seen {
+				continue
+			}
+			seenCredentials[credentialName] = struct{}{}
+			value, err := resolveCredentialValue(ctx, credentialName, credentials)
+			if err != nil {
+				return ActiveSnapshot{}, err
+			}
+			record := resolvedCredentials[credentialName]
+			record.Source = &inlineSource{value: value}
+			resolvedCredentials[credentialName] = record
+		}
+		headers, values, err := renderInjectionHeaders(ctx, b.Auth, resolvedCredentials)
 		if err != nil {
 			return ActiveSnapshot{}, err
 		}
-		substitutions, substitutionValues, err := renderSubstitutions(ctx, b.Auth, v.credentials)
+		substitutions, substitutionValues, err := renderSubstitutions(ctx, b.Auth, resolvedCredentials)
 		if err != nil {
 			return ActiveSnapshot{}, err
 		}
-		snapshot.Bindings = append(snapshot.Bindings, ActiveBinding{
-			Name:          b.Name,
-			Match:         b.Match,
-			Headers:       headers,
-			Substitutions: substitutions,
-		})
+		snapshot.Bindings = append(snapshot.Bindings, ActiveBinding{Name: b.Name, Match: b.Match, Headers: headers, Substitutions: substitutions})
 		values = append(values, substitutionValues...)
 		for _, value := range values {
 			if value != "" {
@@ -391,6 +453,15 @@ func (v *Store) ActiveSnapshotWithContext(ctx context.Context) (ActiveSnapshot, 
 		return snapshot.Redactions[i] < snapshot.Redactions[j]
 	})
 	return snapshot, nil
+}
+
+func bindingUsesDynamicSource(binding Binding, credentials map[string]record) bool {
+	for _, name := range credentialRefsForAuth(binding.Auth) {
+		if credential, ok := credentials[name]; ok && sourceIsDynamic(credential.Source) {
+			return true
+		}
+	}
+	return false
 }
 
 func (v *Store) ValidateActiveAgainstPolicy(pol *policy.NetworkPolicy) error {

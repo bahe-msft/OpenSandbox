@@ -91,6 +91,21 @@ class _CredentialVaultSyncTransport(httpx.BaseTransport):
 
 
 @pytest.mark.asyncio
+async def test_async_plugin_credential_source_serialization() -> None:
+    transport = _CredentialVaultAsyncTransport()
+    adapter = EgressAdapter(
+        ConnectionConfig(transport=transport),
+        SandboxEndpoint(endpoint="sandbox.internal:18080"),
+    )
+    await adapter.create(
+        credentials=[{"name": "identity", "source": {"type": "plugin", "value": "opensandbox-psat"}}],
+        bindings=[],
+    )
+    body = json.loads(transport.requests[0].content)
+    assert body["credentials"][0]["source"] == {"type": "plugin", "value": "opensandbox-psat"}
+
+
+@pytest.mark.asyncio
 async def test_async_credential_vault_create_patch_and_list_bindings() -> None:
     transport = _CredentialVaultAsyncTransport()
     adapter = EgressAdapter(

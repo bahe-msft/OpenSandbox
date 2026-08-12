@@ -46,7 +46,7 @@ class CredentialProxyConfig private constructor(
 }
 
 /**
- * Write-only inline credential material for Credential Vault.
+ * Inline or plugin Credential Vault source.
  */
 class InlineCredentialSource private constructor(
     val value: String,
@@ -54,6 +54,7 @@ class InlineCredentialSource private constructor(
 ) {
     companion object {
         const val TYPE_INLINE = "inline"
+        const val TYPE_PLUGIN = "plugin"
 
         @JvmStatic
         fun builder(): Builder = Builder()
@@ -73,7 +74,9 @@ class InlineCredentialSource private constructor(
         }
 
         fun type(type: String): Builder {
-            require(type == TYPE_INLINE) { "Credential source type must be inline" }
+            require(type == TYPE_INLINE || type == TYPE_PLUGIN) {
+                "Credential source type must be inline or plugin"
+            }
             this.type = type
             return this
         }
@@ -114,6 +117,14 @@ class Credential private constructor(
 
         fun inlineSource(value: String): Builder {
             this.source = InlineCredentialSource.of(value)
+            return this
+        }
+
+        fun pluginSource(name: String): Builder {
+            this.source = InlineCredentialSource.builder()
+                .type(InlineCredentialSource.TYPE_PLUGIN)
+                .value(name)
+                .build()
             return this
         }
 

@@ -19,6 +19,7 @@ from enum import Enum
 
 class InlineCredentialSourceType(str, Enum):
     INLINE = "inline"
+    PLUGIN = "plugin"
 
     def __str__(self) -> str:
         return str(self.value)

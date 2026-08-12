@@ -507,7 +507,7 @@ export interface components {
         };
         InlineCredentialSource: {
             /** @enum {string} */
-            type: "inline";
+            type: "inline" | "plugin";
             value: string;
         };
         CredentialBinding: {

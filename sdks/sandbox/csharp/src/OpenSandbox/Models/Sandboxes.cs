@@ -144,7 +144,7 @@ public class CredentialProxyConfig
 }
 
 /// <summary>
-/// Write-only inline credential material for Credential Vault.
+/// Inline or plugin Credential Vault source.
 /// </summary>
 public class InlineCredentialSource
 {
@@ -159,6 +159,12 @@ public class InlineCredentialSource
     /// </summary>
     [JsonPropertyName("value")]
     public required string Value { get; set; }
+
+    /// <summary>
+    /// Creates a source selecting a trusted egress plugin.
+    /// </summary>
+    public static InlineCredentialSource Plugin(string name) =>
+        new() { Type = "plugin", Value = name };
 }
 
 /// <summary>

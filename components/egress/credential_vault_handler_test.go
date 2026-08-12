@@ -103,7 +103,7 @@ func TestCredentialVaultActiveUnixSocketReturnsSnapshot(t *testing.T) {
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
 	socketPath := filepath.Join(tmpDir, "credential-proxy", "active.sock")
-	_, cleanup, err := credentialvault.StartActiveSocketServer(srv.handleCredentialVaultActive, socketPath, -1)
+	_, cleanup, err := credentialvault.StartActiveSocketServer(srv.handleCredentialVaultActive, srv.handleCredentialVaultResolve, socketPath, -1)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -128,6 +128,49 @@ func TestCredentialVaultActiveUnixSocketReturnsSnapshot(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Contains(t, string(body), "secret-token")
 	require.Contains(t, string(body), "Private-Token")
+}
+
+func TestCredentialVaultResolveUnixSocketAndRejectsStaleRevision(t *testing.T) {
+	store := credentialvault.NewStore(nil, func() bool { return true })
+	pol := testCredentialVaultPolicy(t, `{"defaultAction":"deny","egress":[{"action":"allow","target":"code.example.com"}]}`)
+	_, err := store.Create(testCredentialVaultRequest(), pol)
+	require.NoError(t, err)
+	srv := &policyServer{credentialVault: store}
+
+	tmpDir := t.TempDir()
+	socketPath := filepath.Join(tmpDir, "credential-proxy", "active.sock")
+	_, cleanup, err := credentialvault.StartActiveSocketServer(
+		srv.handleCredentialVaultActive,
+		srv.handleCredentialVaultResolve,
+		socketPath,
+		-1,
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(t, cleanup(ctx))
+	})
+
+	client := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, "unix", socketPath)
+	}}}
+	resolveURL := "http://credential-proxy/credential-vault/_resolve?binding=gitlab-api&revision=1"
+	resp, err := client.Get(resolveURL)
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Contains(t, string(body), "secret-token")
+
+	_, err = store.Patch(credentialvault.MutationRequest{}, pol)
+	require.NoError(t, err)
+	resp, err = client.Get(resolveURL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusConflict, resp.StatusCode)
 }
 
 func TestCredentialVaultActiveBindingBlocksEgressPolicyRemoval(t *testing.T) {

@@ -204,6 +204,17 @@ Configures the **egress sidecar** image and enforcement mode. The server only at
 | `image` | string \| omitted | `null` | OCI image for the egress sidecar. **Required in config** when clients send **`networkPolicy`** (create request). |
 | `mode` | string | `"dns"` | Passed to the sidecar as `OPENSANDBOX_EGRESS_MODE`. Values: **`dns`** — DNS-proxy-based enforcement (CIDR/static IP rules **not** enforced); **`dns+nft`** — adds nftables where available so **CIDR/IP** rules can be enforced. |
 | `disable_ipv6` | bool | `true` | IPv6 egress is incomplete (especially on Kubernetes). **Default on**; set `false` only when you want IPv6 left up in the netns. Details in [IPv6 and egress](#ipv6-and-egress) below. |
+| `credential_providers` | array of tables | `[]` | Operator-only arguments for trusted exec credential providers installed in the egress image. |
+
+Example overriding the built-in PSAT token path:
+
+```toml
+[[egress.credential_providers]]
+name = "opensandbox-psat"
+args = ["--token-file", "/custom/projected/token"]
+```
+
+Provider configuration is injected only into the egress container. Sandbox create requests and Credential Vault requests cannot set or override these arguments. Arguments are configuration, not secret storage: do not place credential values in them.
 
 ### IPv6 and egress
 

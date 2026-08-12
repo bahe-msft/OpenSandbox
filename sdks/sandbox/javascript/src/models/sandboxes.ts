@@ -86,15 +86,19 @@ export interface CredentialProxyConfig extends Record<string, unknown> {
 
 export interface InlineCredentialSource extends Record<string, unknown> {
   /**
-   * Credential source type. Defaults to "inline" when omitted.
+   * Credential source type. Defaults to "inline" when omitted. "plugin"
+   * selects a trusted egress credential provider named by value.
    */
-  type?: "inline";
+  type?: "inline" | "plugin";
   /**
-   * Write-only inline credential value. This field is accepted in create/patch
-   * requests and is never present in Credential Vault state responses.
+   * Inline credential material, or the trusted provider name for plugin
+   * sources. It is never present in Credential Vault state responses.
    */
   value: string;
 }
+
+/** Source selecting a trusted exec credential provider. */
+export type PluginCredentialSource = InlineCredentialSource & { type: "plugin" };
 
 export interface Credential extends Record<string, unknown> {
   /**

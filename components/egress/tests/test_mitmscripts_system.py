@@ -197,9 +197,130 @@ class SystemAddonRedactionTest(unittest.TestCase):
         assert vault is not None
         self.assertEqual(7, vault.revision)
         self.assertEqual(["secret-token"], vault.redactions)
-        self.assertEqual(("init", "/tmp/active.sock", 0.25), calls[0])
+        self.assertEqual(("init", "/tmp/active.sock", 1.25), calls[0])
         self.assertEqual(("request", "GET", system.ACTIVE_VAULT_PATH), calls[1])
         self.assertEqual(("close", None, None), calls[-1])
+
+    def test_dynamic_active_vault_is_not_cached(self) -> None:
+        system = _load_system_module()
+        calls = 0
+
+        class FakeResponse:
+            status = 200
+
+            def read(self) -> bytes:
+                return json.dumps(
+                    {
+                        "revision": 1,
+                        "bindings": [],
+                        "redactions": [],
+                        "cacheable": False,
+                    }
+                ).encode("utf-8")
+
+        class FakeConnection:
+            def __init__(self, socket_path: str, timeout: float) -> None:
+                pass
+
+            def request(self, method: str, path: str) -> None:
+                pass
+
+            def getresponse(self) -> FakeResponse:
+                nonlocal calls
+                calls += 1
+                return FakeResponse()
+
+            def close(self) -> None:
+                pass
+
+        system.UnixSocketHTTPConnection = FakeConnection
+        system._load_active_vault()
+        system._load_active_vault()
+        self.assertEqual(2, calls)
+
+    def test_dynamic_provider_resolves_only_after_binding_match(self) -> None:
+        system = _load_system_module()
+        flow = _Flow()
+        metadata = {
+            "name": "gateway",
+            "dynamic": True,
+            "match": {
+                "hosts": ["code.example.com"],
+                "methods": ["GET"],
+                "paths": ["/api/v8/*"],
+            },
+            "headers": None,
+        }
+        system._load_active_vault = lambda: system.ActiveVault(1, [metadata], [])
+        calls = 0
+
+        def resolve(vault, binding):
+            nonlocal calls
+            calls += 1
+            resolved = dict(binding)
+            resolved["dynamic"] = False
+            resolved["headers"] = [{"name": "X-Identity", "value": "token"}]
+            return resolved, ["token"]
+
+        system._resolve_dynamic_binding = resolve
+        system.requestheaders(flow)
+        self.assertEqual(1, calls)
+        self.assertEqual("token", flow.request.headers.get("X-Identity"))
+
+        unmatched = _Flow()
+        unmatched.request.pretty_host = "other.example.com"
+        unmatched.request.host = "other.example.com"
+        system.requestheaders(unmatched)
+        self.assertEqual(1, calls)
+        self.assertEqual("", unmatched.request.headers.get("X-Identity"))
+
+    def test_dynamic_resolution_retries_once_after_revision_change(self) -> None:
+        system = _load_system_module()
+        flow = _Flow()
+
+        def metadata(revision):
+            return system.ActiveVault(
+                revision,
+                [{
+                    "name": "gateway",
+                    "dynamic": True,
+                    "match": {"hosts": ["code.example.com"], "methods": ["GET"], "paths": ["/api/v8/*"]},
+                    "headers": None,
+                }],
+                [],
+            )
+
+        loads = iter([metadata(1), metadata(2)])
+        system._load_active_vault = lambda: next(loads)
+        resolves = 0
+
+        def resolve(vault, binding):
+            nonlocal resolves
+            resolves += 1
+            if resolves == 1:
+                raise system.ActiveVaultRevisionChanged()
+            resolved = dict(binding)
+            resolved["dynamic"] = False
+            resolved["headers"] = [{"name": "X-Identity", "value": "new-token"}]
+            return resolved, ["new-token"]
+
+        system._resolve_dynamic_binding = resolve
+        system.requestheaders(flow)
+        self.assertEqual(2, resolves)
+        self.assertEqual("new-token", flow.request.headers.get("X-Identity"))
+
+    def test_request_fails_closed_when_active_vault_is_unavailable(self) -> None:
+        system = _load_system_module()
+        flow = _Flow()
+
+        def unavailable():
+            raise system.ActiveVaultUnavailable()
+
+        system._load_active_vault = unavailable
+        system.requestheaders(flow)
+
+        self.assertIsNotNone(flow.response)
+        self.assertEqual(403, flow.response.status_code)
 
     def test_request_injection_log_does_not_include_secret_value(self) -> None:
         system = _load_system_module()

@@ -25,12 +25,13 @@ import (
 )
 
 func StartActiveSocketServer(
-	activeHandler func(http.ResponseWriter),
+	activeHandler http.HandlerFunc,
+	resolveHandler http.HandlerFunc,
 	socketPath string,
 	socketGID int,
 ) (*http.Server, func(context.Context) error, error) {
-	if activeHandler == nil {
-		return nil, nil, fmt.Errorf("active credential vault handler is required")
+	if activeHandler == nil || resolveHandler == nil {
+		return nil, nil, fmt.Errorf("active and resolve credential vault handlers are required")
 	}
 	if socketPath == "" {
 		return nil, nil, fmt.Errorf("socket path is required")
@@ -76,14 +77,8 @@ func StartActiveSocketServer(
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/credential-vault/_active", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", "GET")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		activeHandler(w)
-	})
+	mux.HandleFunc("GET /credential-vault/_active", activeHandler)
+	mux.HandleFunc("GET /credential-vault/_resolve", resolveHandler)
 
 	srv := &http.Server{Handler: mux}
 	errCh := make(chan error, 1)

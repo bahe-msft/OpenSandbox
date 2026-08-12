@@ -272,17 +272,25 @@ type CredentialSourceType string
 const (
 	// CredentialSourceInline carries write-only inline credential material.
 	CredentialSourceInline CredentialSourceType = "inline"
+	// CredentialSourcePlugin selects a trusted egress exec credential provider.
+	CredentialSourcePlugin CredentialSourceType = "plugin"
 )
 
-// InlineCredentialSource contains write-only credential material. Values sent
-// in this model are never returned by Credential Vault state endpoints.
+// InlineCredentialSource is the credential source wire shape. Value contains
+// inline material for type inline or a trusted provider name for type plugin;
+// it is never returned by Vault state endpoints.
 type InlineCredentialSource struct {
 	Type  CredentialSourceType `json:"type"`
 	Value string               `json:"value"`
 }
 
-// MarshalJSON defaults the only supported source type so callers can use the
-// natural zero-value form InlineCredentialSource{Value: secret}.
+// PluginCredentialSource returns a source selecting a trusted provider by name.
+func PluginCredentialSource(name string) InlineCredentialSource {
+	return InlineCredentialSource{Type: CredentialSourcePlugin, Value: name}
+}
+
+// MarshalJSON defaults an omitted source type to inline so existing callers can
+// continue using InlineCredentialSource{Value: secret}.
 func (s InlineCredentialSource) MarshalJSON() ([]byte, error) {
 	type inlineCredentialSource InlineCredentialSource
 	source := inlineCredentialSource(s)

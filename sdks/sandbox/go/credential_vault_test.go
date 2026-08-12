@@ -105,6 +105,14 @@ func TestInlineCredentialSourceDefaultsTypeWhenMarshaled(t *testing.T) {
 	}, got)
 }
 
+func TestPluginCredentialSourceUsesCompatibleWireShape(t *testing.T) {
+	body, err := json.Marshal(PluginCredentialSource("opensandbox-psat"))
+	require.NoError(t, err)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(body, &got))
+	require.Equal(t, map[string]any{"type": "plugin", "value": "opensandbox-psat"}, got)
+}
+
 func TestPatchCredentialVaultPayload(t *testing.T) {
 	expectedRevision := 3
 
