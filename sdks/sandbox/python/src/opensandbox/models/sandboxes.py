@@ -161,7 +161,7 @@ class CredentialProxyConfig(BaseModel):
 
 class InlineCredentialSource(BaseModel):
     """
-    Backward-compatible inline or plugin Credential Vault source.
+    Inline or plugin Credential Vault source.
     """
 
     value: str = Field(repr=False, description="Inline credential value.")

@@ -46,7 +46,7 @@ class CredentialProxyConfig private constructor(
 }
 
 /**
- * Backward-compatible inline or plugin Credential Vault source.
+ * Inline or plugin Credential Vault source.
  */
 class InlineCredentialSource private constructor(
     val value: String,

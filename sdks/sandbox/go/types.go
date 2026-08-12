@@ -276,17 +276,15 @@ const (
 	CredentialSourcePlugin CredentialSourceType = "plugin"
 )
 
-// InlineCredentialSource is the backward-compatible credential source wire
-// shape. Value contains inline material for type inline or a trusted provider
-// name for type plugin; it is never returned by Vault state endpoints.
+// InlineCredentialSource is the credential source wire shape. Value contains
+// inline material for type inline or a trusted provider name for type plugin;
+// it is never returned by Vault state endpoints.
 type InlineCredentialSource struct {
 	Type  CredentialSourceType `json:"type"`
 	Value string               `json:"value"`
 }
 
 // PluginCredentialSource returns a source selecting a trusted provider by name.
-// It returns the existing source representation to preserve Credential.Source
-// source compatibility.
 func PluginCredentialSource(name string) InlineCredentialSource {
 	return InlineCredentialSource{Type: CredentialSourcePlugin, Value: name}
 }

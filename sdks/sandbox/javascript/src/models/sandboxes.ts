@@ -97,7 +97,7 @@ export interface InlineCredentialSource extends Record<string, unknown> {
   value: string;
 }
 
-/** Assignment-compatible source selecting a trusted exec credential provider. */
+/** Source selecting a trusted exec credential provider. */
 export type PluginCredentialSource = InlineCredentialSource & { type: "plugin" };
 
 export interface Credential extends Record<string, unknown> {

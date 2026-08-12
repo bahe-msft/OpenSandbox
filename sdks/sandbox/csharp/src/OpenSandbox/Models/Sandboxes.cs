@@ -144,7 +144,7 @@ public class CredentialProxyConfig
 }
 
 /// <summary>
-/// Backward-compatible inline or plugin Credential Vault source.
+/// Inline or plugin Credential Vault source.
 /// </summary>
 public class InlineCredentialSource
 {
@@ -161,7 +161,7 @@ public class InlineCredentialSource
     public required string Value { get; set; }
 
     /// <summary>
-    /// Creates an assignment-compatible source selecting a trusted egress plugin.
+    /// Creates a source selecting a trusted egress plugin.
     /// </summary>
     public static InlineCredentialSource Plugin(string name) =>
         new() { Type = "plugin", Value = name };
