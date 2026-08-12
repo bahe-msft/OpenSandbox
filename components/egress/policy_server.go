@@ -115,7 +115,12 @@ func startPolicyServer(
 		if err != nil {
 			return nil, fmt.Errorf("lookup credential proxy user %q: %w", mitmproxy.RunAsUser, err)
 		}
-		activeSrv, cleanupActiveSocket, err = credentialvault.StartActiveSocketServer(handler.handleCredentialVaultPrivate, socketPath, int(mitmGID))
+		activeSrv, cleanupActiveSocket, err = credentialvault.StartActiveSocketServer(
+			handler.handleCredentialVaultActive,
+			handler.handleCredentialVaultResolve,
+			socketPath,
+			int(mitmGID),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("credential vault active socket: %w", err)
 		}
@@ -407,30 +412,23 @@ func (s *policyServer) handleCredentialVaultBinding(w http.ResponseWriter, name 
 	http.Error(w, "binding not found", http.StatusNotFound)
 }
 
-func (s *policyServer) handleCredentialVaultPrivate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", "GET")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+func (s *policyServer) handleCredentialVaultActive(w http.ResponseWriter, r *http.Request) {
+	snapshot, err := s.credentialVault.ActiveSnapshotWithContext(r.Context())
+	if err != nil {
+		credentialvault.WriteError(w, err)
 		return
 	}
-	var (
-		snapshot credentialvault.ActiveSnapshot
-		err      error
-	)
-	switch r.URL.Path {
-	case "/credential-vault/_active":
-		snapshot, err = s.credentialVault.ActiveSnapshotWithContext(r.Context())
-	case "/credential-vault/_resolve":
-		revision, parseErr := strconv.ParseInt(r.URL.Query().Get("revision"), 10, 64)
-		if parseErr != nil || revision <= 0 || strings.TrimSpace(r.URL.Query().Get("binding")) == "" {
-			http.Error(w, "invalid credential binding resolution request", http.StatusBadRequest)
-			return
-		}
-		snapshot, err = s.credentialVault.ResolveBindingWithContext(r.Context(), r.URL.Query().Get("binding"), revision)
-	default:
-		http.Error(w, "not found", http.StatusNotFound)
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (s *policyServer) handleCredentialVaultResolve(w http.ResponseWriter, r *http.Request) {
+	bindingName := strings.TrimSpace(r.URL.Query().Get("binding"))
+	revision, err := strconv.ParseInt(r.URL.Query().Get("revision"), 10, 64)
+	if err != nil || revision <= 0 || bindingName == "" {
+		http.Error(w, "invalid credential binding resolution request", http.StatusBadRequest)
 		return
 	}
+	snapshot, err := s.credentialVault.ResolveBindingWithContext(r.Context(), bindingName, revision)
 	if err != nil {
 		credentialvault.WriteError(w, err)
 		return
