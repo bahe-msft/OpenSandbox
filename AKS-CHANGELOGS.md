@@ -29,16 +29,16 @@ This file tracks AKS-specific changes carried by the `aks-dev` branch relative t
 
 ## aksdev/20260811
 
-- [opensandbox-group#1431](https://github.com/opensandbox-group/OpenSandbox/pull/1431) — Synced the reusable image-committer interface, preserved config-digest compatibility, and kept source-registry transport secure by default after AKS Kata/devmapper validation.
+- [opensandbox-group#1431](https://github.com/opensandbox-group/OpenSandbox/pull/1431) — Synced the reusable image-committer interface, preserved config-digest compatibility, and kept source-registry transport secure by default after AKS Kata/devmapper validation. **Merged upstream.**
 
 ## aksdev/20260803
 
-- [#24](https://github.com/bahe-msft/OpenSandbox/pull/24) — Recovered missing source-image content by digest before snapshot commits, including authenticated ACR recovery with Workload Identity.
+- [#24](https://github.com/bahe-msft/OpenSandbox/pull/24) — Recovered missing source-image content by digest before snapshot commits, including authenticated ACR recovery with Workload Identity. **Core source-image recovery merged upstream:** [opensandbox-group#1431](https://github.com/opensandbox-group/OpenSandbox/pull/1431); authenticated ACR recovery remains AKS-local.
 - [#23](https://github.com/bahe-msft/OpenSandbox/pull/23) — Fixed AKS ingress image publishing after the Kubernetes dependency update raised the required `golang.org/x/time` version.
 
 ## aksdev/20260802-1
 
-- [#21](https://github.com/bahe-msft/OpenSandbox/pull/21) — Added a containerd-native image committer and an Azure variant that pushes snapshots to ACR with AKS Workload Identity.
+- [#21](https://github.com/bahe-msft/OpenSandbox/pull/21) — Added a containerd-native image committer and an Azure variant that pushes snapshots to ACR with AKS Workload Identity. **Core pluggable image-committer interface merged upstream:** [opensandbox-group#1431](https://github.com/opensandbox-group/OpenSandbox/pull/1431); the Azure ACR variant remains AKS-local.
 
 ## aksdev/20260802
 

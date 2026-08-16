@@ -19,9 +19,19 @@ your SDK version if you rely on it in production.
 
 ## What it actually pools
 
-The pool does **not** pool HTTP connections, and it does **not** pool SDK `Sandbox`
-objects. It pools the **IDs of pre-warmed, ready sandboxes** running on the OpenSandbox
-server.
+The pool does **not** pool SDK `Sandbox` objects. It pools the **IDs of
+pre-warmed, ready sandboxes** running on the OpenSandbox server.
+
+The **Kotlin/Java** SDK additionally gives each `SandboxPool` a pool-wide
+shared HTTP connection pool. When the pool's `ConnectionConfig` carries no
+custom `connectionPool`, the pool creates one sized by `warmup_concurrency`
+(5-minute keep-alive) and uses it for every sandbox it creates — warmup,
+direct create, and idle connect — so concurrent warmups reuse TCP connections
+instead of each opening fresh ones. At high `warmup_concurrency`, per-sandbox
+connection churn otherwise causes intermittent connection resets and retry
+amplification. The pool evicts its shared pool on shutdown; a user-provided
+pool is never touched. Python and Go pools do not share HTTP connections
+across sandboxes today.
 
 ![Client pool architecture](/images/client-pool-architecture.svg)
 
@@ -286,6 +296,15 @@ Every SDK exposes read-only accessors:
   other nodes, and does **not** stop an active leader from immediately replenishing —
   so it is not a safe way to swap creation templates on the same `pool_name`. For that
   case, retire the whole namespace under a new `pool_name` (see below).
+
+The existing cleanup methods retain their original execution behavior. For opt-in
+bounded parallel cleanup, use Python's
+`release_all_idle_parallel(max_workers=50)`, Kotlin's
+`releaseAllIdle(concurrency)`, or Go's concrete
+`(*DefaultSandboxPool).ReleaseAllIdleParallel(ctx, maxWorkers)`. These methods
+validate a positive concurrency value and wait for every drained ID to receive a
+best-effort kill attempt. The Go method is intentionally outside the
+`SandboxPool` interface to preserve compatibility with third-party implementors.
 
 ### Retiring an old pool namespace
 
