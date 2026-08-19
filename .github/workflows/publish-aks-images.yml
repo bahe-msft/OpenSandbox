@@ -20,6 +20,7 @@ on:
           - task-executor
           - image-committer
           - image-committer-azure
+          - devmapper-snapshot-poc
           - server
         default: 'all'
       image_tag:
@@ -130,6 +131,9 @@ jobs:
               image-committer|image-committer-azure)
                 version="$(grep -m1 -oE 'image-committer:v[0-9][^"[:space:]]*' kubernetes/charts/opensandbox-controller/values.yaml | cut -d: -f2)"
                 ;;
+              devmapper-snapshot-poc)
+                version="v0.0.1-poc"
+                ;;
               *)
                 echo "unknown component: $component" >&2
                 return 1
@@ -219,6 +223,9 @@ jobs:
                 ;;
               image-committer-azure)
                 (cd kubernetes && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "-buildid= -B none" -o "../${outdir}/image-committer" ./cmd/image-committer-azure)
+                ;;
+              devmapper-snapshot-poc)
+                (cd kubernetes && CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags "-buildid= -B none" -o "../${outdir}/image-committer" ./cmd/devmapper-snapshot-poc)
                 ;;
               *)
                 echo "unknown Go component: $COMPONENT" >&2
@@ -400,6 +407,24 @@ jobs:
           FROM gcr.io/distroless/static-debian12:nonroot
           ARG TARGETARCH
           COPY .build/aks/image-committer-azure/linux_${TARGETARCH}/image-committer /usr/local/bin/image-committer
+          ENTRYPOINT ["/usr/local/bin/image-committer"]
+          EOF
+              ;;
+            devmapper-snapshot-poc)
+              DOCKERFILE="${RUNNER_TEMP}/Dockerfile.devmapper-snapshot-poc-aks"
+              CONTEXT="."
+              cat > "$DOCKERFILE" <<'EOF'
+          FROM ghcr.io/oras-project/oras:v1.3.0 AS oras
+          FROM debian:bookworm-slim
+          ARG TARGETARCH
+          RUN apt-get update \
+              && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl dmsetup jq python3 thin-provisioning-tools \
+              && rm -rf /var/lib/apt/lists/*
+          COPY --from=oras /bin/oras /usr/local/bin/oras
+          COPY .build/aks/devmapper-snapshot-poc/linux_${TARGETARCH}/image-committer /usr/local/bin/image-committer
+          COPY kubernetes/cmd/devmapper-snapshot-poc/block_artifact.py /usr/local/bin/block-artifact
+          COPY kubernetes/cmd/devmapper-snapshot-poc/acr-oras-login.sh /usr/local/bin/acr-oras-login
+          RUN chmod 0755 /usr/local/bin/block-artifact /usr/local/bin/acr-oras-login
           ENTRYPOINT ["/usr/local/bin/image-committer"]
           EOF
               ;;
