@@ -30,5 +30,6 @@ RUN apt-get update \
 COPY --from=oras /bin/oras /usr/local/bin/oras
 COPY --from=builder /out/image-committer /usr/local/bin/image-committer
 COPY cmd/devmapper-snapshot-poc/block_artifact.py /usr/local/bin/block-artifact
-RUN chmod 0755 /usr/local/bin/block-artifact
+COPY cmd/devmapper-snapshot-poc/acr-oras-login.sh /usr/local/bin/acr-oras-login
+RUN chmod 0755 /usr/local/bin/block-artifact /usr/local/bin/acr-oras-login
 ENTRYPOINT ["/usr/local/bin/image-committer"]

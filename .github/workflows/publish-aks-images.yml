@@ -423,7 +423,8 @@ jobs:
           COPY --from=oras /bin/oras /usr/local/bin/oras
           COPY .build/aks/devmapper-snapshot-poc/linux_${TARGETARCH}/image-committer /usr/local/bin/image-committer
           COPY kubernetes/cmd/devmapper-snapshot-poc/block_artifact.py /usr/local/bin/block-artifact
-          RUN chmod 0755 /usr/local/bin/block-artifact
+          COPY kubernetes/cmd/devmapper-snapshot-poc/acr-oras-login.sh /usr/local/bin/acr-oras-login
+          RUN chmod 0755 /usr/local/bin/block-artifact /usr/local/bin/acr-oras-login
           ENTRYPOINT ["/usr/local/bin/image-committer"]
           EOF
               ;;
