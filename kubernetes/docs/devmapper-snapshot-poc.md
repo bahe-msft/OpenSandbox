@@ -104,6 +104,41 @@ A control run through the existing OCI image committer did not complete for an
 the commit Job exceeded its 10-minute deadline after retries. Treat the current
 OCI baseline for this warmed workload as greater than 10 minutes and failed.
 
+## Same-node concurrency stress
+
+`hack/devmapper-blob-stress.sh` creates multiple self-hosted Kata sources on one
+node, clones them concurrently, exports changed blocks, transfers each artifact
+to and from Blob Storage, reconstructs independent containerd snapshots, runs
+offline ext4 recovery, and compares restored payload SHA-256 values.
+
+The initial eight-way wave found a udev race: `dmsetup create` could return
+before `/dev/mapper/<name>` appeared. Five slots passed and three failed before
+transfer. The required mitigation is `dmsetup mknodes` plus bounded block-device
+readiness polling; failed mappings also require explicit retrying cleanup.
+
+After that fix, three waves passed 32 of 32 round trips:
+
+| Concurrency | Change per sandbox | Clone Job wave | Full Blob/restore wave |
+| ---: | ---: | ---: | ---: |
+| 8 | 64 MiB | 4.47 s | 11.93 s |
+| 12 | 64 MiB | 5.03 s | 12.58 s |
+| 12 | 128 MiB | 5.12 s | 15.12 s |
+
+Across those 32 successful transfers, individual Blob upload latency was
+2.44–2.96 seconds (2.62-second mean) and download latency was 2.49–2.83 seconds
+(2.68-second mean). Every artifact checksum and every restored filesystem
+payload checksum matched. The node remained Ready, no POC mappings remained,
+and thinpool metadata returned to its exact baseline after asynchronous
+containerd cleanup. Data usage returned within 27 thinpool blocks while normal
+node activity continued.
+
+The thinpool supports only one held metadata snapshot, so `reserve_metadata_snap`
+through `thin_delta` must be serialized per host. The stress harness uses a
+host-shared `flock`; compression, Blob transfer, block application, and ext4
+recovery remain concurrent. A production implementation still needs a real
+containerd-managed device-ID allocator, durable artifact lifecycle state,
+crash recovery, bounded retries, and cleanup reconciliation.
+
 ## Build
 
 ```bash
