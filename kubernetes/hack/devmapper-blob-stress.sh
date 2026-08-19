@@ -97,7 +97,7 @@ YAML
 done
 clone_start=$(date +%s%3N);kubectl -n opensandbox wait --for=condition=complete job -l stress-run=$run --timeout=600s >/dev/null;echo clone_wave_ms=$(($(date +%s%3N)-clone_start))
 # Resolve clone/base IDs and prepare independent restore snapshots.
-for i in $(seq 1 $count);do pod=dm-src-$run-$i;logs=$(kubectl -n opensandbox logs job/dm-clone-$run-$i);clone=$(sed -nE 's/.*cloneID=([0-9]+).*/\1/p'<<<"$logs"|head -1);srcdev=$(sed -nE 's/.*source=([^ ]+) sourceID=.*/\1/p'<<<"$logs"|head -1);rec=$(host strings /var/lib/containerd/io.containerd.snapshotter.v1.devmapper/containerd-thinpool.db|grep -o "${srcdev}{[^}]*}"|tail -1);pname=$(sed -nE 's/.*"parent_name":"([^"]+)".*/\1/p'<<<"$rec");prec=$(host strings /var/lib/containerd/io.containerd.snapshotter.v1.devmapper/containerd-thinpool.db|grep -o "${pname}{[^}]*}"|tail -1);pid=$(sed -nE 's/.*"device_id":([0-9]+).*/\1/p'<<<"$prec");cid=$(kubectl -n opensandbox get pod $pod -o jsonpath='{.status.containerStatuses[0].containerID}'|sed 's#containerd://##');info=$(host ctr -n k8s.io containers info $cid);skey=$(jq -r .SnapshotKey<<<"$info");parent=$(host ctr -n k8s.io snapshots --snapshotter devmapper info $skey|jq -r .Parent);stable=$(host dmsetup table $srcdev);sectors=$(awk '{print $2}'<<<"$stable");restore=dm-restore-$run-$i;host ctr -n k8s.io snapshots --snapshotter devmapper prepare $restore $parent >/dev/null;rmount=$(host ctr -n k8s.io snapshots --snapshotter devmapper mounts /tmp/r $restore);rdev=$(grep -o 'containerd-thinpool-snap-[0-9]\+'<<<"$rmount"|head -1);expected=$(kubectl -n opensandbox exec $pod -- cat /root/stress-payload.sha256|tr -d '\r\n');printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' $i $pod $clone $restore $pid $sectors $rdev $expected >>$state;done
+for i in $(seq 1 $count);do pod=dm-src-$run-$i;logs=$(kubectl -n opensandbox logs job/dm-clone-$run-$i);echo "CLONE_METRICS slot=$i $(grep 'phase='<<<\"$logs\"|tr '\n' ' ')";clone=$(sed -nE 's/.*cloneID=([0-9]+).*/\1/p'<<<"$logs"|head -1);srcdev=$(sed -nE 's/.*source=([^ ]+) sourceID=.*/\1/p'<<<"$logs"|head -1);rec=$(host strings /var/lib/containerd/io.containerd.snapshotter.v1.devmapper/containerd-thinpool.db|grep -o "${srcdev}{[^}]*}"|tail -1);pname=$(sed -nE 's/.*"parent_name":"([^"]+)".*/\1/p'<<<"$rec");prec=$(host strings /var/lib/containerd/io.containerd.snapshotter.v1.devmapper/containerd-thinpool.db|grep -o "${pname}{[^}]*}"|tail -1);pid=$(sed -nE 's/.*"device_id":([0-9]+).*/\1/p'<<<"$prec");cid=$(kubectl -n opensandbox get pod $pod -o jsonpath='{.status.containerStatuses[0].containerID}'|sed 's#containerd://##');info=$(host ctr -n k8s.io containers info $cid);skey=$(jq -r .SnapshotKey<<<"$info");parent=$(host ctr -n k8s.io snapshots --snapshotter devmapper info $skey|jq -r .Parent);stable=$(host dmsetup table $srcdev);sectors=$(awk '{print $2}'<<<"$stable");restore=dm-restore-$run-$i;host ctr -n k8s.io snapshots --snapshotter devmapper prepare $restore $parent >/dev/null;rmount=$(host ctr -n k8s.io snapshots --snapshotter devmapper mounts /tmp/r $restore);rdev=$(grep -o 'containerd-thinpool-snap-[0-9]\+'<<<"$rmount"|head -1);expected=$(kubectl -n opensandbox exec $pod -- cat /root/stress-payload.sha256|tr -d '\r\n');printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' $i $pod $clone $restore $pid $sectors $rdev $expected >>$state;done
 # Export/upload/download/apply jobs concurrently.
 while IFS=$'\t' read -r i pod clone restore pid sectors rdev expected;do job=dm-blob-$run-$i;url="${DEVMAPPER_STRESS_BLOB_BASE_URL%/}/$run/$i/artifact.gz";cat <<YAML | kubectl apply -f - >/dev/null
 apiVersion: batch/v1
@@ -123,19 +123,20 @@ spec:
        exec 9>/host-tmp/dm-stress-metadata.lock; flock -x 9
        dmsetup message containerd-thinpool 0 reserve_metadata_snap
        trap 'dmsetup message containerd-thinpool 0 release_metadata_snap >/dev/null 2>&1 || true' EXIT
-       thin_delta --metadata-snap --snap1 $pid --snap2 $clone \$meta > \$work/delta.xml
+       t=\$(date +%s%N); thin_delta --metadata-snap --snap1 $pid --snap2 $clone \$meta > \$work/delta.xml; delta_ms=\$(( (\$(date +%s%N)-t)/1000000 ))
        dmsetup message containerd-thinpool 0 release_metadata_snap; trap - EXIT; flock -u 9
        map=poc-stress-$clone; dmsetup create \$map --readonly --table "0 $sectors thin /dev/mapper/containerd-thinpool $clone"; trap 'dmsetup remove --retry poc-stress-$clone >/dev/null 2>&1 || true' EXIT
        ready=false; for attempt in \$(seq 1 100); do dmsetup mknodes \$map >/dev/null 2>&1 || true; if [ -b /dev/mapper/\$map ]; then ready=true; break; fi; sleep 0.05; done; \$ready
-       block-artifact pack --delta \$work/delta.xml --source /dev/mapper/\$map --output \$work/artifact.gz --base stress --virtual-sectors $sectors
+       t=\$(date +%s%N); pack_result=\$(block-artifact pack --delta \$work/delta.xml --source /dev/mapper/\$map --output \$work/artifact.gz --base stress --virtual-sectors $sectors); pack_ms=\$(( (\$(date +%s%N)-t)/1000000 )); echo \$pack_result
        dmsetup remove \$map; trap - EXIT
-       before=\$(sha256sum \$work/artifact.gz|awk '{print \$1}'); az=/host-tmp/dm-stress-$run/azcopy
+       artifact_bytes=\$(stat -c %s \$work/artifact.gz); before=\$(sha256sum \$work/artifact.gz|awk '{print \$1}'); az=/host-tmp/dm-stress-$run/azcopy
        t=\$(date +%s%N); \$az copy \$work/artifact.gz '$url' --overwrite=true --check-length=true --output-level=essential; upload=\$(( (\$(date +%s%N)-t)/1000000 ))
        rm \$work/artifact.gz; t=\$(date +%s%N); \$az copy '$url' \$work/pulled/artifact.gz --overwrite=true --check-length=true --output-level=essential; download=\$(( (\$(date +%s%N)-t)/1000000 ))
        after=\$(sha256sum \$work/pulled/artifact.gz|awk '{print \$1}'); [ \$before = \$after ]
-       block-artifact apply --artifact \$work/pulled/artifact.gz --target /dev/mapper/$rdev
-       set +e; e2fsck -fy /dev/mapper/$rdev >/dev/null; rc=\$?; set -e; [ \$rc -lt 4 ]
-       echo slot=$i upload_ms=\$upload download_ms=\$download artifact_sha=\$after
+       t=\$(date +%s%N); gzip -dc \$work/pulled/artifact.gz >/dev/null; decompress_ms=\$(( (\$(date +%s%N)-t)/1000000 ))
+       t=\$(date +%s%N); apply_result=\$(block-artifact apply --artifact \$work/pulled/artifact.gz --target /dev/mapper/$rdev); apply_ms=\$(( (\$(date +%s%N)-t)/1000000 )); echo \$apply_result
+       set +e; t=\$(date +%s%N); e2fsck -fy /dev/mapper/$rdev >/dev/null; rc=\$?; fsck_ms=\$(( (\$(date +%s%N)-t)/1000000 )); set -e; [ \$rc -lt 4 ]
+       echo METRICS slot=$i artifact_bytes=\$artifact_bytes thin_delta_ms=\$delta_ms pack_ms=\$pack_ms upload_ms=\$upload download_ms=\$download decompress_ms=\$decompress_ms apply_ms=\$apply_ms fsck_ms=\$fsck_ms artifact_sha=\$after
      env: [{name: AZCOPY_AUTO_LOGIN_TYPE, value: WORKLOAD}]
      securityContext: {privileged: true, runAsUser: 0}
      volumeMounts: [{name: dev, mountPath: /dev},{name: tmp, mountPath: /host-tmp}]
@@ -148,5 +149,5 @@ YAML
 done <$state
 blob_start=$(date +%s%3N);if ! kubectl -n aks-sandbox-system wait --for=condition=complete job -l stress-run=$run --timeout=1800s;then echo FAILED_JOBS;for j in $(kubectl -n aks-sandbox-system get jobs -l stress-run=$run -o name);do kubectl -n aks-sandbox-system logs $j --tail=30||true;done;exit 1;fi;echo blob_wave_ms=$(($(date +%s%3N)-blob_start))
 # Mount every reconstruction and verify payload checksum.
-fail=0;while IFS=$'\t' read -r i pod clone restore pid sectors rdev expected;do m=/tmp/dm-verify-$run-$i;host mkdir -p $m;host mount -o ro,noload /dev/mapper/$rdev $m;actual=$(host sha256sum $m/root/stress-payload|awk '{print $1}');host umount $m;host rmdir $m;if [[ $actual != $expected ]];then echo slot=$i CHECKSUM_MISMATCH expected=$expected actual=$actual;fail=1;else echo slot=$i checksum=ok $(kubectl -n aks-sandbox-system logs job/dm-blob-$run-$i|tail -1);fi;done <$state
+fail=0;while IFS=$'\t' read -r i pod clone restore pid sectors rdev expected;do m=/tmp/dm-verify-$run-$i;host mkdir -p $m;host mount -o ro,noload /dev/mapper/$rdev $m;actual=$(host sha256sum $m/root/stress-payload|awk '{print $1}');host umount $m;host rmdir $m;if [[ $actual != $expected ]];then echo slot=$i CHECKSUM_MISMATCH expected=$expected actual=$actual;fail=1;else echo slot=$i checksum=ok $(kubectl -n aks-sandbox-system logs job/dm-blob-$run-$i|grep '^METRICS ');fi;done <$state
 [[ $fail == 0 ]];after=$(host dmsetup status containerd-thinpool);echo pool_after="$after";echo WAVE_VERIFIED run=$run count=$count

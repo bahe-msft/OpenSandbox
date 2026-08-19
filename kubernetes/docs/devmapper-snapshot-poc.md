@@ -131,6 +131,31 @@ round trips passed. Its timings were effectively unchanged from the same wave
 on `python:3.12-slim`, confirming that dm-thin clone and changed-block export
 cost tracks the writable delta rather than immutable base-image size.
 
+An instrumented repeat of the 12-way, 128 MiB waves produced these per-artifact
+means:
+
+| Stage | Python base | AKS-RP base |
+| --- | ---: | ---: |
+| Guest `sync` | 32.56 ms | 38.53 ms |
+| Task pause | 3.64 ms | 3.68 ms |
+| Device suspend + clone + resume | 6.62 ms | 12.04 ms |
+| Kernel `create_snap` within that section | 1.84 ms | 2.05 ms |
+| Task resume | 6.88 ms | 7.67 ms |
+| `thin_delta` | 89.08 ms | 100.17 ms |
+| Read changed blocks + gzip pack | 2.91 s | 2.94 s |
+| Blob upload | 2.68 s | 2.67 s |
+| Blob download | 2.75 s | 2.71 s |
+| Pure gzip decompression diagnostic | 474 ms | 478 ms |
+| Decompress + write restored blocks | 564 ms | 574 ms |
+| Offline `e2fsck` | 428 ms | 658 ms |
+
+The pure decompression row is diagnostic and is already included in the block
+application row; it must not be added again to the restore critical path. The
+mean snapshot-to-durable-Blob pipeline was 5.73 seconds for Python and 5.78
+seconds for AKS-RP. Mean Blob-to-restored-filesystem time was 3.74 and 3.94
+seconds respectively. Kubernetes Job wave wall time remained about 5.3 seconds
+for cloning and 15.5 seconds for the complete concurrent export/restore wave.
+
 Across the first 32 successful transfers, individual Blob upload latency was
 2.44–2.96 seconds (2.62-second mean) and download latency was 2.49–2.83 seconds
 (2.68-second mean). In the 12-way AKS-RP-base wave, upload averaged 2.64
