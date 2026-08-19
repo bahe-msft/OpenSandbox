@@ -52,6 +52,38 @@ DEVMAPPER_POC_ACKNOWLEDGE_UNTRACKED_DEVICE=true \
   image-committer cleanup containerd-thinpool <device-id> [...]
 ```
 
+## Changed-block artifact experiment
+
+The image also includes two experimental helpers:
+
+- `block-artifact` packs `thin_delta` XML plus data read from the immutable
+  clone into `opensandbox.devmapper.block.v1`, and applies that payload to a
+  fresh clone of the recorded base snapshot;
+- `acr-oras-login` exchanges AKS Workload Identity for an ACR refresh token and
+  authenticates ORAS without persisting the federated or registry token.
+
+The payload can be stored as an OCI artifact with these media types:
+
+```text
+artifact type: application/vnd.opensandbox.devmapper.snapshot.v1
+block layer:   application/vnd.opensandbox.devmapper.blocks.v1+gzip
+```
+
+This is an OCI Distribution artifact, not an OCI container image. Restore still
+requires a matching base snapshot and an explicit block-application step before
+containerd can use the reconstructed snapshot.
+
+A test-cluster round trip using `python:3.12-slim` produced a 1.75 MiB raw delta
+compressed to about 111 KiB. ACR push, pull, block application, and a read-only
+mount check all succeeded; a marker written before cloning was present in the
+reconstructed filesystem. The snapshot-committer identity has `AcrPush` but not
+delete permission, so test artifact deletion requires separate retention or
+cleanup authorization.
+
+The warmed `aks-rp-md` rootfs had 187,217 changed 64 KiB blocks relative to its
+image parent, approximately 11.4 GiB before compression. Do not run that export
+without reviewing temporary disk, ACR storage, and retention impact.
+
 ## Build
 
 ```bash
