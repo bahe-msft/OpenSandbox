@@ -21,9 +21,14 @@ COPY cmd/devmapper-snapshot-poc/ cmd/devmapper-snapshot-poc/
 COPY pkg/imagecommitter/ pkg/imagecommitter/
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/image-committer ./cmd/devmapper-snapshot-poc
 
+FROM ghcr.io/oras-project/oras:v1.3.0 AS oras
+
 FROM debian:bookworm-slim
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates dmsetup thin-provisioning-tools \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl dmsetup jq python3 thin-provisioning-tools \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=oras /bin/oras /usr/local/bin/oras
 COPY --from=builder /out/image-committer /usr/local/bin/image-committer
+COPY cmd/devmapper-snapshot-poc/block_artifact.py /usr/local/bin/block-artifact
+RUN chmod 0755 /usr/local/bin/block-artifact
 ENTRYPOINT ["/usr/local/bin/image-committer"]
