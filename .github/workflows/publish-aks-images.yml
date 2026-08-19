@@ -417,7 +417,7 @@ jobs:
           FROM debian:bookworm-slim
           ARG TARGETARCH
           RUN apt-get update \
-              && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates dmsetup \
+              && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates dmsetup thin-provisioning-tools \
               && rm -rf /var/lib/apt/lists/*
           COPY .build/aks/devmapper-snapshot-poc/linux_${TARGETARCH}/image-committer /usr/local/bin/image-committer
           ENTRYPOINT ["/usr/local/bin/image-committer"]

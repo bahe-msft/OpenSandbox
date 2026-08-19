@@ -23,7 +23,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/image-committer ./cmd/de
 
 FROM debian:bookworm-slim
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates dmsetup \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates dmsetup thin-provisioning-tools \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /out/image-committer /usr/local/bin/image-committer
 ENTRYPOINT ["/usr/local/bin/image-committer"]
