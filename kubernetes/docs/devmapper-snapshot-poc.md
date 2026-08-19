@@ -81,8 +81,17 @@ delete permission, so test artifact deletion requires separate retention or
 cleanup authorization.
 
 The warmed `aks-rp-md` rootfs had 187,217 changed 64 KiB blocks relative to its
-image parent, approximately 11.4 GiB before compression. Do not run that export
-without reviewing temporary disk, ACR storage, and retention impact.
+image parent, approximately 11.4 GiB before compression. A full test artifact
+was 8.87 GB compressed. Packing took 206 seconds, ACR push 210 seconds, pull 109
+seconds, and block application 55 seconds.
+
+A snapshot taken while the guest ext4 filesystem is mounted is crash-consistent.
+Before registering the reconstructed snapshot as a local containerd image, the
+POC must run offline `e2fsck -fy` against the restored device. Without journal
+recovery, a later writable guest mount can lose changes that remain visible to a
+read-only `noload` host mount. With offline recovery, a `self-kata-clh` Pod booted
+from the reconstructed chain, retained the test marker, mounted `/` from
+`/dev/vdc`, and exposed the restored 9.1 GB AKS-RP repository.
 
 ## Build
 
