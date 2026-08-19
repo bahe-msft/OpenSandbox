@@ -21,10 +21,11 @@ run=${1:-$(date +%s)}; count=${2:-8}; size_mib=${3:-64}
 node=${DEVMAPPER_STRESS_NODE:-aks-nvkata-59440688-vms5}
 image=${DEVMAPPER_STRESS_IMAGE:-ghcr.io/bahe-msft/opensandbox/devmapper-snapshot-poc:poc-devmapper-c700451}
 hp=${DEVMAPPER_STRESS_HOST_POD:-self-hosted-kata-devmapper-installer-bkwp2}
+source_image=${DEVMAPPER_STRESS_SOURCE_IMAGE:-python:3.12-slim}
 state=/tmp/dm-stress-$run.tsv; : >$state
 host(){ kubectl -n aks-sandbox-system exec "$hp" -- nsenter -t 1 -m -u -i -n -p -- "$@"; }
 cleanup(){ rc=$?;set +e;while IFS=$'\t' read -r slot pod clone restore _;do [[ -n "$restore" ]]&&host ctr -n k8s.io snapshots --snapshotter devmapper rm "$restore" >/dev/null 2>&1;[[ -n "$clone" ]]&&host dmsetup message containerd-thinpool 0 "delete $clone" >/dev/null 2>&1;done <$state;kubectl -n opensandbox delete pod,job -l stress-run=$run --wait=false >/dev/null 2>&1;kubectl -n aks-sandbox-system delete job -l stress-run=$run --wait=false >/dev/null 2>&1;host rm -rf /tmp/dm-stress-$run >/dev/null 2>&1;exit $rc;};trap cleanup EXIT
-before=$(host dmsetup status containerd-thinpool);echo run=$run concurrency=$count payload_mib=$size_mib;echo pool_before="$before"
+before=$(host dmsetup status containerd-thinpool);echo run=$run concurrency=$count payload_mib=$size_mib source_image=$source_image;echo pool_before="$before"
 # Download AzCopy once into the host tmpfs.
 kubectl -n aks-sandbox-system delete pod azcopy-setup-$run --ignore-not-found >/dev/null 2>&1||true
 cat <<YAML | kubectl apply -f -
@@ -57,7 +58,7 @@ spec:
  restartPolicy: Never
  containers:
  - name: sandbox
-   image: python:3.12-slim
+   image: $source_image
    imagePullPolicy: IfNotPresent
    command: ["sh","-c","dd if=/dev/urandom of=/root/stress-payload bs=1M count=$size_mib status=none; sha256sum /root/stress-payload | cut -d' ' -f1 > /root/stress-payload.sha256; touch /tmp/ready; sleep 1800"]
    readinessProbe: {exec: {command: ["sh","-c","test -f /tmp/ready"]}, periodSeconds: 1, failureThreshold: 300}

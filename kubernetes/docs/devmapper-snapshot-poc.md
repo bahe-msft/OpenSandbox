@@ -116,21 +116,30 @@ before `/dev/mapper/<name>` appeared. Five slots passed and three failed before
 transfer. The required mitigation is `dmsetup mknodes` plus bounded block-device
 readiness polling; failed mappings also require explicit retrying cleanup.
 
-After that fix, three waves passed 32 of 32 round trips:
+After that fix, four waves passed 44 of 44 round trips:
 
 | Concurrency | Change per sandbox | Clone Job wave | Full Blob/restore wave |
 | ---: | ---: | ---: | ---: |
 | 8 | 64 MiB | 4.47 s | 11.93 s |
 | 12 | 64 MiB | 5.03 s | 12.58 s |
 | 12 | 128 MiB | 5.12 s | 15.12 s |
+| 12 | 128 MiB, 1.3 GiB AKS-RP base | 5.29 s | 14.79 s |
 
-Across those 32 successful transfers, individual Blob upload latency was
+The final row used the 1.3 GiB compressed AKS-RP image, whose restored repository
+occupies about 9.1 GB, without warm-pool initialization. All 12 large-base
+round trips passed. Its timings were effectively unchanged from the same wave
+on `python:3.12-slim`, confirming that dm-thin clone and changed-block export
+cost tracks the writable delta rather than immutable base-image size.
+
+Across the first 32 successful transfers, individual Blob upload latency was
 2.44–2.96 seconds (2.62-second mean) and download latency was 2.49–2.83 seconds
-(2.68-second mean). Every artifact checksum and every restored filesystem
-payload checksum matched. The node remained Ready, no POC mappings remained,
-and thinpool metadata returned to its exact baseline after asynchronous
-containerd cleanup. Data usage returned within 27 thinpool blocks while normal
-node activity continued.
+(2.68-second mean). In the 12-way AKS-RP-base wave, upload averaged 2.64
+seconds and download averaged 2.71 seconds. Across all post-fix waves, every
+artifact checksum and every restored filesystem payload checksum matched. The
+node remained Ready and no POC mappings remained. After asynchronous containerd
+cleanup, thinpool metadata returned to its exact baseline in the first waves and
+within one block in the large-base wave. Data usage returned within 27 thinpool
+blocks while normal node activity continued.
 
 The thinpool supports only one held metadata snapshot, so `reserve_metadata_snap`
 through `thin_delta` must be serialized per host. The stress harness uses a
