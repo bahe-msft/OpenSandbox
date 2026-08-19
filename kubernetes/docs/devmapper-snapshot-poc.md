@@ -93,6 +93,17 @@ read-only `noload` host mount. With offline recovery, a `self-kata-clh` Pod boot
 from the reconstructed chain, retained the test marker, mounted `/` from
 `/dev/vdc`, and exposed the restored 9.1 GB AKS-RP repository.
 
+The same retained 8.87 GB artifact was copied to and from the shared Standard
+LRS Blob account with AzCopy and Workload Identity. Upload took 7.21 seconds
+(9.84 Gbit/s effective) and download took 9.56 seconds (7.43 Gbit/s effective);
+the downloaded SHA-256 matched the ACR artifact. In comparison, ORAS push to
+ACR took 210 seconds and pull took 109 seconds for this artifact.
+
+A control run through the existing OCI image committer did not complete for an
+`aks-rp-md` sandbox. The egress image committed, but the sandbox image did not;
+the commit Job exceeded its 10-minute deadline after retries. Treat the current
+OCI baseline for this warmed workload as greater than 10 minutes and failed.
+
 ## Build
 
 ```bash
