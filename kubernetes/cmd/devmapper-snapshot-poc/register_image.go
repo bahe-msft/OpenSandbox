@@ -27,6 +27,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/platforms"
+	"github.com/containerd/errdefs"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/identity"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -100,8 +101,15 @@ func registerLocalImage(ctx context.Context, args []string) error {
 	}
 
 	chainID := identity.ChainID(config.RootFS.DiffIDs).String()
-	if err := client.SnapshotService("devmapper").Commit(ctx, chainID, activeKey); err != nil {
-		return fmt.Errorf("commit restored snapshot as %s: %w", chainID, err)
+	if _, err := client.SnapshotService("devmapper").Stat(ctx, chainID); err != nil {
+		if !errdefs.IsNotFound(err) {
+			return fmt.Errorf("inspect restored snapshot %s: %w", chainID, err)
+		}
+		if err := client.SnapshotService("devmapper").Commit(ctx, chainID, activeKey); err != nil {
+			return fmt.Errorf("commit restored snapshot as %s: %w", chainID, err)
+		}
+	} else {
+		fmt.Printf("reusing existing restored chainID=%s\n", chainID)
 	}
 	imageRecord := images.Image{Name: targetReference, Target: manifestDescriptor, CreatedAt: now, UpdatedAt: now}
 	if _, err := client.ImageService().Create(ctx, imageRecord); err != nil {
