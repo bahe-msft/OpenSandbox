@@ -82,6 +82,9 @@ func run(ctx context.Context, args []string) error {
 	if len(args) > 0 && args[0] == "cleanup" {
 		return cleanup(args[1:])
 	}
+	if len(args) > 0 && args[0] == "register-local-image" {
+		return registerLocalImage(ctx, args[1:])
+	}
 	if len(args) < 3 {
 		return errors.New("usage: devmapper-snapshot-poc <pod> <namespace> <container>:<ignored-target> [...]")
 	}
