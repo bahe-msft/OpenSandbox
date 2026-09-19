@@ -1,0 +1,186 @@
+# Devmapper block snapshot POC
+
+> [!CAUTION]
+> This experiment creates dm-thin devices outside containerd's metadata. It has
+> no restore implementation, durable allocator, garbage collector, or node-loss
+> handling. Run it only on a dedicated replaceable test node.
+
+`cmd/devmapper-snapshot-poc` replaces OCI filesystem diff and registry push with
+an immutable local dm-thin clone. It exists only to measure the potential pause
+latency improvement before implementing a snapshotter-managed artifact format.
+
+The command accepts the image-committer argument shape, but ignores target image
+references and returns `devmapper-poc://` artifact references. OpenSandbox cannot
+resume those references.
+
+## Required access
+
+The POC container requires:
+
+- the host containerd socket at `/run/containerd/containerd.sock`;
+- the host containerd FIFO directory at `/run/containerd/fifo`;
+- the host `/dev/mapper` directory;
+- UID 0 and a privileged security context; and
+- `DEVMAPPER_POC_ACKNOWLEDGE_UNTRACKED_DEVICE=true`.
+
+The normal image-committer Job intentionally does not provide dmsetup access.
+Run this image in a manually reviewed privileged Job pinned to the source Pod's
+node. Do not change the default image-committer security context for this POC.
+
+## Operation
+
+For each selected source container, the POC:
+
+1. resolves its containerd writable snapshot;
+2. runs `sync` in the container;
+3. pauses the container task;
+4. resolves the active snapshot's `/dev/mapper` device and thin ID;
+5. allocates an ID from the reserved POC range;
+6. suspends the source device, issues `create_snap`, and resumes the source;
+7. resumes the container task; and
+8. reports per-stage timings and a `devmapper-poc://` reference.
+
+The default untracked ID range is `[16000000,16500000)`. Override it with
+`DEVMAPPER_POC_DEVICE_ID_MIN` and `DEVMAPPER_POC_DEVICE_ID_MAX`. The range must
+not overlap IDs managed by containerd.
+
+Successful artifacts intentionally remain in the thinpool. Delete each reported
+ID after collecting results:
+
+```bash
+DEVMAPPER_POC_ACKNOWLEDGE_UNTRACKED_DEVICE=true \
+  image-committer cleanup containerd-thinpool <device-id> [...]
+```
+
+## Changed-block artifact experiment
+
+The image also includes two experimental helpers:
+
+- `block-artifact` packs `thin_delta` XML plus data read from the immutable
+  clone into `opensandbox.devmapper.block.v1`, and applies that payload to a
+  fresh clone of the recorded base snapshot;
+- `acr-oras-login` exchanges AKS Workload Identity for an ACR refresh token and
+  authenticates ORAS without persisting the federated or registry token.
+
+The payload can be stored as an OCI artifact with these media types:
+
+```text
+artifact type: application/vnd.opensandbox.devmapper.snapshot.v1
+block layer:   application/vnd.opensandbox.devmapper.blocks.v1+gzip
+```
+
+This is an OCI Distribution artifact, not an OCI container image. Restore still
+requires a matching base snapshot and an explicit block-application step before
+containerd can use the reconstructed snapshot.
+
+A test-cluster round trip using `python:3.12-slim` produced a 1.75 MiB raw delta
+compressed to about 111 KiB. ACR push, pull, block application, and a read-only
+mount check all succeeded; a marker written before cloning was present in the
+reconstructed filesystem. The snapshot-committer identity has `AcrPush` but not
+delete permission, so test artifact deletion requires separate retention or
+cleanup authorization.
+
+The warmed `aks-rp-md` rootfs had 187,217 changed 64 KiB blocks relative to its
+image parent, approximately 11.4 GiB before compression. A full test artifact
+was 8.87 GB compressed. Packing took 206 seconds, ACR push 210 seconds, pull 109
+seconds, and block application 55 seconds.
+
+A snapshot taken while the guest ext4 filesystem is mounted is crash-consistent.
+Before registering the reconstructed snapshot as a local containerd image, the
+POC must run offline `e2fsck -fy` against the restored device. Without journal
+recovery, a later writable guest mount can lose changes that remain visible to a
+read-only `noload` host mount. With offline recovery, a `self-kata-clh` Pod booted
+from the reconstructed chain, retained the test marker, mounted `/` from
+`/dev/vdc`, and exposed the restored 9.1 GB AKS-RP repository.
+
+The same retained 8.87 GB artifact was copied to and from the shared Standard
+LRS Blob account with AzCopy and Workload Identity. Upload took 7.21 seconds
+(9.84 Gbit/s effective) and download took 9.56 seconds (7.43 Gbit/s effective);
+the downloaded SHA-256 matched the ACR artifact. In comparison, ORAS push to
+ACR took 210 seconds and pull took 109 seconds for this artifact.
+
+A control run through the existing OCI image committer did not complete for an
+`aks-rp-md` sandbox. The egress image committed, but the sandbox image did not;
+the commit Job exceeded its 10-minute deadline after retries. Treat the current
+OCI baseline for this warmed workload as greater than 10 minutes and failed.
+
+## Same-node concurrency stress
+
+`hack/devmapper-blob-stress.sh` creates multiple self-hosted Kata sources on one
+node, clones them concurrently, exports changed blocks, transfers each artifact
+to and from Blob Storage, reconstructs independent containerd snapshots, runs
+offline ext4 recovery, and compares restored payload SHA-256 values.
+
+The initial eight-way wave found a udev race: `dmsetup create` could return
+before `/dev/mapper/<name>` appeared. Five slots passed and three failed before
+transfer. The required mitigation is `dmsetup mknodes` plus bounded block-device
+readiness polling; failed mappings also require explicit retrying cleanup.
+
+After that fix, four waves passed 44 of 44 round trips:
+
+| Concurrency | Change per sandbox | Clone Job wave | Full Blob/restore wave |
+| ---: | ---: | ---: | ---: |
+| 8 | 64 MiB | 4.47 s | 11.93 s |
+| 12 | 64 MiB | 5.03 s | 12.58 s |
+| 12 | 128 MiB | 5.12 s | 15.12 s |
+| 12 | 128 MiB, 1.3 GiB AKS-RP base | 5.29 s | 14.79 s |
+
+The final row used the 1.3 GiB compressed AKS-RP image, whose restored repository
+occupies about 9.1 GB, without warm-pool initialization. All 12 large-base
+round trips passed. Its timings were effectively unchanged from the same wave
+on `python:3.12-slim`, confirming that dm-thin clone and changed-block export
+cost tracks the writable delta rather than immutable base-image size.
+
+An instrumented repeat of the 12-way, 128 MiB waves produced these per-artifact
+means:
+
+| Stage | Python base | AKS-RP base |
+| --- | ---: | ---: |
+| Guest `sync` | 32.56 ms | 38.53 ms |
+| Task pause | 3.64 ms | 3.68 ms |
+| Device suspend + clone + resume | 6.62 ms | 12.04 ms |
+| Kernel `create_snap` within that section | 1.84 ms | 2.05 ms |
+| Task resume | 6.88 ms | 7.67 ms |
+| `thin_delta` | 89.08 ms | 100.17 ms |
+| Read changed blocks + gzip pack | 2.91 s | 2.94 s |
+| Blob upload | 2.68 s | 2.67 s |
+| Blob download | 2.75 s | 2.71 s |
+| Pure gzip decompression diagnostic | 474 ms | 478 ms |
+| Decompress + write restored blocks | 564 ms | 574 ms |
+| Offline `e2fsck` | 428 ms | 658 ms |
+
+The pure decompression row is diagnostic and is already included in the block
+application row; it must not be added again to the restore critical path. The
+mean snapshot-to-durable-Blob pipeline was 5.73 seconds for Python and 5.78
+seconds for AKS-RP. Mean Blob-to-restored-filesystem time was 3.74 and 3.94
+seconds respectively. Kubernetes Job wave wall time remained about 5.3 seconds
+for cloning and 15.5 seconds for the complete concurrent export/restore wave.
+
+Across the first 32 successful transfers, individual Blob upload latency was
+2.44–2.96 seconds (2.62-second mean) and download latency was 2.49–2.83 seconds
+(2.68-second mean). In the 12-way AKS-RP-base wave, upload averaged 2.64
+seconds and download averaged 2.71 seconds. Across all post-fix waves, every
+artifact checksum and every restored filesystem payload checksum matched. The
+node remained Ready and no POC mappings remained. After asynchronous containerd
+cleanup, thinpool metadata returned to its exact baseline in the first waves and
+within one block in the large-base wave. Data usage returned within 27 thinpool
+blocks while normal node activity continued.
+
+The thinpool supports only one held metadata snapshot, so `reserve_metadata_snap`
+through `thin_delta` must be serialized per host. The stress harness uses a
+host-shared `flock`; compression, Blob transfer, block application, and ext4
+recovery remain concurrent. A production implementation still needs a real
+containerd-managed device-ID allocator, durable artifact lifecycle state,
+crash recovery, bounded retries, and cleanup reconciliation.
+
+## Build
+
+```bash
+cd kubernetes
+docker build -f Dockerfile.devmapper-snapshot-poc \
+  -t devmapper-snapshot-poc:dev .
+```
+
+The `Publish AKS Images` workflow also exposes the explicitly selected
+`devmapper-snapshot-poc` component. It is excluded from the workflow's `all`
+selection.
