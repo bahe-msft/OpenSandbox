@@ -31,6 +31,7 @@ import (
 	snapshotcontract "github.com/alibaba/OpenSandbox/sandbox-k8s/internal/snapshot"
 	"github.com/alibaba/OpenSandbox/sandbox-k8s/pkg/imagecommitter"
 	imagecommittercli "github.com/alibaba/OpenSandbox/sandbox-k8s/pkg/imagecommitter/cli"
+	"github.com/alibaba/OpenSandbox/sandbox-k8s/pkg/imagecommitter/katavmstate"
 )
 
 var terminationMessagePath = "/dev/termination-log"
@@ -44,6 +45,15 @@ var commandCombinedOutput = func(name string, args ...string) ([]byte, error) {
 
 func main() {
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "kata-vmstate" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := katavmstate.Run(ctx, args, terminationMessagePath, os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	// QEMU-specific subcommands use the nerdctl-based path, which requires
 	// HostPID access and runs qemu-checkpoint-helper inside the container.
@@ -249,6 +259,9 @@ func pushImage(targetImage string) error {
 
 	// Try to login using credentials from mounted secret
 	credDir := "/var/run/opensandbox/registry"
+	if configured := os.Getenv("DOCKER_CONFIG"); configured != "" {
+		credDir = configured
+	}
 	configPath := filepath.Join(credDir, "config.json")
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("Found registry credentials at %s\n", configPath)
@@ -325,13 +338,14 @@ func nerdctlLogin(configPath, registryHost string, insecure bool) error {
 
 	fmt.Printf("Logging in to registry %s as %s\n", registryHost, username)
 
-	loginOpts := append(nerdctlBaseArgs(), "login", "-u", username, "-p", password)
+	loginOpts := append(nerdctlBaseArgs(), "login", "-u", username, "--password-stdin")
 	if insecure {
 		loginOpts = append(loginOpts, "--insecure-registry")
 	}
 	loginOpts = append(loginOpts, registryHost)
 
 	cmd := exec.Command("nerdctl", loginOpts...)
+	cmd.Stdin = strings.NewReader(password)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("nerdctl login failed: %v, output: %s", err, string(output))
