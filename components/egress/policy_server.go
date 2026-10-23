@@ -87,7 +87,13 @@ func startPolicyServer(
 		stopAlwaysReload: make(chan struct{}),
 		mitmGate:         mitmGate,
 	}
-	handler.credentialVault = credentialvault.NewStore(mitmGate, func() bool { return strings.TrimSpace(token) != "" })
+	registry := credentialvault.NewSourceRegistry()
+	if err := credentialvault.RegisterExecCredentialProviders(registry,
+		"/usr/libexec/opensandbox/credential-providers", os.Getenv(constants.EnvCredentialProviderConfig),
+	); err != nil {
+		return nil, fmt.Errorf("configure credential providers: %w", err)
+	}
+	handler.credentialVault = credentialvault.NewStoreWithRegistry(mitmGate, func() bool { return strings.TrimSpace(token) != "" }, registry)
 	handler.credentialVaultRequireTLS = constants.IsTruthy(os.Getenv(constants.EnvCredentialVaultRequireTLS))
 	handler.setAlwaysRules(alwaysDeny, alwaysAllow)
 	if err := handler.validateTransparentPolicy(proxy.CurrentPolicy()); err != nil {
