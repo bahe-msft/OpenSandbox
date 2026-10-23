@@ -85,6 +85,8 @@ const (
 	// ignore_hosts, ssl_verify_upstream_trusted_confdir default) live in
 	// /var/lib/mitmproxy/.mitmproxy/config.yaml; only per-deployment overrides are env-driven.
 	EnvMitmproxyTransparent      = "OPENSANDBOX_EGRESS_MITMPROXY_TRANSPARENT"
+	EnvTransparentProxyGateway   = "OPENSANDBOX_EGRESS_TRANSPARENT_PROXY_GATEWAY"
+	EnvTransparentProxyTokenFile = "OPENSANDBOX_EGRESS_TRANSPARENT_PROXY_TOKEN_FILE"
 	EnvMitmproxyPort             = "OPENSANDBOX_EGRESS_MITMPROXY_PORT"
 	EnvMitmproxyScript           = "OPENSANDBOX_EGRESS_MITMPROXY_SCRIPT"
 	EnvMitmproxyUpstreamTrustDir = "OPENSANDBOX_EGRESS_MITMPROXY_UPSTREAM_TRUST_DIR"

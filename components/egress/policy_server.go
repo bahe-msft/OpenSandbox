@@ -90,6 +90,9 @@ func startPolicyServer(
 	handler.credentialVault = credentialvault.NewStore(mitmGate, func() bool { return strings.TrimSpace(token) != "" })
 	handler.credentialVaultRequireTLS = constants.IsTruthy(os.Getenv(constants.EnvCredentialVaultRequireTLS))
 	handler.setAlwaysRules(alwaysDeny, alwaysAllow)
+	if err := handler.validateTransparentPolicy(proxy.CurrentPolicy()); err != nil {
+		return nil, err
+	}
 
 	mux.HandleFunc("/policy", handler.handlePolicy)
 	mux.HandleFunc("/credential-vault", handler.handleCredentialVault)
@@ -112,11 +115,12 @@ func startPolicyServer(
 		if err != nil {
 			return nil, fmt.Errorf("lookup credential proxy user %q: %w", mitmproxy.RunAsUser, err)
 		}
-		activeSrv, cleanupActiveSocket, err = credentialvault.StartActiveSocketServerRequestAware(
+		activeSrv, cleanupActiveSocket, err = credentialvault.StartActivePolicySocketServer(
 			handler.handleCredentialVaultActive,
+			handler.handleCredentialVaultResolve,
+			handler.handleTransparentPolicy,
 			socketPath,
 			int(mitmGID),
-			handler.handleCredentialVaultResolve,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("credential vault active socket: %w", err)
@@ -608,8 +612,9 @@ func (s *policyServer) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rawMerged, err := json.Marshal(policy.NetworkPolicy{
-		DefaultAction: base.DefaultAction,
-		Egress:        newEgress,
+		DefaultAction:    base.DefaultAction,
+		Egress:           newEgress,
+		TransparentProxy: base.TransparentProxy,
 	})
 	if err != nil {
 		logEgressUpdateFailedError(fmt.Sprintf("failed to marshal updated policy: %v", err))
@@ -645,6 +650,10 @@ func (s *policyServer) handleDelete(w http.ResponseWriter, r *http.Request) {
 // commitPolicy applies one logical change: optional disk persist → merge always file rules → nft
 // static (with nameserver allow-IPs) → then update in-memory user policy (POST/PATCH/GET view).
 func (s *policyServer) commitPolicy(ctx context.Context, w http.ResponseWriter, pol *policy.NetworkPolicy, op string) bool {
+	if err := s.validateTransparentPolicy(pol); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return false
+	}
 	if err := s.persistPolicy(pol); err != nil {
 		logEgressUpdateFailedError(fmt.Sprintf("persist policy: %v", err))
 		log.Errorf("policy API: persist policy failed: %v", err)

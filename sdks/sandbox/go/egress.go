@@ -48,6 +48,15 @@ func (c *EgressClient) GetPolicy(ctx context.Context) (*PolicyStatusResponse, er
 	return &resp, nil
 }
 
+// SetPolicy replaces network rules and transparent origins together.
+func (c *EgressClient) SetPolicy(ctx context.Context, policy NetworkPolicy) (*PolicyStatusResponse, error) {
+	var resp PolicyStatusResponse
+	if err := c.doRequest(ctx, "POST", "/policy", policy, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // PatchPolicy merges the given network rules into the current egress policy.
 // Existing rules remain unless overridden. Rule conflict behavior is determined
 // by the server.

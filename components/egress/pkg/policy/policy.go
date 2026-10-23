@@ -46,8 +46,9 @@ func DefaultDenyPolicy() *NetworkPolicy {
 
 // NetworkPolicy: JSON defaultAction + egress; domain rules use first-match (see compiled index).
 type NetworkPolicy struct {
-	Egress        []EgressRule `json:"egress"`
-	DefaultAction string       `json:"defaultAction"`
+	Egress           []EgressRule            `json:"egress"`
+	DefaultAction    string                  `json:"defaultAction"`
+	TransparentProxy *TransparentProxyPolicy `json:"transparentProxy,omitempty"`
 
 	domainIndex *compiledDomainIndex
 }
@@ -98,6 +99,9 @@ func (p *NetworkPolicy) Evaluate(domain string) string {
 			return action
 		}
 	}
+	if p.TransparentHost(domain) {
+		return ActionAllow
+	}
 	if p.DefaultAction == "" {
 		return ActionDeny
 	}
@@ -134,6 +138,10 @@ func normalizePolicy(p *NetworkPolicy) error {
 	p.DefaultAction = strings.ToLower(strings.TrimSpace(p.DefaultAction))
 	if p.DefaultAction == "" {
 		p.DefaultAction = ActionDeny
+	}
+
+	if err := normalizeTransparentPolicy(p); err != nil {
+		return err
 	}
 
 	for i := range p.Egress {

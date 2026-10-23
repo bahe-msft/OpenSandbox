@@ -405,6 +405,10 @@ func (s *fastSandboxPolicyServer) applyPolicy(subj subject.Subject, pol *policy.
 // in-place apply path below) or arrive via the registration flush for an
 // already-active subject.
 func (s *fastSandboxPolicyServer) resolvePolicyPush(w http.ResponseWriter, r *http.Request, subj subject.Subject, pol *policy.NetworkPolicy, rawBody string) {
+	if pol.TransparentProxy != nil && len(pol.TransparentProxy.Origins) > 0 {
+		http.Error(w, "transparent forwarding requires the sidecar profile", http.StatusBadRequest)
+		return
+	}
 	state, ok := s.reg.Get(subj)
 	if !ok {
 		s.cachePending(r, subj, []byte(rawBody))

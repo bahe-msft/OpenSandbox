@@ -131,8 +131,14 @@ type OSSFS struct {
 
 // NetworkPolicy defines the egress network policy for a sandbox.
 type NetworkPolicy struct {
-	DefaultAction string        `json:"defaultAction,omitempty"`
-	Egress        []NetworkRule `json:"egress,omitempty"`
+	DefaultAction    string                  `json:"defaultAction,omitempty"`
+	Egress           []NetworkRule           `json:"egress,omitempty"`
+	TransparentProxy *TransparentProxyPolicy `json:"transparentProxy,omitempty"`
+}
+
+// TransparentProxyPolicy admits exact HTTPS/443 origins to the fixed egress Gateway.
+type TransparentProxyPolicy struct {
+	Origins []string `json:"origins"`
 }
 
 // NetworkRule defines a single egress allow/deny rule.

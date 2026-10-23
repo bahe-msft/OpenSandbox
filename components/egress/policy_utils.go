@@ -49,8 +49,9 @@ func patchMergedPolicy(base *policy.NetworkPolicy, patchRules []policy.EgressRul
 
 	merged := mergeEgressRules(baseCopy.Egress, patchRules)
 	rawMerged, err := json.Marshal(policy.NetworkPolicy{
-		DefaultAction: baseCopy.DefaultAction,
-		Egress:        merged,
+		DefaultAction:    baseCopy.DefaultAction,
+		Egress:           merged,
+		TransparentProxy: baseCopy.TransparentProxy,
 	})
 	if err != nil {
 		return nil, err

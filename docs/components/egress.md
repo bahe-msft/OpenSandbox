@@ -194,6 +194,41 @@ On extra ports, mitmproxy still decrypts and logs traffic normally, but the Cred
 mitmproxy can truncate the tail of large streamed bodies (e.g. LLM SSE events > ~1 MB) when the upstream serves over TLS HTTP/1.1 and closes the connection right after the body. See [Egress: SSE Truncation (mitmproxy)](/components/egress-mitmproxy-sse-truncation) for root cause, reproduction, and status.
 :::
 
+### Transparent origin forwarding
+
+The sidecar profile can forward admitted HTTPS/443 origins to one operator-fixed
+internal HTTP Gateway. Set `OPENSANDBOX_EGRESS_TRANSPARENT_PROXY_GATEWAY` to the
+Gateway's canonical `.svc.cluster.local` origin and
+`OPENSANDBOX_EGRESS_TRANSPARENT_PROXY_TOKEN_FILE` to its sidecar-only rotating
+identity file. Transparent mitmproxy and authenticated policy management are
+required. The Gateway hostname must be allowed by the network policy.
+
+`POST /policy` replaces `transparentProxy.origins` with the current admitted set:
+
+```json
+{
+  "defaultAction": "deny",
+  "egress": [
+    {"action": "allow", "target": "turn-egress.aks-sandbox-system.svc.cluster.local"}
+  ],
+  "transparentProxy": {
+    "origins": ["https://github.com", "https://dev.azure.com"]
+  }
+}
+```
+
+DNS returns a synthetic interception address for admitted names without adding
+public upstream IPs to nftables. The bundled forwarding addon reads the accepted
+policy for every new request, preserves the original HTTP authority and request
+contents, selects the fixed Gateway, and then injects `X-AKS-Sandbox-Identity`.
+TLS SNI and HTTP authority must agree. Certificate discovery does not contact the
+public upstream. Failed forwarding never falls back to the public endpoint.
+
+An empty origin list disables forwarding. Network-rule PATCH/DELETE operations
+preserve the origin set. The private policy view uses the existing credential
+proxy Unix socket; it is not exposed to sandbox applications. Direct internal
+provider requests retain their existing Credential Vault behavior.
+
 ### Credential Vault
 
 The credential vault provides automatic credential injection for outbound requests to allowed hosts. Credentials are stored in-memory and injected into matching requests by the transparent mitmproxy layer. Injection happens when request headers are read, so it applies to request bodies of any size, including large bodies that mitmproxy streams upstream.

@@ -246,6 +246,9 @@ func buildMitmdumpArgs(cfg Config) []string {
 	}
 
 	args = append(args, "-s", systemScriptPath)
+	if strings.TrimSpace(os.Getenv(constants.EnvTransparentProxyGateway)) != "" {
+		args = append(args, "-s", "/var/egress/mitmscripts/transparent_proxy.py")
+	}
 	for _, p := range cfg.ScriptPaths {
 		if s := strings.TrimSpace(p); s != "" {
 			args = append(args, "-s", s)

@@ -35,6 +35,7 @@ func StartActiveSocketServer(
 	return startActiveSocketServer(
 		func(w http.ResponseWriter, _ *http.Request) { activeHandler(w) },
 		nil,
+		nil,
 		socketPath,
 		socketGID,
 	)
@@ -56,12 +57,28 @@ func StartActiveSocketServerRequestAware(
 	if len(resolveHandlers) > 0 {
 		resolveHandler = resolveHandlers[0]
 	}
-	return startActiveSocketServer(activeHandler, resolveHandler, socketPath, socketGID)
+	return startActiveSocketServer(activeHandler, resolveHandler, nil, socketPath, socketGID)
+}
+
+// StartActivePolicySocketServer adds the accepted forwarding view to the same
+// sidecar-only Unix socket used for credential decisions.
+func StartActivePolicySocketServer(
+	activeHandler http.HandlerFunc,
+	resolveHandler http.HandlerFunc,
+	policyHandler http.HandlerFunc,
+	socketPath string,
+	socketGID int,
+) (*http.Server, func(context.Context) error, error) {
+	if activeHandler == nil || policyHandler == nil {
+		return nil, nil, fmt.Errorf("active credential and forwarding policy handlers are required")
+	}
+	return startActiveSocketServer(activeHandler, resolveHandler, policyHandler, socketPath, socketGID)
 }
 
 func startActiveSocketServer(
 	activeHandler http.HandlerFunc,
 	resolveHandler http.HandlerFunc,
+	policyHandler http.HandlerFunc,
 	socketPath string,
 	socketGID int,
 ) (*http.Server, func(context.Context) error, error) {
@@ -112,6 +129,9 @@ func startActiveSocketServer(
 	mux.HandleFunc("GET /credential-vault/_active", activeHandler)
 	if resolveHandler != nil {
 		mux.HandleFunc("GET /credential-vault/_resolve", resolveHandler)
+	}
+	if policyHandler != nil {
+		mux.HandleFunc("GET /policy/_active", policyHandler)
 	}
 
 	srv := &http.Server{Handler: mux}

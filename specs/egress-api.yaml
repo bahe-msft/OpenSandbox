@@ -383,6 +383,25 @@ components:
           description: List of egress rules evaluated in order.
           items:
             $ref: '#/components/schemas/NetworkRule'
+        transparentProxy:
+          $ref: '#/components/schemas/TransparentProxyPolicy'
+      additionalProperties: false
+    TransparentProxyPolicy:
+      type: object
+      description: |
+        Sidecar-only HTTPS/443 origins forwarded to an operator-fixed internal
+        Gateway. Requires default-deny policy, authenticated management, and
+        transparent mitmproxy. An empty list removes all admitted origins.
+      required:
+        - origins
+      properties:
+        origins:
+          type: array
+          maxItems: 128
+          uniqueItems: true
+          items:
+            type: string
+            pattern: '^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
       additionalProperties: false
     NetworkRule:
       type: object

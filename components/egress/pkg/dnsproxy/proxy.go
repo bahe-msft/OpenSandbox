@@ -261,6 +261,20 @@ func (p *Proxy) serveDNS(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
+	if policyToEval.TransparentHost(host) {
+		response := new(dns.Msg)
+		response.SetReply(r)
+		if q.Qtype == dns.TypeA {
+			response.Answer = []dns.RR{&dns.A{
+				Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 1},
+				A:   net.IPv4(192, 0, 2, 1),
+			}}
+		}
+		// The synthetic address must not enter nft's ordinary destination allow set.
+		p.writeReply(w, r, response, telemetry.DNSReplyStageAnswer)
+		return
+	}
+
 	start := time.Now()
 	resp, failure, err := p.forward(r)
 	elapsed := time.Since(start).Seconds()
