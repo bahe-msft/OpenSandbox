@@ -696,6 +696,7 @@ export class Sandbox {
         createDurationMs: Date.now() - createStarted,
         success: false,
       });
+<<<<<<< HEAD
       if (opts.signal?.aborted) {
         void (async () => {
           try {
@@ -712,6 +713,8 @@ export class Sandbox {
         })();
         throw err;
       }
+=======
+>>>>>>> origin/main
       if (sandboxId) {
         try {
           await sandboxes.deleteSandbox(sandboxId);

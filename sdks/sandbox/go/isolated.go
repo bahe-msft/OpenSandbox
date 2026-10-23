@@ -72,9 +72,14 @@ type CreateIsolatedSessionRequest struct {
 
 // IsolatedSessionInfo is the response from creating an isolated session.
 //
+<<<<<<< HEAD
 // The creation-parameter echo fields (Profile, Workspace, Overlays,
 // ExtraWritable, Binds, ShareNet, EnvPassthrough, Uid, Gid, UidMode,
 // IdleTimeoutSeconds) are populated
+=======
+// The creation-parameter echo fields (Profile, Workspace, ExtraWritable, Binds,
+// ShareNet, EnvPassthrough, Uid, Gid, UidMode, IdleTimeoutSeconds) are populated
+>>>>>>> origin/main
 // only when the info is built by IsolationAttach against an execd build that
 // echoes creation parameters on GET /v1/isolated/session/{id}. Older execd
 // builds and the POST /v1/isolated/session create response leave them zero
@@ -90,7 +95,10 @@ type IsolatedSessionInfo struct {
 	// Creation-parameter echoes (populated on attach when the server supports it).
 	Profile            string                 `json:"profile,omitempty"`
 	Workspace          *IsolatedWorkspaceSpec `json:"workspace,omitempty"`
+<<<<<<< HEAD
 	Overlays           []IsolatedOverlaySpec  `json:"overlays,omitempty"`
+=======
+>>>>>>> origin/main
 	ExtraWritable      []string               `json:"extra_writable,omitempty"`
 	Binds              []BindMount            `json:"binds,omitempty"`
 	ShareNet           *bool                  `json:"share_net,omitempty"`
@@ -120,7 +128,10 @@ type IsolatedSessionState struct {
 	// Creation-parameter echoes (optional; omitted by older execd builds).
 	Profile            string                 `json:"profile,omitempty"`
 	Workspace          *IsolatedWorkspaceSpec `json:"workspace,omitempty"`
+<<<<<<< HEAD
 	Overlays           []IsolatedOverlaySpec  `json:"overlays,omitempty"`
+=======
+>>>>>>> origin/main
 	ExtraWritable      []string               `json:"extra_writable,omitempty"`
 	Binds              []BindMount            `json:"binds,omitempty"`
 	ShareNet           *bool                  `json:"share_net,omitempty"`
@@ -217,6 +228,7 @@ type HardeningStatus struct {
 
 // IsolatedCapabilities reports isolation capabilities.
 type IsolatedCapabilities struct {
+<<<<<<< HEAD
 	Available        bool             `json:"available"`
 	Isolator         string           `json:"isolator,omitempty"`
 	Version          string           `json:"version,omitempty"`
@@ -226,6 +238,16 @@ type IsolatedCapabilities struct {
 	CommitSupported  bool             `json:"commit_supported"`
 	DiffSupported    bool             `json:"diff_supported"`
 	Hardening        *HardeningStatus `json:"hardening,omitempty"`
+=======
+	Available        bool   `json:"available"`
+	Isolator         string `json:"isolator,omitempty"`
+	Version          string `json:"version,omitempty"`
+	Message          string `json:"message,omitempty"`
+	SetprivAvailable bool   `json:"setpriv_available"`
+	UsernsAvailable  bool   `json:"userns_available"`
+	CommitSupported  bool   `json:"commit_supported"`
+	DiffSupported    bool   `json:"diff_supported"`
+>>>>>>> origin/main
 }
 
 // IsolatedCreate creates an isolated bash session.

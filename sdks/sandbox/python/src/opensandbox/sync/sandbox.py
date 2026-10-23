@@ -35,6 +35,7 @@ from opensandbox.internal.readiness import (
     ReadinessBudget,
     validate_polling_interval,
 )
+from opensandbox.internal.lifecycle_metrics import report_sandbox_create_metric
 from opensandbox.models.diagnostics import DiagnosticContent
 from opensandbox.models.sandboxes import (
     CreateSnapshotRequest,
@@ -591,6 +592,13 @@ class SandboxSync:
         logger.info(
             f"Creating sandbox with startup source: {startup_source} (timeout: {timeout_log})"
         )
+<<<<<<< HEAD
+=======
+        factory = AdapterFactorySync(config)
+        sandbox_id: str | None = None
+        sandbox_service: SandboxesSync | None = None
+        create_started = time.monotonic()
+>>>>>>> origin/main
 
         return cls._launch(
             config=config,
@@ -796,7 +804,11 @@ class SandboxSync:
             )
 
             return sandbox
+<<<<<<< HEAD
         except BaseException as e:
+=======
+        except Exception as e:
+>>>>>>> origin/main
             report_sandbox_create_metric(
                 config,
                 sandbox_id=sandbox_id,

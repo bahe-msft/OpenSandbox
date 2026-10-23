@@ -244,10 +244,142 @@ three official registries:
 - GitHub Container Registry: `ghcr.io/opensandbox-group/opensandbox/<component>`
 - Alibaba Cloud Container Registry: `sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/<component>`
 
+<<<<<<< HEAD
 Tagged release images are signed keylessly with Cosign and include provenance
 attestations. Pin production images by digest and follow the
 [release verification guide](docs/community/release-verification.md) to verify
 the image against the OpenSandbox GitHub Actions identity before deployment.
+=======
+### Install and Configure the Sandbox Server
+
+```bash
+uvx opensandbox-server init-config ~/.sandbox.toml --example docker
+
+uvx opensandbox-server
+
+# Show help
+# uvx opensandbox-server -h
+```
+
+### Create a Code Interpreter and Execute Commands/Codes
+
+Install the Code Interpreter SDK
+
+```bash
+uv pip install opensandbox-code-interpreter
+```
+
+Create a sandbox and execute commands and codes.
+
+```python
+import asyncio
+from datetime import timedelta
+
+from code_interpreter import CodeInterpreter, SupportedLanguage
+from opensandbox import Sandbox
+from opensandbox.models import WriteEntry
+
+async def main() -> None:
+    # 1. Create a sandbox
+    sandbox = await Sandbox.create(
+        "opensandbox/code-interpreter:v1.1.0",
+        entrypoint=["/opt/code-interpreter/code-interpreter.sh"],
+        env={"PYTHON_VERSION": "3.11"},
+        timeout=timedelta(minutes=10),
+    )
+
+    async with sandbox:
+
+        # 2. Execute a shell command
+        execution = await sandbox.commands.run("echo 'Hello OpenSandbox!'")
+        print(execution.logs.stdout[0].text)
+
+        # 3. Write a file
+        await sandbox.files.write_files([
+            WriteEntry(path="/tmp/hello.txt", data="Hello World", mode=644)
+        ])
+
+        # 4. Read a file
+        content = await sandbox.files.read_file("/tmp/hello.txt")
+        print(f"Content: {content}") # Content: Hello World
+
+        # 5. Create a code interpreter
+        interpreter = await CodeInterpreter.create(sandbox)
+
+        # 6. Execute Python code (single-run, pass language directly)
+        result = await interpreter.codes.run(
+              """
+                  import sys
+                  print(sys.version)
+                  result = 2 + 2
+                  result
+              """,
+              language=SupportedLanguage.PYTHON,
+        )
+
+        print(result.result[0].text) # 4
+        print(result.logs.stdout[0].text) # 3.11.14
+
+        # 7. Cleanup the sandbox
+        await sandbox.kill()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### More Examples
+
+OpenSandbox provides examples covering SDK usage, agent integrations, browser automation, and training workloads. All example code is located in the `examples/` directory.
+
+#### 🎯 Basic Examples
+
+- **[code-interpreter](docs/examples/code-interpreter.md)** - End-to-end Code Interpreter SDK workflow in a sandbox.
+- **[aio-sandbox](docs/examples/aio-sandbox.md)** - All-in-One sandbox setup using the OpenSandbox SDK.
+- **[agent-sandbox](docs/examples/agent-sandbox.md)** - Example integration for running OpenSandbox workloads on Kubernetes with [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox).
+- **Volumes** — [Docker PVC / named volumes](docs/examples/docker-pvc-volume-mount.md), [Docker OSSFS](docs/examples/docker-ossfs-volume-mount.md), [Kubernetes PVC](docs/examples/kubernetes-pvc-volume-mount.md): persistent and shared storage patterns.
+
+#### 🤖 Coding Agent Integrations
+
+- **Coding CLIs** — [Claude Code](docs/examples/claude-code.md), [Gemini CLI](docs/examples/gemini-cli.md), [OpenAI Codex CLI](docs/examples/codex-cli.md), [Qwen Code](docs/examples/qwen-code.md), [Kimi CLI](docs/examples/kimi-cli.md): run each vendor CLI inside OpenSandbox.
+- **[langgraph](docs/examples/langgraph.md)** - LangGraph state-machine workflow that creates/runs a sandbox job with fallback retry.
+- **[google-adk](docs/examples/google-adk.md)** - Google ADK agent using OpenSandbox tools to write/read files and run commands.
+- **[openclaw](docs/examples/openclaw.md)** - Launch an OpenClaw Gateway inside a sandbox.
+
+#### 🌐 Browser and Desktop Environments
+
+- **[chrome](docs/examples/chrome.md)** - Chromium sandbox with VNC and DevTools access for automation and debugging.
+- **[playwright](docs/examples/playwright.md)** - Playwright + Chromium headless scraping and testing example.
+- **[desktop](docs/examples/desktop.md)** - Full desktop environment in a sandbox with VNC access.
+- **[vscode](docs/examples/vscode.md)** - code-server (VS Code Web) running inside a sandbox for remote dev.
+
+#### 🧠 Training and Evaluation
+
+- **[harbor-evaluation](docs/examples/harbor-evaluation.md)** - Run a [Harbor](https://github.com/harbor-framework/harbor) agent evaluation on OpenSandbox, one sandbox per trial.
+
+For more details, please refer to the [examples documentation](docs/examples/index.md).
+
+## Project Structure
+
+| Directory | Description                                                      |
+|-----------|------------------------------------------------------------------|
+| [`sdks/`](sdks/) | Multi-language SDKs (Python, Java/Kotlin, TypeScript/JavaScript, C#/.NET) |
+| [`specs/`](specs/README.md) | OpenAPI specs and lifecycle specifications                      |
+| [`server/`](server/README.md) | Python FastAPI sandbox lifecycle server                          |
+| [`cli/`](cli/README.md) | OpenSandbox command-line interface                               |
+| [`kubernetes/`](kubernetes/README.md) | Kubernetes deployment and examples                               |
+| [`components/execd/`](components/execd/README.md) | Sandbox execution daemon (commands and file operations)          |
+| [`components/ingress/`](components/ingress/README.md) | Sandbox traffic ingress proxy                                    |
+| [`components/egress/`](components/egress/README.md) | Sandbox network egress control                                   |
+| [`sandboxes/`](sandboxes/) | Runtime sandbox implementations                                   |
+| [`examples/`](examples/) | Runnable example code                                            |
+| [`docs/examples/`](docs/examples/index.md) | Example documentation and use cases                              |
+| [`oseps/`](oseps/README.md) | OpenSandbox Enhancement Proposals                                |
+| [`docs/`](docs/) | Architecture and design documentation                            |
+| [`tests/`](tests/) | Cross-component E2E tests                                        |
+| [`scripts/`](scripts/) | Development and maintenance scripts                              |
+
+For detailed architecture, see [Architecture](docs/architecture/).
+>>>>>>> origin/main
 
 ## Documentation
 

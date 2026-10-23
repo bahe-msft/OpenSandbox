@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 // Copyright 2026 The OpenSandbox Authors
+=======
+// Copyright 2026 Alibaba Group Holding Ltd.
+>>>>>>> origin/main
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -74,6 +78,37 @@ func TestStaleConn_GetEndpointRecoversFromBlackHoledConn(t *testing.T) {
 	require.NoError(t, err, "GetEndpoint must recover from a black-holed reused connection")
 }
 
+<<<<<<< HEAD
+=======
+// TestStaleConn_GetEndpointRecovers_RealTimescale exercises the same recovery at
+// realistic (second-scale) timings. Skipped under `go test -short`.
+func TestStaleConn_GetEndpointRecovers_RealTimescale(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping second-scale stale-connection test in -short mode")
+	}
+	addr, cleanup := blackHoleAfterReuseServer(t)
+	defer cleanup()
+
+	cfg := ConnectionConfig{
+		Domain:                "http://" + addr,
+		RequestTimeout:        3 * time.Second,
+		EndpointCacheDisabled: true,
+	}
+	lc := cfg.lifecycleClient()
+	useProxy := false
+
+	if _, err := lc.GetEndpoint(context.Background(), "sbx", DefaultExecdPort, &useProxy); err != nil {
+		t.Fatalf("first GetEndpoint should succeed, got: %v", err)
+	}
+
+	// Real idle gap: the connection stays pooled and is reused for call 2.
+	time.Sleep(2 * time.Second)
+
+	_, err := lc.GetEndpoint(context.Background(), "sbx", DefaultExecdPort, &useProxy)
+	require.NoError(t, err, "GetEndpoint must recover from a black-holed reused connection at second scale")
+}
+
+>>>>>>> origin/main
 // TestStaleConn_IdleConnEvictedBeforeLBDrops verifies the "A" lever: when a
 // connection stays idle longer than IdleConnTimeout, the SDK evicts it, so the
 // next request dials a FRESH connection instead of reusing a possibly-dead one.

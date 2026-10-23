@@ -92,6 +92,7 @@ public class ConnectionConfigOptions
     /// OPENSANDBOX_DISABLE_METRICS=1 environment variable.
     /// </summary>
     public bool? DisableMetrics { get; set; }
+<<<<<<< HEAD
 
     /// <summary>
     /// Gets or sets whether to auto-retry gateway wake-timeout responses
@@ -156,6 +157,8 @@ public sealed class WakeRetryOptions
         MaxAttempts = maxAttempts;
         OverallDeadline = overallDeadline;
     }
+=======
+>>>>>>> origin/main
 }
 
 /// <summary>
@@ -220,11 +223,14 @@ public sealed class ConnectionConfig
     public bool DisableMetrics { get; }
 
     /// <summary>
+<<<<<<< HEAD
     /// Gets the OSEP-0024 wake retry policy applied by the HTTP transport.
     /// </summary>
     public WakeRetryOptions WakeRetry { get; }
 
     /// <summary>
+=======
+>>>>>>> origin/main
     /// Gets the user agent string.
     /// </summary>
     public string UserAgent { get; } = Constants.DefaultUserAgent;
@@ -255,6 +261,7 @@ public sealed class ConnectionConfig
         EndpointCacheSize = options.EndpointCacheSize ?? 1024;
         EndpointCacheDisabled = options.EndpointCacheDisabled ?? false;
 
+<<<<<<< HEAD
         var wakeMaxAttempts = options.WakeMaxAttempts ?? Constants.DefaultWakeMaxAttempts;
         if (wakeMaxAttempts < 1)
         {
@@ -266,6 +273,8 @@ public sealed class ConnectionConfig
             wakeMaxAttempts,
             wakeDeadlineSeconds > 0 ? TimeSpan.FromSeconds(wakeDeadlineSeconds) : null);
 
+=======
+>>>>>>> origin/main
         var envDisableMetrics = Environment.GetEnvironmentVariable(Constants.EnvDisableMetrics);
         var envDisableMetricsFlag = string.Equals(envDisableMetrics?.Trim(), "1", StringComparison.Ordinal);
         DisableMetrics = (options.DisableMetrics ?? false) || envDisableMetricsFlag;

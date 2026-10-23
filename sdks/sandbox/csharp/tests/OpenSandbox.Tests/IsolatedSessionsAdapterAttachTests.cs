@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 // Copyright 2026 The OpenSandbox Authors
+=======
+// Copyright 2026 Alibaba Group Holding Ltd.
+>>>>>>> origin/main
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,12 +18,18 @@
 
 using System.Net;
 using System.Text;
+<<<<<<< HEAD
 using System.Text.Json;
+=======
+>>>>>>> origin/main
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenSandbox.Adapters;
 using OpenSandbox.Core;
+<<<<<<< HEAD
 using OpenSandbox.Models;
+=======
+>>>>>>> origin/main
 using Xunit;
 
 namespace OpenSandbox.Tests;
@@ -42,11 +52,14 @@ public class IsolatedSessionsAdapterAttachTests
                   "idle_remaining_seconds": 30,
                   "profile": "strict",
                   "workspace": { "path": "/workspace", "mode": "rw" },
+<<<<<<< HEAD
                   "overlays": [
                     { "path": "/", "mode": "overlay" },
                     { "path": "/workspace", "mode": "overlay", "persist": true },
                     { "path": "/ephemeral", "mode": "overlay", "persist": false }
                   ],
+=======
+>>>>>>> origin/main
                   "extra_writable": ["/tmp", "/var/tmp"],
                   "binds": [{ "source": "/host/a", "dest": "/sbx/a", "readonly": true }],
                   "share_net": false,
@@ -80,6 +93,7 @@ public class IsolatedSessionsAdapterAttachTests
         info.Workspace.Should().NotBeNull();
         info.Workspace!.Path.Should().Be("/workspace");
         info.Workspace.Mode.Should().Be("rw");
+<<<<<<< HEAD
         info.Overlays.Should().NotBeNull();
         info.Overlays!.Should().HaveCount(3);
         info.Overlays![0].Path.Should().Be("/");
@@ -89,6 +103,8 @@ public class IsolatedSessionsAdapterAttachTests
         info.Overlays![1].Persist.Should().Be(true);
         info.Overlays![2].Path.Should().Be("/ephemeral");
         info.Overlays![2].Persist.Should().Be(false);
+=======
+>>>>>>> origin/main
         info.ExtraWritable.Should().Equal("/tmp", "/var/tmp");
         info.Binds.Should().NotBeNull();
         info.Binds!.Should().ContainSingle();
@@ -106,6 +122,7 @@ public class IsolatedSessionsAdapterAttachTests
     }
 
     [Fact]
+<<<<<<< HEAD
     public async Task CreateAsync_SerializesOverlaysWithWorkspaceSugar()
     {
         var handler = new RouteHandler(request =>
@@ -198,6 +215,8 @@ public class IsolatedSessionsAdapterAttachTests
     }
 
     [Fact]
+=======
+>>>>>>> origin/main
     public async Task AttachAsync_ToleratesMissingCreationParams_WhenExecdIsOlder()
     {
         var getCallCount = 0;
@@ -246,7 +265,10 @@ public class IsolatedSessionsAdapterAttachTests
         info.CreatedAt.Should().Be(DateTimeOffset.Parse("2026-01-02T03:04:05Z"));
         info.Profile.Should().BeNull();
         info.Workspace.Should().BeNull();
+<<<<<<< HEAD
         info.Overlays.Should().BeNull();
+=======
+>>>>>>> origin/main
         info.ExtraWritable.Should().BeNull();
         info.Binds.Should().BeNull();
         info.ShareNet.Should().BeNull();

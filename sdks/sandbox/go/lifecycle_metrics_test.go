@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 // Copyright 2026 The OpenSandbox Authors
+=======
+// Copyright 2026 Alibaba Group Holding Ltd.
+>>>>>>> origin/main
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,7 +20,10 @@ package opensandbox
 
 import (
 	"encoding/json"
+<<<<<<< HEAD
 	"fmt"
+=======
+>>>>>>> origin/main
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -66,6 +73,7 @@ func TestReportSandboxCreateMetricPostsEvent(t *testing.T) {
 	t.Fatal("metrics POST was not received")
 }
 
+<<<<<<< HEAD
 func TestReportSandboxCreateMetricCarriesClientIPHeader(t *testing.T) {
 	withStubbedClientIP(t, "10.9.8.7")
 
@@ -90,6 +98,8 @@ func TestReportSandboxCreateMetricCarriesClientIPHeader(t *testing.T) {
 	t.Fatal("metrics POST was not received")
 }
 
+=======
+>>>>>>> origin/main
 func TestReportSandboxCreateMetricIgnoresFailure(t *testing.T) {
 	cfg := ConnectionConfig{Domain: "http://127.0.0.1:1", Protocol: "http"}
 	// Should not panic or block.
@@ -130,6 +140,7 @@ func TestReportSandboxCreateMetricDisabledByEnv(t *testing.T) {
 		t.Fatal("expected metrics POST to be skipped when OPENSANDBOX_DISABLE_METRICS=1")
 	}
 }
+<<<<<<< HEAD
 
 func TestReportSandboxCreateMetricRedirectProtection(t *testing.T) {
 	t.Setenv(disableMetricsEnv, "0")
@@ -191,3 +202,5 @@ func TestReportSandboxCreateMetricRedirectProtection(t *testing.T) {
 		}
 	}
 }
+=======
+>>>>>>> origin/main

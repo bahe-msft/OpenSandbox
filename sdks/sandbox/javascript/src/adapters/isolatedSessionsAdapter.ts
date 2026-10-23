@@ -40,8 +40,11 @@ import type {
 
 type SessionStateWire = ExecdComponents["schemas"]["SessionState"];
 
+<<<<<<< HEAD
 const TAIL_CURSOR_HEADER = "EXECD-ISOLATED-TAIL-CURSOR";
 
+=======
+>>>>>>> origin/main
 function joinUrl(baseUrl: string, pathname: string): string {
   const base = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
   const path = pathname.startsWith("/") ? pathname : `/${pathname}`;
@@ -190,7 +193,10 @@ export class IsolatedSessionsAdapter implements IsolationService {
     };
     if (state.profile !== undefined) info.profile = state.profile;
     if (state.workspace !== undefined) info.workspace = state.workspace;
+<<<<<<< HEAD
     if (state.overlays !== undefined) info.overlays = state.overlays;
+=======
+>>>>>>> origin/main
     if (state.extra_writable !== undefined) info.extra_writable = state.extra_writable;
     if (state.binds !== undefined) info.binds = state.binds;
     if (state.share_net !== undefined) info.share_net = state.share_net;

@@ -339,6 +339,7 @@ wheels = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "grpcio"
 version = "1.83.0"
 source = { registry = "https://pypi.org/simple" }
@@ -463,6 +464,8 @@ wheels = [
 ]
 
 [[package]]
+=======
+>>>>>>> origin/main
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -615,8 +618,11 @@ dependencies = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
+<<<<<<< HEAD
     { name = "protobuf" },
     { name = "psycopg", extra = ["binary", "pool"] },
+=======
+>>>>>>> origin/main
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
@@ -648,8 +654,11 @@ requires-dist = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
+<<<<<<< HEAD
     { name = "protobuf", specifier = ">=7.35.1" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.2,<4" },
+=======
+>>>>>>> origin/main
     { name = "pydantic" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "python-multipart", specifier = ">=0.0.31" },
@@ -786,6 +795,7 @@ wheels = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "psycopg"
 version = "3.3.4"
 source = { registry = "https://pypi.org/simple" }
@@ -881,6 +891,8 @@ wheels = [
 ]
 
 [[package]]
+=======
+>>>>>>> origin/main
 name = "pydantic"
 version = "2.12.5"
 source = { registry = "https://pypi.org/simple" }

@@ -1,5 +1,9 @@
 /*
+<<<<<<< HEAD
  * Copyright 2026 The OpenSandbox Authors
+=======
+ * Copyright 2026 Alibaba Group Holding Ltd.
+>>>>>>> origin/main
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -95,6 +99,7 @@ class LifecycleMetricsReporterTest {
     }
 
     @Test
+<<<<<<< HEAD
     fun `does not post sandbox create event for staged warmup`() {
         server.enqueue(MockResponse().setResponseCode(204))
         val config =
@@ -118,6 +123,8 @@ class LifecycleMetricsReporterTest {
     }
 
     @Test
+=======
+>>>>>>> origin/main
     fun `posts expected payload and headers on success path`() {
         server.enqueue(MockResponse().setResponseCode(204))
         val config =

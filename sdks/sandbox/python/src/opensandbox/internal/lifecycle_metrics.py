@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # Copyright 2026 The OpenSandbox Authors
+=======
+# Copyright 2026 Alibaba Group Holding Ltd.
+>>>>>>> origin/main
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,11 +29,14 @@ from typing import Any, Protocol
 
 import httpx
 
+<<<<<<< HEAD
 from opensandbox._httpx import (
     build_async_redirect_event_hooks,
     build_redirect_event_hooks,
 )
 
+=======
+>>>>>>> origin/main
 logger = logging.getLogger(__name__)
 
 _DISABLE_METRICS_ENV = "OPENSANDBOX_DISABLE_METRICS"
@@ -42,7 +49,10 @@ class _MetricsConnection(Protocol):
     headers: dict[str, str]
     user_agent: str
     disable_metrics: bool
+<<<<<<< HEAD
     follow_redirects: bool
+=======
+>>>>>>> origin/main
 
     def get_api_key(self) -> str: ...
 
@@ -97,6 +107,7 @@ def _timeout_seconds(config: _MetricsConnection) -> float:
 
 
 def _post_sync(config: _MetricsConnection, payload: dict[str, Any]) -> None:
+<<<<<<< HEAD
     # Deliberately does not reuse the SDK's shared transport: closing the
     # httpx.Client below would also close that shared transport and break
     # every other adapter on this connection_config.
@@ -107,10 +118,15 @@ def _post_sync(config: _MetricsConnection, payload: dict[str, Any]) -> None:
         follow_redirects=config.follow_redirects,
         event_hooks=build_redirect_event_hooks(base_url),
     ) as client:
+=======
+    url = f"{config.get_base_url().rstrip('/')}/metrics/events"
+    with httpx.Client(timeout=_timeout_seconds(config)) as client:
+>>>>>>> origin/main
         client.post(url, json=payload, headers=_headers(config))
 
 
 async def _post_async(config: _MetricsConnection, payload: dict[str, Any]) -> None:
+<<<<<<< HEAD
     base_url = config.get_base_url().rstrip("/")
     url = f"{base_url}/metrics/events"
     async with httpx.AsyncClient(
@@ -118,6 +134,10 @@ async def _post_async(config: _MetricsConnection, payload: dict[str, Any]) -> No
         follow_redirects=config.follow_redirects,
         event_hooks=build_async_redirect_event_hooks(base_url),
     ) as client:
+=======
+    url = f"{config.get_base_url().rstrip('/')}/metrics/events"
+    async with httpx.AsyncClient(timeout=_timeout_seconds(config)) as client:
+>>>>>>> origin/main
         await client.post(url, json=payload, headers=_headers(config))
 
 

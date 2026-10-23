@@ -295,6 +295,7 @@ public class SandboxesAdapterTests
             "/v1/snapshots?name=toolchain%3Acsharp%40rev-1");
     }
 
+<<<<<<< HEAD
     [Fact]
     public async Task GetSandboxEndpointAsync_ShouldCaptureOriginResponseHeader()
     {
@@ -497,6 +498,8 @@ public class SandboxesAdapterTests
         handler.PathAndQuery.Should().Be("/v1/templates/tpl-1");
     }
 
+=======
+>>>>>>> origin/main
     private static SandboxesAdapter CreateAdapterWithJsonResponse(string payload)
     {
         var handler = new StaticJsonHandler(payload);
@@ -638,6 +641,7 @@ public class SandboxesAdapterTests
             return Task.FromResult(response);
         }
     }
+<<<<<<< HEAD
 
     private sealed class CaptureEndpointHandler(string? origin) : HttpMessageHandler
     {
@@ -683,4 +687,6 @@ public class SandboxesAdapterTests
             return response;
         }
     }
+=======
+>>>>>>> origin/main
 }

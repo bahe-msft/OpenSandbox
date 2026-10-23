@@ -529,8 +529,12 @@ The `ConnectionConfig` class manages API server connection settings.
 | `connectionPool` | Shared OKHttp ConnectionPool               | SDK-created per instance     | -                      |
 | `retryPolicy`    | Automatic retry policy for non-streaming requests (see [Automatic retries](#_2-automatic-retries)) | Enabled (`RetryPolicy()`) | -                 |
 | `useServerProxy` | Use sandbox server as proxy for execd/endpoint requests (e.g. when client cannot reach the sandbox directly) | `false` | -                      |
+<<<<<<< HEAD
 | `disableMetrics` | Disable SDK create-latency telemetry (see [SDK Telemetry](/sdks/observability#creation-metrics)) | `false` | `OPENSANDBOX_DISABLE_METRICS` |
 | `enableTracing` | Enable OpenTelemetry tracing for pool warmup (see [SDK Tracing](/sdks/observability#pool-warmup-tracing)) | `false` | - |
+=======
+| `disableMetrics` | Disable SDK create-latency telemetry (see [SDK Telemetry](/guides/sdk-telemetry)) | `false` | `OPENSANDBOX_DISABLE_METRICS` |
+>>>>>>> origin/main
 
 ```java
 import okhttp3.ConnectionPool;
@@ -560,6 +564,7 @@ ConnectionConfig sharedConfig = ConnectionConfig.builder()
 ```
 
 ::: tip SDK Telemetry
+<<<<<<< HEAD
 `Sandbox.builder()...build()` reports create latency to `POST /v1/metrics/events` by default. Call `ConnectionConfig.builder().disableMetrics(true)` or export `OPENSANDBOX_DISABLE_METRICS=1` to opt out. See [SDK Telemetry](/sdks/observability#creation-metrics).
 :::
 
@@ -623,6 +628,12 @@ ConnectionConfig tuned = ConnectionConfig.builder()
 ```
 
 ### 3. Sandbox Creation Configuration
+=======
+`Sandbox.builder()...build()` reports create latency to `POST /v1/metrics/events` by default. Call `ConnectionConfig.builder().disableMetrics(true)` or export `OPENSANDBOX_DISABLE_METRICS=1` to opt out. See [SDK Telemetry](/guides/sdk-telemetry).
+:::
+
+### 2. Sandbox Creation Configuration
+>>>>>>> origin/main
 
 The `Sandbox.builder()` allows configuring the sandbox environment.
 

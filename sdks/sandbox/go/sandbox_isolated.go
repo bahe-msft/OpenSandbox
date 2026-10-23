@@ -133,6 +133,7 @@ func (s *Sandbox) IsolationCreate(ctx context.Context, req CreateIsolatedSession
 func (s *Sandbox) IsolationAttach(ctx context.Context, sessionID string) (*IsolationSession, error) {
 	if s.execd == nil {
 		return nil, fmt.Errorf("opensandbox: execd client not initialized")
+<<<<<<< HEAD
 	}
 	if sessionID == "" {
 		return nil, &InvalidArgumentError{Field: "sessionID", Message: "must not be empty"}
@@ -176,6 +177,43 @@ func (s *Sandbox) newIsolationSession(info *IsolatedSessionInfo) *IsolationSessi
 		}
 		filesClient = NewExecdClient(sessionBaseURL, s.execd.client.apiKey, filesOpts...)
 	}
+=======
+	}
+	if sessionID == "" {
+		return nil, &InvalidArgumentError{Field: "sessionID", Message: "must not be empty"}
+	}
+	state, err := s.execd.IsolatedGet(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	info := &IsolatedSessionInfo{
+		SessionID:          sessionID,
+		CreatedAt:          state.CreatedAt,
+		Profile:            state.Profile,
+		Workspace:          state.Workspace,
+		ExtraWritable:      state.ExtraWritable,
+		Binds:              state.Binds,
+		ShareNet:           state.ShareNet,
+		EnvPassthrough:     state.EnvPassthrough,
+		Uid:                state.Uid,
+		Gid:                state.Gid,
+		UidMode:            state.UidMode,
+		IdleTimeoutSeconds: state.IdleTimeoutSeconds,
+	}
+	return s.newIsolationSession(info), nil
+}
+
+// newIsolationSession wraps an IsolatedSessionInfo into an IsolationSession
+// handle, constructing the session-scoped files ExecdClient the same way
+// IsolationCreate does.
+func (s *Sandbox) newIsolationSession(info *IsolatedSessionInfo) *IsolationSession {
+	sessionBaseURL := s.execd.client.baseURL + "/v1/isolated/session/" + info.SessionID
+	var filesOpts []Option
+	if len(s.execd.client.headers) > 0 {
+		filesOpts = append(filesOpts, WithHeaders(s.execd.client.headers))
+	}
+	filesClient := NewExecdClient(sessionBaseURL, s.execd.client.apiKey, filesOpts...)
+>>>>>>> origin/main
 	return &IsolationSession{info: info, sandbox: s, files: filesClient}
 }
 

@@ -1737,6 +1737,7 @@ export interface components {
              */
             background?: boolean;
         };
+<<<<<<< HEAD
         /** @description Handle returned when a run is started with background: true */
         IsolatedBackgroundRunResponse: {
             /**
@@ -1791,6 +1792,9 @@ export interface components {
             finished_at?: string | null;
         };
         /** @description State of an isolated session. Runtime status fields (status, created_at, last_run_at, idle_remaining_seconds) are always present. Creation-parameter fields (profile, workspace, overlays, binds, share_net, env_passthrough, uid, gid, uid_mode, extra_writable, idle_timeout_seconds) echo the parameters used to create the session and let a stateless client rebuild a session handle from just a session ID (e.g. after a client restart or in serverless workers). `overlays` lists the effective mounts; for sessions created via the legacy `workspace` field it repeats that workspace as a single element, and `workspace` itself is only echoed for such single-overlay sessions. Older execd builds may omit the creation-parameter fields; clients must tolerate them being absent. */
+=======
+        /** @description State of an isolated session. Runtime status fields (status, created_at, last_run_at, idle_remaining_seconds) are always present. Creation-parameter fields (profile, workspace, binds, share_net, env_passthrough, uid, gid, uid_mode, extra_writable, idle_timeout_seconds) echo the parameters used to create the session and let a stateless client rebuild a session handle from just a session ID (e.g. after a client restart or in serverless workers). Older execd builds may omit the creation-parameter fields; clients must tolerate them being absent. */
+>>>>>>> origin/main
         SessionState: {
             /** @enum {string} */
             status?: "active" | "dead" | "destroyed";
@@ -1805,8 +1809,11 @@ export interface components {
              */
             profile?: "strict" | "balanced";
             workspace?: components["schemas"]["IsolatedWorkspaceSpec"];
+<<<<<<< HEAD
             /** @description Effective overlay mounts of the session. */
             overlays?: components["schemas"]["IsolatedOverlaySpec"][];
+=======
+>>>>>>> origin/main
             extra_writable?: string[];
             binds?: components["schemas"]["BindMount"][];
             share_net?: boolean;

@@ -840,6 +840,39 @@ func TestDeletingTaskWithFinishedPostStopWaitsForTerminalState(t *testing.T) {
 	assert.True(t, shouldFinalizeTaskDeletion(task, terminal, false))
 }
 
+<<<<<<< HEAD
+=======
+func TestTaskManager_InspectAfterStopReturnsExecutorStatus(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+	task := &types.Task{
+		Name: "poststop-inspect",
+		Status: types.Status{
+			State: types.TaskStateRunning,
+			SubStatuses: []types.SubStatus{{
+				Reason:     reasonPostStopHookCompleted,
+				FinishedAt: &now,
+			}},
+		},
+	}
+	expected := &types.Status{
+		State: types.TaskStateSucceeded,
+		SubStatuses: []types.SubStatus{{
+			Reason:     "Succeeded",
+			FinishedAt: &now,
+		}},
+	}
+	exec := newFakeExecutor()
+	exec.inspect[task.Name] = expected
+	mgr := &taskManager{executor: exec}
+
+	status := mgr.inspectAfterStop(ctx, task, task.Name)
+
+	require.NotNil(t, status)
+	assert.Equal(t, *expected, *status)
+}
+
+>>>>>>> origin/main
 func TestTaskManager_RetainedFailedTaskPreservesFailureAfterPostStop(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.Config{
@@ -1400,6 +1433,7 @@ func TestTaskManager_CountActiveTasks(t *testing.T) {
 	}
 	defer mgr.Delete(ctx, task1.Name)
 
+<<<<<<< HEAD
 	// Wait for task1 to reach a terminal state. The reconcile loop observes the
 	// exited process asynchronously (once per ReconcileInterval), so poll for the
 	// expected count instead of sleeping a fixed duration: under CI load a
@@ -1408,6 +1442,16 @@ func TestTaskManager_CountActiveTasks(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return activeTaskCount(mgr.(*taskManager)) == 0
 	}, 5*time.Second, 10*time.Millisecond, "task1 should become inactive once it completes")
+=======
+	// Wait for task1 to complete
+	time.Sleep(500 * time.Millisecond)
+
+	// Should have 0 active tasks after task1 completes
+	activeCount = activeTaskCount(mgr.(*taskManager))
+	if activeCount != 0 {
+		t.Errorf("Active count after task1 completion = %d, want 0", activeCount)
+	}
+>>>>>>> origin/main
 
 	// Create a running task
 	task2 := &types.Task{

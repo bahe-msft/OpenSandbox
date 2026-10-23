@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # Copyright 2026 The OpenSandbox Authors
+=======
+# Copyright 2026 Alibaba Group Holding Ltd.
+>>>>>>> origin/main
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,16 +20,26 @@
 
 import asyncio
 from datetime import timedelta
+<<<<<<< HEAD
 from unittest.mock import AsyncMock, MagicMock, patch
+=======
+from unittest.mock import MagicMock, patch
+>>>>>>> origin/main
 
 import httpx
 import pytest
 
+<<<<<<< HEAD
 from opensandbox.config import ConnectionConfig, ConnectionConfigSync
 from opensandbox.internal.lifecycle_metrics import (
     _build_payload,
     _post_async,
     _post_sync,
+=======
+from opensandbox.config import ConnectionConfig
+from opensandbox.internal.lifecycle_metrics import (
+    _build_payload,
+>>>>>>> origin/main
     report_sandbox_create_metric,
 )
 
@@ -46,6 +60,7 @@ def test_build_payload_omits_optional_fields():
     assert "sdkVersion" not in payload
 
 
+<<<<<<< HEAD
 def test_sync_metrics_client_honors_redirect_config_and_security_hook():
     user_hook = MagicMock()
     config = ConnectionConfigSync(
@@ -135,6 +150,8 @@ async def test_async_metrics_client_honors_redirect_config_and_security_hook():
     client.post.assert_awaited_once()
 
 
+=======
+>>>>>>> origin/main
 @pytest.mark.asyncio
 async def test_report_does_not_raise_when_post_fails():
     config = ConnectionConfig(

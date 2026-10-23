@@ -833,6 +833,7 @@ SDK-created HTTP clients enforce NIST 2030 minimum TLS certificate strength by d
 :::
 
 ::: tip SDK Telemetry
+<<<<<<< HEAD
 `CreateSandbox` reports create latency to `POST /v1/metrics/events` by default. Set `ConnectionConfig.DisableMetrics` or `OPENSANDBOX_DISABLE_METRICS=1` to opt out. See [SDK Telemetry](/sdks/observability#creation-metrics).
 :::
 
@@ -857,6 +858,11 @@ HTTP and HTTPS default ports are treated as equivalent to explicit ports 80 and
 443 respectively. Upload method conversion and body replay follow Go's existing
 rules; this protection does not enable replay of streaming multipart bodies.
 
+=======
+`CreateSandbox` reports create latency to `POST /v1/metrics/events` by default. Set `ConnectionConfig.DisableMetrics` or `OPENSANDBOX_DISABLE_METRICS=1` to opt out. See [SDK Telemetry](/guides/sdk-telemetry).
+:::
+
+>>>>>>> origin/main
 ## Error Handling
 
 Non-2xx responses are returned as `*opensandbox.APIError`:

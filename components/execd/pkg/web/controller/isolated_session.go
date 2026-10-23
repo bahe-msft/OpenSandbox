@@ -126,16 +126,22 @@ func classifyIsolatedCreateError(err error) (int, model.ErrorCode) {
 	if errors.Is(err, runtime.ErrUidModeUnavailable) {
 		return http.StatusServiceUnavailable, model.ErrorCodeNotSupported
 	}
+<<<<<<< HEAD
 	if errors.Is(err, runtime.ErrSessionNamespaceUnavailable) ||
 		errors.Is(err, runtime.ErrIsolatedRunnerClosed) {
 		return http.StatusServiceUnavailable, model.ErrorCodeServiceUnavailable
 	}
+=======
+>>>>>>> origin/main
 	if strings.Contains(err.Error(), "not in allowlist") ||
 		strings.Contains(err.Error(), "not allowed") ||
 		strings.Contains(err.Error(), "unknown isolation profile") ||
 		strings.Contains(err.Error(), "must be an existing path") ||
 		strings.Contains(err.Error(), "must be an absolute path") ||
+<<<<<<< HEAD
 		strings.Contains(err.Error(), "duplicate overlay path") ||
+=======
+>>>>>>> origin/main
 		strings.Contains(err.Error(), "source is required") {
 		return http.StatusBadRequest, model.ErrorCodeRuntimeError
 	}
@@ -173,6 +179,7 @@ func (c *IsolatedSessionController) Get() {
 		Gid:           state.Gid,
 		UidMode:       state.UidMode,
 	}
+<<<<<<< HEAD
 	if len(state.Overlays) > 0 {
 		resp.Overlays = make([]model.OverlaySpec, 0, len(state.Overlays))
 		for _, ov := range state.Overlays {
@@ -189,6 +196,12 @@ func (c *IsolatedSessionController) Get() {
 				Path: state.Overlays[0].Path,
 				Mode: state.Overlays[0].Mode,
 			}
+=======
+	if state.WorkspacePath != "" {
+		resp.Workspace = &model.WorkspaceSpec{
+			Path: state.WorkspacePath,
+			Mode: state.WorkspaceMode,
+>>>>>>> origin/main
 		}
 	}
 	if len(state.Binds) > 0 {
@@ -496,8 +509,11 @@ func (c *IsolatedSessionController) Capabilities() {
 		UsernsAvailable:  caps.UsernsAvailable,
 		CommitSupported:  caps.CommitSupported,
 		DiffSupported:    caps.DiffSupported,
+<<<<<<< HEAD
 		Hardening:        hardening,
 		RuntimeInit:      runtimeInit,
+=======
+>>>>>>> origin/main
 	}
 	// Probe results indicate overlay capability, not diff/commit implementation.
 	// Diff and commit are Phase 2; do not advertise them as supported.

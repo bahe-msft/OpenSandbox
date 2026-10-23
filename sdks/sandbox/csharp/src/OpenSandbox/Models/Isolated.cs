@@ -73,8 +73,12 @@ public record IsolatedSessionInfo(
     [property: JsonPropertyName("uid")] long? Uid = null,
     [property: JsonPropertyName("gid")] long? Gid = null,
     [property: JsonPropertyName("uid_mode")] string? UidMode = null,
+<<<<<<< HEAD
     [property: JsonPropertyName("idle_timeout_seconds")] int? IdleTimeoutSeconds = null,
     [property: JsonPropertyName("overlays")] List<IsolatedOverlaySpec>? Overlays = null
+=======
+    [property: JsonPropertyName("idle_timeout_seconds")] int? IdleTimeoutSeconds = null
+>>>>>>> origin/main
 );
 
 public record IsolatedSessionState(
@@ -92,8 +96,12 @@ public record IsolatedSessionState(
     [property: JsonPropertyName("uid")] long? Uid = null,
     [property: JsonPropertyName("gid")] long? Gid = null,
     [property: JsonPropertyName("uid_mode")] string? UidMode = null,
+<<<<<<< HEAD
     [property: JsonPropertyName("idle_timeout_seconds")] int? IdleTimeoutSeconds = null,
     [property: JsonPropertyName("overlays")] List<IsolatedOverlaySpec>? Overlays = null
+=======
+    [property: JsonPropertyName("idle_timeout_seconds")] int? IdleTimeoutSeconds = null
+>>>>>>> origin/main
 );
 
 public record IsolatedSessionSummary(
@@ -142,8 +150,12 @@ public record IsolatedCapabilities(
     [property: JsonPropertyName("commit_supported")] bool CommitSupported = false,
     [property: JsonPropertyName("diff_supported")] bool DiffSupported = false,
     [property: JsonPropertyName("setpriv_available")] bool SetprivAvailable = false,
+<<<<<<< HEAD
     [property: JsonPropertyName("userns_available")] bool UsernsAvailable = false,
     [property: JsonPropertyName("hardening")] HardeningStatus? Hardening = null
+=======
+    [property: JsonPropertyName("userns_available")] bool UsernsAvailable = false
+>>>>>>> origin/main
 )
 {
     public void Deconstruct(
@@ -162,6 +174,7 @@ public record IsolatedCapabilities(
         diffSupported = DiffSupported;
     }
 }
+<<<<<<< HEAD
 
 /// <summary>execd init-mode and workload-hardening state (OSEP-0018).</summary>
 public record HardeningStatus(
@@ -178,3 +191,5 @@ public record HardeningLayerState(
     [property: JsonPropertyName("state")] string? State = null, // active | disabled | degraded | unsupported
     [property: JsonPropertyName("message")] string? Message = null
 );
+=======
+>>>>>>> origin/main

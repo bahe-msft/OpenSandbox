@@ -46,6 +46,7 @@ tags:
     description: Provision and transition sandboxes through their lifecycle
   - name: Snapshots
     description: Create, list, and delete persistent sandbox snapshots
+<<<<<<< HEAD
   - name: Templates
     description: Fsb golden-image template management (runtime.type=fsb only)
   - name: Metrics
@@ -225,6 +226,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+=======
+  - name: Metrics
+    description: Best-effort SDK telemetry ingestion for server-side aggregation
+paths:
+>>>>>>> origin/main
   /metrics/events:
     post:
       tags: [Metrics]
@@ -1828,11 +1834,16 @@ components:
         sandbox entrypoint to `["tail", "-f", "/dev/null"]`.
 
         **Pool mode**: When `extensions.poolRef` is set, the sandbox is created from
+<<<<<<< HEAD
         a pre-configured on-demand Pool. In this case `image` and `resourceLimits`
         are optional and defined by the Pool CRD template. `entrypoint` is also
         optional; when omitted, the server creates a per-allocation task using
         `['tail', '-f', '/dev/null']`. The Pool must run task-executor and provide
         bootstrap plus execd.
+=======
+        a pre-configured pool. In this case `image`, `entrypoint`, and
+        `resourceLimits` are all optional (defined by the Pool CRD template).
+>>>>>>> origin/main
         `snapshotId`, `networkPolicy`, `platform`, `volumes`, and
         `credentialProxy.enabled` must not be provided together with `poolRef`.
 

@@ -76,6 +76,7 @@ export interface ConnectionConfigOptions {
    * Also honored via `OPENSANDBOX_DISABLE_METRICS=1`.
    */
   disableMetrics?: boolean;
+<<<<<<< HEAD
   /**
    * Enable OpenTelemetry tracing for client-side pool warmup.
    * Off by default.
@@ -100,6 +101,8 @@ export interface ConnectionConfigOptions {
    * time bound (the attempt count still applies). Default: 60.
    */
   wakeOverallDeadlineSeconds?: number | null;
+=======
+>>>>>>> origin/main
 }
 
 function isNodeRuntime(): boolean {
@@ -374,8 +377,11 @@ export class ConnectionConfig {
   readonly endpointCacheSize: number;
   readonly endpointCacheDisabled: boolean;
   readonly disableMetrics: boolean;
+<<<<<<< HEAD
   readonly enableTracing: boolean;
   readonly wakeRetry: WakeRetryOptions;
+=======
+>>>>>>> origin/main
   private _closeTransport: () => Promise<void>;
   private _closePromise: Promise<void> | null = null;
   private _transportInitialized = false;
@@ -411,6 +417,7 @@ export class ConnectionConfig {
     this.endpointCacheSize = opts.endpointCacheSize ?? 1024;
     this.endpointCacheDisabled = !!opts.endpointCacheDisabled;
     this.disableMetrics = !!opts.disableMetrics;
+<<<<<<< HEAD
     this.enableTracing = !!opts.enableTracing;
 
     const wakeEnabled = opts.wakeRetryEnabled ?? true;
@@ -431,6 +438,8 @@ export class ConnectionConfig {
       maxAttempts: wakeMaxAttempts,
       overallDeadlineSeconds: wakeDeadline,
     };
+=======
+>>>>>>> origin/main
 
     const headers: Record<string, string> = { ...(opts.headers ?? {}) };
     // Attach API key via header unless the user already provided one.
@@ -586,11 +595,14 @@ export class ConnectionConfig {
       endpointCacheSize: this.endpointCacheSize,
       endpointCacheDisabled: this.endpointCacheDisabled,
       disableMetrics: this.disableMetrics,
+<<<<<<< HEAD
       enableTracing: this.enableTracing,
       wakeRetryEnabled: this.wakeRetry.enabled,
       wakeMaxAttempts: this.wakeRetry.maxAttempts,
       wakeOverallDeadlineSeconds: this.wakeRetry.overallDeadlineSeconds,
       ...overrides,
+=======
+>>>>>>> origin/main
     });
   }
 

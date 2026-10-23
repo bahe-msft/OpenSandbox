@@ -21,6 +21,7 @@ var ErrContextNotFound = errors.New("context not found")
 // ErrUidModeUnavailable indicates that the requested isolation uid mode did
 // not pass the startup capability probe in the current environment.
 var ErrUidModeUnavailable = errors.New("requested uid mode is unavailable")
+<<<<<<< HEAD
 
 // ErrSessionTeardownTimeout indicates that a session workload could not be
 // reaped within the bounded teardown window. The caller must retain ownership
@@ -49,3 +50,5 @@ var ErrIsolatedRunnerClosed = errors.New("isolated session runner is closed")
 // accepts run or filesystem operations. Cleanup may still be retried through
 // Delete while the controller retains ownership of the session resources.
 var ErrSessionNotActive = errors.New("isolated session is not active")
+=======
+>>>>>>> origin/main

@@ -345,8 +345,11 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 	$(KUSTOMIZE) build config/default | \
 		sed 's|--snapshot-registry=docker-registry.default.svc.cluster.local:5000|--snapshot-registry=$(SNAPSHOT_REGISTRY)|' | \
 		sed 's|--image-committer-image=image-committer:dev|--image-committer-image=$(IMAGE_COMMITTER_IMG)|' | \
+<<<<<<< HEAD
 		sed 's|--image-committer-service-account=|--image-committer-service-account=$(IMAGE_COMMITTER_SERVICE_ACCOUNT)|' | \
 		sed 's|--image-committer-pod-labels=|--image-committer-pod-labels=$(IMAGE_COMMITTER_POD_LABELS)|' | \
+=======
+>>>>>>> origin/main
 		sed 's|--image-committer-pull-secret=|--image-committer-pull-secret=$(IMAGE_COMMITTER_PULL_SECRET)|' | \
 		$(KUBECTL) apply -f -
 

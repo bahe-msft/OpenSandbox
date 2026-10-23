@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // Copyright 2026 The OpenSandbox Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+=======
+>>>>>>> origin/main
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
@@ -45,7 +48,10 @@ describe("_get", () => {
             idle_remaining_seconds: 42,
             profile: "balanced",
             workspace: { path: "/workspace", mode: "overlay" },
+<<<<<<< HEAD
             overlays: [{ path: "/workspace", mode: "overlay", persist: false }],
+=======
+>>>>>>> origin/main
             extra_writable: ["/tmp"],
             binds: [{ source: "/host/x", dest: "/sbx/x", readonly: false }],
             share_net: true,
@@ -77,9 +83,12 @@ describe("_get", () => {
       path: "/workspace",
       mode: "overlay",
     });
+<<<<<<< HEAD
     assert.deepStrictEqual(state.overlays, [
       { path: "/workspace", mode: "overlay", persist: false },
     ]);
+=======
+>>>>>>> origin/main
     assert.deepStrictEqual(state.extra_writable, ["/tmp"]);
     assert.strictEqual(state.binds?.length, 1);
     assert.deepStrictEqual(state.binds[0], {

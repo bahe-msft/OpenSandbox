@@ -572,6 +572,7 @@ test("Sandbox.create metrics failure does not change create error", async () => 
   );
 });
 
+<<<<<<< HEAD
 test("Sandbox.create readiness timeout omits network configuration hints", async () => {
   const { adapterFactory } = createAdapterFactory();
   adapterFactory.createExecdStack = () => ({
@@ -644,6 +645,8 @@ test("Sandbox.create readiness timeout does not overshoot by a polling interval"
   assert.ok(elapsed < 500, `expected timeout in ~20ms, took ${elapsed}ms`);
 });
 
+=======
+>>>>>>> origin/main
 test("Sandbox.create metrics synchronous throw does not change create error", async () => {
   // Regression test: previously, payload/URL/headers construction and
   // `connectionConfig.fetch(...)` ran outside any try/catch in the reporter.
@@ -698,6 +701,7 @@ test("Sandbox.create metrics synchronous throw does not change create error", as
     }
   );
 });
+<<<<<<< HEAD
 
 test("Sandbox.create forwards lifecycle.idlePolicy", async () => {
   const { adapterFactory, recordedRequests } = createAdapterFactory();
@@ -818,3 +822,5 @@ test("Sandbox.create accepts idle policy boundaries and wake-only shapes", async
     );
   }
 });
+=======
+>>>>>>> origin/main

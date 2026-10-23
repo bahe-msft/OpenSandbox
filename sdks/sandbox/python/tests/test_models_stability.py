@@ -609,6 +609,7 @@ def test_isolated_binds_omitted_when_unset() -> None:
     assert "uid_mode" not in body
 
 
+<<<<<<< HEAD
 def test_isolated_overlays_serialize_to_wire_format() -> None:
     """overlays serialize to the execd wire format, with workspace sugar."""
     from opensandbox.models import (
@@ -653,6 +654,8 @@ def test_isolated_overlays_only_request_is_serializable() -> None:
     assert body["overlays"] == [{"path": "/workspace", "mode": "rw"}]
 
 
+=======
+>>>>>>> origin/main
 def test_isolated_capabilities_parse_mode_availability() -> None:
     """Per-mode isolation capability flags are exposed to SDK callers."""
     from opensandbox.models import IsolatedCapabilities

@@ -142,11 +142,16 @@ def sync_detailed(
             sandbox entrypoint to `["tail", "-f", "/dev/null"]`.
 
             **Pool mode**: When `extensions.poolRef` is set, the sandbox is created from
+<<<<<<< HEAD
             a pre-configured on-demand Pool. In this case `image` and `resourceLimits`
             are optional and defined by the Pool CRD template. `entrypoint` is also
             optional; when omitted, the server creates a per-allocation task using
             `['tail', '-f', '/dev/null']`. The Pool must run task-executor and provide
             bootstrap plus execd.
+=======
+            a pre-configured pool. In this case `image`, `entrypoint`, and
+            `resourceLimits` are all optional (defined by the Pool CRD template).
+>>>>>>> origin/main
             `snapshotId`, `networkPolicy`, `platform`, `volumes`, and
             `credentialProxy.enabled` must not be provided together with `poolRef`.
 
@@ -212,11 +217,16 @@ def sync(
             sandbox entrypoint to `["tail", "-f", "/dev/null"]`.
 
             **Pool mode**: When `extensions.poolRef` is set, the sandbox is created from
+<<<<<<< HEAD
             a pre-configured on-demand Pool. In this case `image` and `resourceLimits`
             are optional and defined by the Pool CRD template. `entrypoint` is also
             optional; when omitted, the server creates a per-allocation task using
             `['tail', '-f', '/dev/null']`. The Pool must run task-executor and provide
             bootstrap plus execd.
+=======
+            a pre-configured pool. In this case `image`, `entrypoint`, and
+            `resourceLimits` are all optional (defined by the Pool CRD template).
+>>>>>>> origin/main
             `snapshotId`, `networkPolicy`, `platform`, `volumes`, and
             `credentialProxy.enabled` must not be provided together with `poolRef`.
 
@@ -277,11 +287,16 @@ async def asyncio_detailed(
             sandbox entrypoint to `["tail", "-f", "/dev/null"]`.
 
             **Pool mode**: When `extensions.poolRef` is set, the sandbox is created from
+<<<<<<< HEAD
             a pre-configured on-demand Pool. In this case `image` and `resourceLimits`
             are optional and defined by the Pool CRD template. `entrypoint` is also
             optional; when omitted, the server creates a per-allocation task using
             `['tail', '-f', '/dev/null']`. The Pool must run task-executor and provide
             bootstrap plus execd.
+=======
+            a pre-configured pool. In this case `image`, `entrypoint`, and
+            `resourceLimits` are all optional (defined by the Pool CRD template).
+>>>>>>> origin/main
             `snapshotId`, `networkPolicy`, `platform`, `volumes`, and
             `credentialProxy.enabled` must not be provided together with `poolRef`.
 
@@ -345,11 +360,16 @@ async def asyncio(
             sandbox entrypoint to `["tail", "-f", "/dev/null"]`.
 
             **Pool mode**: When `extensions.poolRef` is set, the sandbox is created from
+<<<<<<< HEAD
             a pre-configured on-demand Pool. In this case `image` and `resourceLimits`
             are optional and defined by the Pool CRD template. `entrypoint` is also
             optional; when omitted, the server creates a per-allocation task using
             `['tail', '-f', '/dev/null']`. The Pool must run task-executor and provide
             bootstrap plus execd.
+=======
+            a pre-configured pool. In this case `image`, `entrypoint`, and
+            `resourceLimits` are all optional (defined by the Pool CRD template).
+>>>>>>> origin/main
             `snapshotId`, `networkPolicy`, `platform`, `volumes`, and
             `credentialProxy.enabled` must not be provided together with `poolRef`.
 

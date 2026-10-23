@@ -73,7 +73,10 @@ from opensandbox_server.api.schema import (
     CredentialProxyConfig,
     Host,
     ImageSpec,
+<<<<<<< HEAD
     LifecycleHook,
+=======
+>>>>>>> origin/main
     ListSandboxesRequest,
     NetworkPolicy,
     OSSFS,
@@ -4918,6 +4921,10 @@ def test_list_sandboxes_uses_low_level_summary_endpoint(mock_docker):
         ListSandboxesRequest(pagination=PaginationRequest(page=1, page_size=50))
     )
 
+<<<<<<< HEAD
+=======
+    # Uses the low-level Docker Engine endpoint with the sandbox-id label filter.
+>>>>>>> origin/main
     call_kwargs = mock_client.api.containers.call_args.kwargs
     assert call_kwargs["all"] is True
     assert call_kwargs["filters"] == {"label": [SANDBOX_ID_LABEL]}
@@ -5024,6 +5031,7 @@ def test_list_sandboxes_wraps_docker_exception(mock_docker):
 
 
 @patch("opensandbox_server.services.docker.docker_service.docker")
+<<<<<<< HEAD
 def test_get_container_by_sandbox_id_uses_deterministic_name(
     mock_docker: MagicMock,
 ) -> None:
@@ -5128,12 +5136,28 @@ def test_get_container_by_sandbox_id_maps_notfound_to_404(
     service = DockerSandboxService(config=_app_config())
     mock_client.containers.get.side_effect = DockerNotFound("no deterministic name")
     mock_client.containers.list.side_effect = DockerNotFound("no such container")
+=======
+def test_get_container_by_sandbox_id_maps_notfound_to_404(mock_docker):
+    """Concurrent deletion of a single container must yield 404, not 500.
+
+    docker-py's ``containers.list`` performs a follow-up inspect per matched
+    entry; when the container disappears mid-inspect, docker-py raises
+    ``NotFound``. The service must translate this into SANDBOX_NOT_FOUND (404)
+    to match the semantics callers expect when a sandbox has been removed.
+    """
+    mock_client = MagicMock()
+    mock_client.containers.list.side_effect = DockerNotFound("no such container")
+    mock_docker.from_env.return_value = mock_client
+
+    service = DockerSandboxService(config=_app_config())
+>>>>>>> origin/main
 
     with pytest.raises(HTTPException) as exc:
         service._get_container_by_sandbox_id("sbx-vanished")
 
     assert exc.value.status_code == status.HTTP_404_NOT_FOUND
     assert exc.value.detail["code"] == SandboxErrorCodes.SANDBOX_NOT_FOUND
+<<<<<<< HEAD
 
 
 @patch("opensandbox_server.services.docker.docker_service.docker")
@@ -5398,3 +5422,5 @@ def test_delete_preserves_dependencies_until_application_removal(tmp_path, faile
         assert operations == ["kill app", "remove app", "stop sidecar", "remove sidecar"]
         sidecar.stop.assert_called_once_with(timeout=9)
         assert service._metadata_store.get_expiration(sandbox_id) is None
+=======
+>>>>>>> origin/main

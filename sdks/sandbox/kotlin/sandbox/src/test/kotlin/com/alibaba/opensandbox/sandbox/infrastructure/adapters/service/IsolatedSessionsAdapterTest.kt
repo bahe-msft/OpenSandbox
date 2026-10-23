@@ -21,6 +21,7 @@ import com.alibaba.opensandbox.sandbox.config.ConnectionConfig
 import com.alibaba.opensandbox.sandbox.domain.exceptions.SandboxApiException
 import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.CreateIsolatedSessionRequest
 import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.IsolatedCapabilities
+<<<<<<< HEAD
 import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.IsolatedOverlaySpec
 import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.IsolatedRunOpts
 import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.IsolatedWorkspaceSpec
@@ -28,6 +29,11 @@ import com.alibaba.opensandbox.sandbox.domain.models.sandboxes.SandboxEndpoint
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
+=======
+import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.IsolatedWorkspaceSpec
+import com.alibaba.opensandbox.sandbox.domain.models.sandboxes.SandboxEndpoint
+import kotlinx.serialization.json.Json
+>>>>>>> origin/main
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
@@ -35,7 +41,10 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+<<<<<<< HEAD
 import org.junit.jupiter.api.Assertions.assertFalse
+=======
+>>>>>>> origin/main
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -174,6 +183,7 @@ class IsolatedSessionsAdapterTest {
     }
 
     @Test
+<<<<<<< HEAD
     fun `capabilities parses hardening status`() {
         mockWebServer.enqueue(
             MockResponse()
@@ -206,6 +216,8 @@ class IsolatedSessionsAdapterTest {
     }
 
     @Test
+=======
+>>>>>>> origin/main
     fun `create serializes uid and gid above Int MaxValue`() {
         // Spec declares uid/gid as uint32; values above Int.MAX_VALUE must not fail.
         val uidAboveInt = 3_000_000_000L
@@ -239,6 +251,7 @@ class IsolatedSessionsAdapterTest {
     }
 
     @Test
+<<<<<<< HEAD
     fun `create requires workspace or overlays`() {
         // Neither mount configured fails fast, client-side.
         assertThrows(IllegalArgumentException::class.java) {
@@ -364,6 +377,8 @@ class IsolatedSessionsAdapterTest {
     }
 
     @Test
+=======
+>>>>>>> origin/main
     fun `attach populatesFullInfo whenExecdReturnsAllFields`() {
         mockWebServer.enqueue(
             MockResponse()
@@ -629,6 +644,7 @@ class IsolatedSessionsAdapterTest {
         assertEquals("GET", request.method)
         assertEquals("/v1/isolated/session/missing-sess", request.path)
     }
+<<<<<<< HEAD
 
     @Test
     fun `runBackground posts background flag without timeout and parses 202 handle`() {
@@ -1008,4 +1024,6 @@ class IsolatedSessionsAdapterTest {
         assertEquals(23L, page2.cursor)
         assertEquals("11", mockWebServer.takeRequest().requestUrl?.queryParameter("cursor"))
     }
+=======
+>>>>>>> origin/main
 }

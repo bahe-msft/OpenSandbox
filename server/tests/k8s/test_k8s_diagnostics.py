@@ -127,6 +127,7 @@ def test_find_pod_uses_label_selector_and_maps_errors() -> None:
     assert api_error.value.status_code == 500
 
 
+<<<<<<< HEAD
 def _pooled_service(
     pod_names: list[str], released: list[str] | None = None
 ) -> _DiagnosticsService:
@@ -174,6 +175,8 @@ def test_find_pod_returns_404_when_allocated_pod_is_gone() -> None:
     assert not_found.value.status_code == 404
 
 
+=======
+>>>>>>> origin/main
 def test_find_pod_uses_resolved_tenant_namespace() -> None:
     service = _DiagnosticsService([_pod(namespace="tenant-a")], resolved_namespace="tenant-a")
 
@@ -435,6 +438,7 @@ def test_get_sandbox_events_uses_found_pod_namespace() -> None:
         field_selector="involvedObject.name=pod-1",
         limit=50,
     )
+<<<<<<< HEAD
 
 
 def test_get_sandbox_events_follows_continuation_until_limit() -> None:
@@ -576,3 +580,5 @@ def test_get_sandbox_events_maps_kubernetes_api_errors(
     assert typed_detail["code"] == expected_code
     assert "pod-1" in typed_detail["message"]
     assert api_exc.body in typed_detail["message"]
+=======
+>>>>>>> origin/main

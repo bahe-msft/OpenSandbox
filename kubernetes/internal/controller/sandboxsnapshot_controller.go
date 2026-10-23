@@ -92,9 +92,12 @@ type SandboxSnapshotReconciler struct {
 	// Required when imageCommitterImage lives in a private registry.
 	ImageCommitterPullSecret string
 
+<<<<<<< HEAD
 	// ImageCommitterPodTemplate overlays operator-controlled commit Job Pod settings.
 	ImageCommitterPodTemplate *corev1.PodTemplateSpec
 
+=======
+>>>>>>> origin/main
 	// SnapshotRegistryInsecure controls whether image-committer uses insecure registry mode.
 	SnapshotRegistryInsecure bool
 }

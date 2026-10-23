@@ -322,8 +322,13 @@ func (r *SandboxSnapshotReconciler) imageCommitterPullSecrets() []corev1.LocalOb
 	return []corev1.LocalObjectReference{{Name: r.ImageCommitterPullSecret}}
 }
 
+<<<<<<< HEAD
 func commitJobSecurityContext(requiresHostPID bool) *corev1.SecurityContext {
 	securityContext := &corev1.SecurityContext{
+=======
+func commitJobSecurityContext() *corev1.SecurityContext {
+	return &corev1.SecurityContext{
+>>>>>>> origin/main
 		RunAsUser:                ptrToInt64(0),
 		RunAsNonRoot:             ptrToBool(false),
 		AllowPrivilegeEscalation: ptrToBool(false),
@@ -466,7 +471,10 @@ func (r *SandboxSnapshotReconciler) buildCommitJob(snapshot *sandboxv1alpha1.San
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					RestartPolicy:    corev1.RestartPolicyNever,
+<<<<<<< HEAD
 					HostPID:          requiresHostPID,
+=======
+>>>>>>> origin/main
 					ImagePullSecrets: r.imageCommitterPullSecrets(),
 					Containers: []corev1.Container{
 						{
@@ -754,7 +762,10 @@ func (r *SandboxSnapshotReconciler) buildUnpauseJob(snapshot *sandboxv1alpha1.Sa
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					RestartPolicy:    corev1.RestartPolicyNever,
+<<<<<<< HEAD
 					HostPID:          requiresHostPID,
+=======
+>>>>>>> origin/main
 					ImagePullSecrets: r.imageCommitterPullSecrets(),
 					Containers: []corev1.Container{
 						{

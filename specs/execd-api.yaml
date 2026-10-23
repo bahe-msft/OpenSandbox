@@ -3203,6 +3203,7 @@ components:
       description: >-
         State of an isolated session. Runtime status fields (status,
         created_at, last_run_at, idle_remaining_seconds) are always present.
+<<<<<<< HEAD
         Creation-parameter fields (profile, workspace, overlays, binds,
         share_net, env_passthrough, uid, gid, uid_mode, extra_writable,
         idle_timeout_seconds) echo the parameters used to create the session
@@ -3213,6 +3214,15 @@ components:
         element, and `workspace` itself is only echoed for such
         single-overlay sessions. Older execd builds may omit the
         creation-parameter fields; clients must tolerate them being absent.
+=======
+        Creation-parameter fields (profile, workspace, binds, share_net,
+        env_passthrough, uid, gid, uid_mode, extra_writable,
+        idle_timeout_seconds) echo the parameters used to create the session
+        and let a stateless client rebuild a session handle from just a
+        session ID (e.g. after a client restart or in serverless workers).
+        Older execd builds may omit the creation-parameter fields; clients
+        must tolerate them being absent.
+>>>>>>> origin/main
       properties:
         status:
           type: string
@@ -3232,11 +3242,14 @@ components:
           description: Profile the session was created with.
         workspace:
           $ref: "#/components/schemas/IsolatedWorkspaceSpec"
+<<<<<<< HEAD
         overlays:
           type: array
           description: Effective overlay mounts of the session.
           items:
             $ref: "#/components/schemas/IsolatedOverlaySpec"
+=======
+>>>>>>> origin/main
         extra_writable:
           type: array
           items:

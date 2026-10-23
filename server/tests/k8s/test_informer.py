@@ -15,9 +15,12 @@
 import threading
 import time
 from unittest.mock import MagicMock, patch
+<<<<<<< HEAD
 
 import pytest
 from kubernetes.client import ApiException
+=======
+>>>>>>> origin/main
 
 from opensandbox_server.services.k8s.informer import WorkloadInformer
 
@@ -498,8 +501,13 @@ class TestWorkloadInformerStartStop:
 
         assert watch_timeouts == [5, 5]
         assert list_fn.call_count == 2
+<<<<<<< HEAD
         assert "stale" not in informer._cache
         assert "fresh" in informer._cache
+=======
+        assert informer.get("stale") is None
+        assert informer.get("fresh") is not None
+>>>>>>> origin/main
 
     def test_watch_mode_does_not_resync_before_period(self):
         """Short watch timeouts resume until the full-resync deadline is reached."""
@@ -536,6 +544,7 @@ class TestWorkloadInformerStartStop:
 
         assert watch_timeouts == [2, 2, 1, 2]
         assert list_counts == [1, 1, 1, 2]
+<<<<<<< HEAD
 
 
 class TestWorkloadInformerEventHandlers:
@@ -669,3 +678,5 @@ def test_subscriber_receives_object_while_cache_is_invalid():
     informer._handle_event({"type": "MODIFIED", "object": obj})
     callback.assert_called_once_with("MODIFIED", obj)
     assert informer.get_if_synced("alpha") is None
+=======
+>>>>>>> origin/main

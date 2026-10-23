@@ -1,5 +1,9 @@
 /*
+<<<<<<< HEAD
  * Copyright 2026 The OpenSandbox Authors
+=======
+ * Copyright 2026 Alibaba Group Holding Ltd.
+>>>>>>> origin/main
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,7 +67,11 @@ internal object LifecycleMetricsReporter {
         success: Boolean,
         client: OkHttpClient? = null,
     ) {
+<<<<<<< HEAD
         if (connectionConfig.isCreateMetricsDisabled()) {
+=======
+        if (connectionConfig.isMetricsDisabled()) {
+>>>>>>> origin/main
             return
         }
 

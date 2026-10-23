@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 // Copyright 2026 The OpenSandbox Authors
+=======
+// Copyright 2026 Alibaba Group Holding Ltd.
+>>>>>>> origin/main
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,6 +37,7 @@ namespace OpenSandbox.Internal;
 /// </summary>
 internal static class LifecycleMetricsReporter
 {
+<<<<<<< HEAD
     // Shared: a per-event HttpClient churns sockets on a fire-and-forget path.
     // Deliberately capped at 5s regardless of RequestTimeoutSeconds: telemetry
     // must never block the create/connect path.
@@ -41,6 +46,8 @@ internal static class LifecycleMetricsReporter
         Timeout = TimeSpan.FromSeconds(5),
     };
 
+=======
+>>>>>>> origin/main
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -96,6 +103,13 @@ internal static class LifecycleMetricsReporter
         {
             try
             {
+<<<<<<< HEAD
+=======
+                using var client = new HttpClient
+                {
+                    Timeout = TimeSpan.FromSeconds(Math.Max(1, connectionConfig.RequestTimeoutSeconds)),
+                };
+>>>>>>> origin/main
                 using var content = new ByteArrayContent(body);
                 content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
 
@@ -117,7 +131,11 @@ internal static class LifecycleMetricsReporter
                     request.Headers.TryAddWithoutValidation(Constants.ApiKeyHeader, connectionConfig.ApiKey);
                 }
 
+<<<<<<< HEAD
                 using var response = await TelemetryClient.SendAsync(request).ConfigureAwait(false);
+=======
+                using var response = await client.SendAsync(request).ConfigureAwait(false);
+>>>>>>> origin/main
                 // Drain content to allow connection reuse; ignore status.
                 _ = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
             }

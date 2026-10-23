@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 // Copyright 2026 The OpenSandbox Authors
+=======
+// Copyright 2026 Alibaba Group Holding Ltd.
+>>>>>>> origin/main
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +19,7 @@
 package controller
 
 import (
+<<<<<<< HEAD
 	"context"
 	"encoding/json"
 	"fmt"
@@ -28,6 +33,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+=======
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"testing"
+>>>>>>> origin/main
 
 	"github.com/alibaba/opensandbox/execd/pkg/isolation"
 	"github.com/alibaba/opensandbox/execd/pkg/runtime"
@@ -46,6 +57,7 @@ func TestClassifyIsolatedCreateError_UidModeUnavailable(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 func TestClassifyIsolatedCreateError_ServiceUnavailable(t *testing.T) {
 	for _, target := range []error{
 		runtime.ErrSessionNamespaceUnavailable,
@@ -92,6 +104,8 @@ func TestClassifyIsolatedDeleteError_NamespaceCleanup(t *testing.T) {
 	}
 }
 
+=======
+>>>>>>> origin/main
 func TestCapabilities_ReportsModeSpecificProbeResults(t *testing.T) {
 	previousRunner := isolatedRunner
 	previousProbe := isolatedProbeResult
@@ -136,6 +150,7 @@ func TestCapabilities_ReportsModeSpecificProbeResults(t *testing.T) {
 		}
 	}
 }
+<<<<<<< HEAD
 
 func TestUnavailableAdmissionDoesNotBlockSessionCleanupRoutes(t *testing.T) {
 	previousRunner := isolatedRunner
@@ -539,3 +554,5 @@ func TestGetRunLogs_RejectsMalformedCursor(t *testing.T) {
 		}
 	}
 }
+=======
+>>>>>>> origin/main

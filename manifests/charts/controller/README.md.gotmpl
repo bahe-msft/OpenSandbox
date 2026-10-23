@@ -59,7 +59,77 @@ kubectl delete crd pools.sandbox.opensandbox.io
 kubectl delete crd sandboxsnapshots.sandbox.opensandbox.io
 ```
 
+<<<<<<< HEAD:manifests/charts/controller/README.md.gotmpl
 {{ template "chart.valuesSection" . }}
+=======
+## Parameters
+
+### Global Parameters
+
+| Name | Description | Value |
+|------|-------------|-------|
+| `nameOverride` | Override the name of the chart | `""` |
+| `fullnameOverride` | Override the full name of the chart | `""` |
+| `namespaceOverride` | Override the namespace where resources will be created | `""` |
+
+### Controller Parameters
+
+| Name | Description | Value |
+|------|-------------|-------|
+| `controller.image.repository` | Controller image repository | `opensandbox.io/opensandbox-controller` |
+| `controller.image.pullPolicy` | Image pull policy | `IfNotPresent` |
+| `controller.image.tag` | Overrides the image tag (default is chart appVersion) | `""` |
+| `controller.replicaCount` | Number of controller replicas | `1` |
+| `controller.resources.limits.cpu` | CPU resource limits | `500m` |
+| `controller.resources.limits.memory` | Memory resource limits | `128Mi` |
+| `controller.resources.requests.cpu` | CPU resource requests | `10m` |
+| `controller.resources.requests.memory` | Memory resource requests | `64Mi` |
+| `controller.logLevel` | Can be one of 'debug', 'info', 'error' | `info` |
+| `controller.kubeClient.qps` | QPS for Kubernetes client rate limiter | `100` |
+| `controller.kubeClient.burst` | Burst for Kubernetes client rate limiter | `200` |
+| `controller.snapshot.imageCommitterImage` | Image used by snapshot commit Jobs | `image-committer:dev` |
+| `controller.snapshot.commitJobTimeout` | Timeout duration for snapshot commit Jobs | `10m` |
+| `controller.snapshot.registry` | OCI registry prefix used for snapshot images | `""` |
+| `controller.snapshot.registryInsecure` | Use insecure registry mode for snapshot pushes | `false` |
+| `controller.snapshot.snapshotPushSecret` | Secret name used by commit Jobs to push snapshots | `""` |
+| `controller.snapshot.imageCommitterPullSecret` | Secret name for pulling the image-committer image in commit Jobs (needed when it's in a private registry) | `""` |
+| `controller.snapshot.resumePullSecret` | Secret name injected into resumed sandboxes for image pulls | `""` |
+| `controller.leaderElection.enabled` | Enable leader election | `true` |
+| `controller.nodeSelector` | Node labels for pod assignment | `{}` |
+| `controller.tolerations` | Tolerations for pod assignment | `[]` |
+| `controller.affinity` | Affinity for pod assignment | `{}` |
+| `controller.podLabels` | Additional labels for controller pods | `{}` |
+| `controller.podAnnotations` | Additional annotations for controller pods | `{}` |
+| `controller.priorityClassName` | Priority class name for controller pods | `""` |
+
+### RBAC Parameters
+
+| Name | Description | Value |
+|------|-------------|-------|
+| `rbac.create` | Specifies whether RBAC resources should be created | `true` |
+| `serviceAccount.create` | Specifies whether a service account should be created | `true` |
+| `serviceAccount.annotations` | Annotations to add to the service account | `{}` |
+| `serviceAccount.name` | The name of the service account to use | `""` |
+
+### CRD Parameters
+
+| Name | Description | Value |
+|------|-------------|-------|
+| `crds.install` | Specifies whether CRDs should be installed | `true` |
+| `crds.keep` | Keep CRDs on chart uninstall | `true` |
+| `crds.annotations` | Annotations to add to CRDs | `{"helm.sh/resource-policy": "keep"}` |
+
+### Additional Parameters
+
+| Name | Description | Value |
+|------|-------------|-------|
+| `imagePullSecrets` | Image pull secrets for private registries | `[]` |
+| `extraEnv` | Additional environment variables | `[]` |
+| `extraVolumes` | Additional volumes | `[]` |
+| `extraVolumeMounts` | Additional volume mounts | `[]` |
+| `extraInitContainers` | Additional init containers | `[]` |
+| `extraContainers` | Additional sidecar containers | `[]` |
+>>>>>>> origin/main:kubernetes/charts/opensandbox-controller/README.md
 
 ## Configuration Examples
 

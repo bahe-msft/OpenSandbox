@@ -98,6 +98,7 @@ def test_get_endpoint_use_server_proxy_rewrites_url(
     assert response.json()["endpoint"] == "testserver/v1/sandboxes/sbx-001/proxy/44772"
 
 
+<<<<<<< HEAD
 def test_get_endpoint_use_server_proxy_omits_ingress_header(
     client: TestClient,
     auth_headers: dict,
@@ -126,6 +127,8 @@ def test_get_endpoint_use_server_proxy_omits_ingress_header(
     assert response.json()["headers"] == {OPEN_SANDBOX_SECURE_ACCESS_HEADER: "secure-token"}
 
 
+=======
+>>>>>>> origin/main
 def test_get_endpoint_use_server_proxy_without_mount_prefix(
     client: TestClient,
     auth_headers: dict,

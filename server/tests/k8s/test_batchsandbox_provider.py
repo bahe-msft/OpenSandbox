@@ -1744,9 +1744,33 @@ spec:
                 expires_at=datetime(2025, 12, 31, tzinfo=timezone.utc),
                 execd_image="execd:latest",
                 extensions={"poolRef": "my-pool"},
+<<<<<<< HEAD
                 egress_settings=_egress_settings(
                     NetworkPolicy(default_action="deny", egress=[])
                 ),
+=======
+                network_policy=NetworkPolicy(default_action="deny", egress=[]),
+            )
+
+        mock_k8s_client.create_custom_object.assert_not_called()
+
+    def test_create_workload_poolref_rejects_credential_proxy(self, mock_k8s_client):
+        provider = BatchSandboxProvider(mock_k8s_client)
+
+        with pytest.raises(ValueError, match="Pool mode does not support credentialProxy.enabled"):
+            provider.create_workload(
+                sandbox_id="test-id",
+                namespace="test-ns",
+                image_spec=ImageSpec(uri="python:3.11"),
+                entrypoint=["/bin/bash"],
+                env={},
+                resource_limits={},
+                labels={},
+                expires_at=datetime(2025, 12, 31, tzinfo=timezone.utc),
+                execd_image="execd:latest",
+                extensions={"poolRef": "my-pool"},
+                credential_proxy_enabled=True,
+>>>>>>> origin/main
             )
 
         mock_k8s_client.create_custom_object.assert_not_called()

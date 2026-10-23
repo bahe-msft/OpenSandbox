@@ -574,6 +574,7 @@ The `ConnectionConfig` class manages API server connection settings.
 | `transport`       | Shared httpx transport (pool/proxy/retry); custom transports must honor request timeouts  | SDK-created per instance     | -                      |
 | `retry_policy`    | Automatic retry policy for non-streaming requests (see [Automatic retries](#_2-automatic-retries)) | Enabled (`RetryPolicy()`) | -                 |
 | `use_server_proxy` | Use sandbox server as proxy for execd/endpoint requests (e.g. when client cannot reach the sandbox directly) | `False` | -                      |
+<<<<<<< HEAD
 | `disable_metrics` | Disable SDK create-latency telemetry (see [SDK Telemetry](/sdks/observability#creation-metrics)) | `False` | `OPENSANDBOX_DISABLE_METRICS` |
 | `enable_tracing` | Enable OpenTelemetry tracing for pool warmup (see [SDK Tracing](/sdks/observability#pool-warmup-tracing)) | `False` | - |
 
@@ -602,6 +603,9 @@ request hooks run before the SDK safety hook, so they cannot re-add protected
 OpenSandbox headers to a cross-origin request. Lifecycle telemetry honors
 `follow_redirects` and the SDK safety hook, but does not invoke configured user
 hooks.
+=======
+| `disable_metrics` | Disable SDK create-latency telemetry (see [SDK Telemetry](/guides/sdk-telemetry)) | `False` | `OPENSANDBOX_DISABLE_METRICS` |
+>>>>>>> origin/main
 
 ```python
 from datetime import timedelta

@@ -24,8 +24,11 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
+<<<<<<< HEAD
 	"net/url"
 	"strings"
+=======
+>>>>>>> origin/main
 	"sync"
 	"time"
 )
@@ -57,6 +60,7 @@ type Client struct {
 	// timeout (see streamHTTPClient).
 	streamClient *http.Client
 	streamOnce   sync.Once
+<<<<<<< HEAD
 
 	// transferClient is a dedicated HTTP client for file uploads and downloads,
 	// created lazily. Like streamClient it has no overall request timeout, but
@@ -82,6 +86,8 @@ func (c *Client) cloneWithBaseURL(baseURL string) *Client {
 		}
 	}
 	return cloned
+=======
+>>>>>>> origin/main
 }
 
 // streamHTTPClient returns a dedicated HTTP client for SSE streaming.
@@ -125,6 +131,7 @@ func (c *Client) streamHTTPClient() *http.Client {
 		c.streamClient = &sc
 	})
 	return c.streamClient
+<<<<<<< HEAD
 }
 
 // transferHTTPClient returns the HTTP client for file uploads and downloads.
@@ -147,6 +154,8 @@ func (c *Client) transferHTTPClient() *http.Client {
 		c.transferClient = &tc
 	})
 	return c.transferClient
+=======
+>>>>>>> origin/main
 }
 
 // Option configures a Client.
@@ -303,12 +312,20 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body any, r
 func (c *Client) doRequestCapture(ctx context.Context, method, path string, body, result any, capture func(http.Header)) error {
 	return c.withRetry(ctx, func() error {
 		var reused bool
+<<<<<<< HEAD
 		err := c.doRequestOnce(ctx, method, path, body, result, &reused, capture)
+=======
+		err := c.doRequestOnce(ctx, method, path, body, result, &reused)
+>>>>>>> origin/main
 		if err != nil && reused && c.shouldRetryOnFreshConn(ctx, method, err) {
 			// The reused pooled connection was likely silently dropped by an
 			// intermediary. Drop idle connections so the retry dials a new one.
 			c.httpClient.CloseIdleConnections()
+<<<<<<< HEAD
 			err = c.doRequestOnce(ctx, method, path, body, result, nil, capture)
+=======
+			err = c.doRequestOnce(ctx, method, path, body, result, nil)
+>>>>>>> origin/main
 		}
 		return err
 	})
@@ -350,9 +367,14 @@ func (c *Client) shouldRetryOnFreshConn(ctx context.Context, method string, err 
 
 // doRequestOnce is the single-attempt implementation of doRequest. If reused is
 // non-nil it is set to whether this attempt was carried over a reused pooled
+<<<<<<< HEAD
 // connection (observed via httptrace GotConn). If capture is non-nil it is
 // invoked with the response headers once the response is deemed successful.
 func (c *Client) doRequestOnce(ctx context.Context, method, path string, body any, result any, reused *bool, capture func(http.Header)) error {
+=======
+// connection (observed via httptrace GotConn).
+func (c *Client) doRequestOnce(ctx context.Context, method, path string, body any, result any, reused *bool) error {
+>>>>>>> origin/main
 	var bodyReader io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)

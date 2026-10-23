@@ -71,7 +71,10 @@ data class IsolatedSessionInfo(
     // Creation-parameter fields echoed by execd (may be absent on older builds).
     val profile: String? = null,
     val workspace: IsolatedWorkspaceSpec? = null,
+<<<<<<< HEAD
     val overlays: List<IsolatedOverlaySpec>? = null,
+=======
+>>>>>>> origin/main
     val extraWritable: List<String>? = null,
     val binds: List<BindMount>? = null,
     val shareNet: Boolean? = null,
@@ -90,7 +93,10 @@ data class IsolatedSessionState(
     // Creation-parameter fields echoed by execd (may be absent on older builds).
     val profile: String? = null,
     val workspace: IsolatedWorkspaceSpec? = null,
+<<<<<<< HEAD
     val overlays: List<IsolatedOverlaySpec>? = null,
+=======
+>>>>>>> origin/main
     val extraWritable: List<String>? = null,
     val binds: List<BindMount>? = null,
     val shareNet: Boolean? = null,
@@ -174,6 +180,7 @@ data class IsolatedCapabilities(
     val diffSupported: Boolean = false,
     val setprivAvailable: Boolean = false,
     val usernsAvailable: Boolean = false,
+<<<<<<< HEAD
     val hardening: HardeningStatus? = null,
 )
 
@@ -193,4 +200,6 @@ data class HardeningLayerState(
     // active | disabled | degraded | unsupported
     val state: String? = null,
     val message: String? = null,
+=======
+>>>>>>> origin/main
 )

@@ -496,6 +496,7 @@ func main() {
 		os.Exit(1)
 	}
 	if err := (&controller.SandboxSnapshotReconciler{
+<<<<<<< HEAD
 		Client:                    mgr.GetClient(),
 		Scheme:                    mgr.GetScheme(),
 		Recorder:                  mgr.GetEventRecorderFor("sandboxsnapshot-controller"),
@@ -508,6 +509,18 @@ func main() {
 		SnapshotPushSecret:        snapshotPushSecret,
 		ImageCommitterPullSecret:  imageCommitterPullSecret,
 		ImageCommitterPodTemplate: imageCommitterPodTemplate,
+=======
+		Client:                   mgr.GetClient(),
+		Scheme:                   mgr.GetScheme(),
+		Recorder:                 mgr.GetEventRecorderFor("sandboxsnapshot-controller"),
+		ImageCommitterImage:      imageCommitterImage,
+		ContainerdSocketPath:     containerdSocketPath,
+		CommitJobTimeout:         commitJobTimeout,
+		SnapshotRegistry:         snapshotRegistry,
+		SnapshotRegistryInsecure: snapshotRegistryInsecure,
+		SnapshotPushSecret:       snapshotPushSecret,
+		ImageCommitterPullSecret: imageCommitterPullSecret,
+>>>>>>> origin/main
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SandboxSnapshot")
 		os.Exit(1)

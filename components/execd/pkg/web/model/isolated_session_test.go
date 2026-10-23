@@ -16,7 +16,10 @@ package model
 
 import (
 	"encoding/json"
+<<<<<<< HEAD
 	"fmt"
+=======
+>>>>>>> origin/main
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +66,7 @@ func TestCreateIsolatedSessionRequest_Validate_Binds(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 func TestCreateIsolatedSessionRequest_Validate_Overlays(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -226,6 +230,8 @@ func TestCreateIsolatedSessionRequest_EffectiveOverlays(t *testing.T) {
 	})
 }
 
+=======
+>>>>>>> origin/main
 // TestSessionState_JSONRoundtrip verifies the creation-parameter echo fields
 // serialize under the JSON keys defined in specs/execd-api.yaml so that
 // SDKs (that share model definitions with the spec) deserialize them
@@ -243,7 +249,10 @@ func TestSessionState_JSONRoundtrip(t *testing.T) {
 		LastRunAt:          now,
 		Profile:            "balanced",
 		Workspace:          &WorkspaceSpec{Path: "/tmp/ws", Mode: "overlay"},
+<<<<<<< HEAD
 		Overlays:           []OverlaySpec{{Path: "/", Mode: "overlay"}, {Path: "/tmp/ws", Mode: "overlay", Persist: &[]bool{false}[0]}},
+=======
+>>>>>>> origin/main
 		ExtraWritable:      []string{"/allowed"},
 		Binds:              []BindMount{{Source: "/host/src", Dest: "/mnt/src", ReadOnly: true}},
 		ShareNet:           &shareNet,
@@ -264,7 +273,10 @@ func TestSessionState_JSONRoundtrip(t *testing.T) {
 	for _, key := range []string{
 		`"profile":"balanced"`,
 		`"workspace":{`,
+<<<<<<< HEAD
 		`"overlays":[`,
+=======
+>>>>>>> origin/main
 		`"extra_writable":`,
 		`"binds":[`,
 		`"share_net":true`,
@@ -288,7 +300,11 @@ func TestSessionState_JSONRoundtrip(t *testing.T) {
 	}
 	s2 := string(b2)
 	for _, key := range []string{
+<<<<<<< HEAD
 		"profile", "workspace", "overlays", "extra_writable", "binds", "share_net",
+=======
+		"profile", "workspace", "extra_writable", "binds", "share_net",
+>>>>>>> origin/main
 		"env_passthrough", "uid", "gid", "uid_mode", "idle_timeout_seconds",
 	} {
 		if strings.Contains(s2, key) {
@@ -296,6 +312,10 @@ func TestSessionState_JSONRoundtrip(t *testing.T) {
 		}
 	}
 
+<<<<<<< HEAD
+=======
+	// Round-trip: unmarshalling produces identical structure.
+>>>>>>> origin/main
 	var back SessionState
 	if err := json.Unmarshal(b, &back); err != nil {
 		t.Fatal(err)
@@ -303,12 +323,15 @@ func TestSessionState_JSONRoundtrip(t *testing.T) {
 	if back.Profile != "balanced" || back.Workspace == nil || back.Workspace.Path != "/tmp/ws" {
 		t.Errorf("round-trip mismatch: %+v", back)
 	}
+<<<<<<< HEAD
 	if len(back.Overlays) != 2 ||
 		back.Overlays[0].Path != "/" ||
 		back.Overlays[1].Path != "/tmp/ws" ||
 		back.Overlays[1].Persist == nil || *back.Overlays[1].Persist {
 		t.Errorf("overlays round-trip mismatch: %+v", back.Overlays)
 	}
+=======
+>>>>>>> origin/main
 	if back.ShareNet == nil || !*back.ShareNet {
 		t.Errorf("ShareNet lost in round-trip")
 	}

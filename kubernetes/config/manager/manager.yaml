@@ -73,11 +73,14 @@ spec:
           - --image-committer-pod-template-file=
           - --commit-job-timeout=2m
           - --image-committer-pull-secret=
+<<<<<<< HEAD
         env:
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+=======
+>>>>>>> origin/main
         image: controller:dev
         name: manager
         ports: []

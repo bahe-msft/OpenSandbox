@@ -51,3 +51,12 @@ test("ConnectionConfig.disableMetrics is preserved by withTransportIfMissing", (
   assert.equal(connectionConfig.disableMetrics, true);
   assert.equal(connectionConfig.withTransportIfMissing().disableMetrics, true);
 });
+
+test("ConnectionConfig.disableMetrics is preserved by withTransportIfMissing", () => {
+  const connectionConfig = new ConnectionConfig({
+    domain: "https://api.opensandbox.test",
+    disableMetrics: true,
+  });
+  assert.equal(connectionConfig.disableMetrics, true);
+  assert.equal(connectionConfig.withTransportIfMissing().disableMetrics, true);
+});

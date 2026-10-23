@@ -95,7 +95,10 @@ def _infer_exit_code(execution: Execution) -> int | None:
 _ECHO_FIELDS = (
     "profile",
     "workspace",
+<<<<<<< HEAD
     "overlays",
+=======
+>>>>>>> origin/main
     "extra_writable",
     "binds",
     "share_net",
@@ -297,8 +300,15 @@ class IsolatedSessionsAdapter(IsolationServiceMixin, IsolationService):
             url = self._get_url(self.SESSION_PATH.format(session_id=session_id))
             response = await self._httpx_client.get(url)
             if response.status_code != 200:
+<<<<<<< HEAD
                 raise build_api_exception_from_httpx(
                     response, "attach isolated session"
+=======
+                raise SandboxApiException(
+                    message=f"attach isolated session failed. Status: {response.status_code}",
+                    status_code=response.status_code,
+                    request_id=extract_request_id(response.headers),
+>>>>>>> origin/main
                 )
             info = _build_attach_info(session_id, response.json())
             return IsolationSessionHandle(info, self)

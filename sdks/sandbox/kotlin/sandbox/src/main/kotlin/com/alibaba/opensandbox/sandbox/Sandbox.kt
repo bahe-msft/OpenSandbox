@@ -51,7 +51,10 @@ import com.alibaba.opensandbox.sandbox.domain.services.Metrics
 import com.alibaba.opensandbox.sandbox.domain.services.Sandboxes
 import com.alibaba.opensandbox.sandbox.infrastructure.factory.AdapterFactory
 import com.alibaba.opensandbox.sandbox.internal.LifecycleMetricsReporter
+<<<<<<< HEAD
 import com.alibaba.opensandbox.sandbox.internal.isCausedByInterruption
+=======
+>>>>>>> origin/main
 import org.slf4j.LoggerFactory
 import java.time.Duration
 import java.time.OffsetDateTime
@@ -464,7 +467,10 @@ class Sandbox internal constructor(
                     initializeSandbox(
                         operationName = "create sandbox with startup source $startupSource (timeout: $timeoutLabel)",
                         connectionConfig = connectionConfig,
+<<<<<<< HEAD
                         initializationConnectionConfig = initializationConnectionConfig,
+=======
+>>>>>>> origin/main
                         healthCheck = healthCheck,
                         timeout = readyTimeout,
                         healthCheckPollingInterval = healthCheckPollingInterval,
@@ -486,7 +492,10 @@ class Sandbox internal constructor(
                                 secureAccess = secureAccess,
                                 snapshotId = snapshotId,
                                 resourceRequests = resourceRequests,
+<<<<<<< HEAD
                                 lifecycle = lifecycle,
+=======
+>>>>>>> origin/main
                             )
                         createdSandboxId = response.id
                         InitializationResult.NewSandbox(response.id)
@@ -508,6 +517,7 @@ class Sandbox internal constructor(
                     success = false,
                 )
                 throw e
+<<<<<<< HEAD
             }
         }
 
@@ -591,7 +601,14 @@ class Sandbox internal constructor(
                     success = false,
                 )
                 throw e
+=======
+>>>>>>> origin/main
             }
+        }
+
+        private fun elapsedMillis(startNanos: Long): Long {
+            val elapsed = (System.nanoTime() - startNanos) / 1_000_000L
+            return if (elapsed < 0L) 0L else elapsed
         }
 
         /**

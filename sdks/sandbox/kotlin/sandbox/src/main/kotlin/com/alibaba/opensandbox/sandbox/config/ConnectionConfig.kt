@@ -59,6 +59,7 @@ class ConnectionConfig private constructor(
      * Also honored via the `OPENSANDBOX_DISABLE_METRICS=1` environment variable.
      */
     val disableMetrics: Boolean = false,
+<<<<<<< HEAD
     /** Internal staged-warmup override: suppress only the legacy sandbox.create event. */
     internal val suppressCreateMetrics: Boolean = false,
     /**
@@ -84,6 +85,8 @@ class ConnectionConfig private constructor(
     internal val retryOnConnectionFailure: Boolean = true,
     /** Internal transport mode used only by staged pool warmup health probes. */
     internal val singleAttemptHealthChecks: Boolean = false,
+=======
+>>>>>>> origin/main
 ) {
     /**
      * Creates a copy of this ConnectionConfig without copying the connectionPool.
@@ -105,6 +108,7 @@ class ConnectionConfig private constructor(
             endpointCacheSize = this.endpointCacheSize,
             endpointCacheDisabled = this.endpointCacheDisabled,
             disableMetrics = this.disableMetrics,
+<<<<<<< HEAD
             suppressCreateMetrics = this.suppressCreateMetrics,
             enableTracing = this.enableTracing,
             retryPolicy = this.retryPolicy,
@@ -198,6 +202,8 @@ class ConnectionConfig private constructor(
             retryPolicy = this.retryPolicy,
             retryOnConnectionFailure = this.retryOnConnectionFailure,
             singleAttemptHealthChecks = true,
+=======
+>>>>>>> origin/main
         )
 
     companion object {
@@ -225,9 +231,12 @@ class ConnectionConfig private constructor(
         return envValue == "1"
     }
 
+<<<<<<< HEAD
     /** Returns whether the legacy sandbox.create lifecycle event should be skipped. */
     internal fun isCreateMetricsDisabled(): Boolean = suppressCreateMetrics || isMetricsDisabled()
 
+=======
+>>>>>>> origin/main
     fun getApiKey(): String {
         return this.apiKey ?: System.getenv(ENV_API_KEY) ?: ""
     }
@@ -300,8 +309,11 @@ class ConnectionConfig private constructor(
         private var endpointCacheSize: Int = 1024
         private var endpointCacheDisabled: Boolean = false
         private var disableMetrics: Boolean = false
+<<<<<<< HEAD
         private var enableTracing: Boolean = false
         private var retryPolicy: RetryPolicy = RetryPolicy()
+=======
+>>>>>>> origin/main
 
         /**
          * Use sandbox server as proxy for process execd requests.
@@ -342,6 +354,7 @@ class ConnectionConfig private constructor(
         }
 
         /**
+<<<<<<< HEAD
          * Enable OpenTelemetry tracing for the client-side sandbox pool warmup path.
          *
          * Off by default; pass `true` to opt in. Tracing is best-effort and no-ops
@@ -353,6 +366,8 @@ class ConnectionConfig private constructor(
         }
 
         /**
+=======
+>>>>>>> origin/main
          * Set the API key used for authentication.
          *
          * If not set, the SDK falls back to environment variable `OPEN_SANDBOX_API_KEY`.
@@ -507,11 +522,14 @@ class ConnectionConfig private constructor(
                 endpointCacheSize = endpointCacheSize,
                 endpointCacheDisabled = endpointCacheDisabled,
                 disableMetrics = disableMetrics,
+<<<<<<< HEAD
                 suppressCreateMetrics = false,
                 enableTracing = enableTracing,
                 retryPolicy = retryPolicy,
                 retryOnConnectionFailure = true,
                 singleAttemptHealthChecks = false,
+=======
+>>>>>>> origin/main
             )
         }
     }
