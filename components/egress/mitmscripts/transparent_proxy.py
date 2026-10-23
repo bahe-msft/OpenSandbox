@@ -1,8 +1,10 @@
 """Forward admitted origins to a fixed Gateway using the accepted private policy."""
 
 import http.client as http_client
+import ipaddress
 import json
 import os
+import re
 import socket
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -67,6 +69,26 @@ def admitted_origins():
         connection.close()
 
 
+def origin_admitted(host, origins):
+    if len(host) > 253 or not re.fullmatch(
+        r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*", host
+    ):
+        return False
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        return False
+
+    for origin in origins:
+        if origin == "https://" + host:
+            return True
+        if origin.startswith("https://*.") and host.endswith(origin[len("https://*"):]):
+            return True
+    return False
+
+
 def reject(flow, status):
     if flow.request.stream:
         flow.kill()
@@ -82,7 +104,8 @@ def requestheaders(flow):
         original = urlsplit("https://" + authority)
         host = original.hostname or ""
         origins = admitted_origins()
-        if host.endswith(".svc.cluster.local") and "https://" + host not in origins:
+        admitted = origin_admitted(host, origins)
+        if host.endswith(".svc.cluster.local") and not admitted:
             # Existing explicit provider endpoints retain system-addon bindings.
             return
         for name in list(flow.request.headers):
@@ -97,7 +120,7 @@ def requestheaders(flow):
             or original.port not in (None, 443)
             or authority not in (host, host + ":443")
             or flow.client_conn.sni != host
-            or "https://" + host not in origins
+            or not admitted
         ):
             reject(flow, 403)
             return
@@ -107,6 +130,10 @@ def requestheaders(flow):
         flow.request.host = destination.hostname
         flow.request.port = destination.port or 80
         flow.request.host_header = authority
+        # The Gateway uses HTTP/1.1. Unknown-length HTTP/2 and HTTP/3 bodies
+        # need chunk framing when mitmproxy converts the upstream request.
+        if (flow.request.is_http2 or flow.request.is_http3) and "content-length" not in flow.request.headers:
+            flow.request.headers["transfer-encoding"] = "chunked"
         token = Path(os.environ[TOKEN_ENV]).read_text().strip()
         if not token or "\r" in token or "\n" in token:
             raise ValueError("identity unavailable")

@@ -136,7 +136,8 @@ type NetworkPolicy struct {
 	TransparentProxy *TransparentProxyPolicy `json:"transparentProxy,omitempty"`
 }
 
-// TransparentProxyPolicy admits exact HTTPS/443 origins to the fixed egress Gateway.
+// TransparentProxyPolicy admits HTTPS/443 origins to the fixed egress Gateway.
+// A leading *. hostname wildcard matches subdomains at any depth, not the suffix itself.
 type TransparentProxyPolicy struct {
 	Origins []string `json:"origins"`
 }

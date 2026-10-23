@@ -217,6 +217,12 @@ required. The Gateway hostname must be allowed by the network policy.
 }
 ```
 
+Origins accept exact DNS names or a leading `*.` hostname wildcard. For example,
+`https://*.kusto.windows.net` matches `telemetry.westus2.kusto.windows.net`, but not
+`kusto.windows.net`. Partial-label and nonleading wildcards, ports, paths, and IP
+literals are rejected. Wildcards admit interception only; the Gateway and provider
+must still authorize the concrete original hostname and operation.
+
 DNS returns a synthetic interception address for admitted names without adding
 public upstream IPs to nftables. The bundled forwarding addon reads the accepted
 policy for every new request, preserves the original HTTP authority and request

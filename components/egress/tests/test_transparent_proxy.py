@@ -39,6 +39,7 @@ class TransparentProxyTest(unittest.TestCase):
             request=types.SimpleNamespace(
                 host="github.com", host_header="github.com", scheme="https", port=443,
                 path="/owner/repo.git/git-upload-pack", stream=False, content=b"git body",
+                is_http2=False, is_http3=False,
                 headers={"x-aks-sandbox-identity": "forged", "authorization": "caller"},
             ),
             client_conn=types.SimpleNamespace(sni="github.com"), response=None, error=None,
@@ -56,6 +57,54 @@ class TransparentProxyTest(unittest.TestCase):
         self.assertEqual(self.flow.request.path, "/owner/repo.git/git-upload-pack")
         self.assertEqual(self.flow.request.content, b"git body")
         self.assertEqual(self.flow.request.headers, {"x-aks-sandbox-identity": "identity-one"})
+
+    def test_unknown_length_modern_http_body_gets_chunk_framing(self):
+        for protocol in ("is_http2", "is_http3"):
+            with self.subTest(protocol=protocol):
+                flow = self.new_flow()
+                setattr(flow.request, protocol, True)
+                self.addon.requestheaders(flow)
+                self.assertIsNone(flow.response)
+                self.assertEqual(flow.request.headers["transfer-encoding"], "chunked")
+                self.assertEqual(flow.request.content, b"git body")
+
+    def test_known_length_http2_body_keeps_content_length(self):
+        self.flow.request.is_http2 = True
+        self.flow.request.headers["content-length"] = "8"
+        self.addon.requestheaders(self.flow)
+        self.assertIsNone(self.flow.response)
+        self.assertNotIn("transfer-encoding", self.flow.request.headers)
+        self.assertEqual(self.flow.request.headers["content-length"], "8")
+
+    def test_wildcard_preserves_concrete_authority_and_observes_removal(self):
+        self.origins = {"https://*.kusto.windows.net"}
+        host = "cluster.westus2.kusto.windows.net"
+        self.flow.request.host = host
+        self.flow.request.host_header = host + ":443"
+        self.flow.client_conn.sni = host
+        self.addon.requestheaders(self.flow)
+        self.assertIsNone(self.flow.response)
+        self.assertEqual(self.flow.request.host_header, host + ":443")
+        self.assertEqual(self.flow.request.host, "gateway.system.svc.cluster.local")
+
+        self.origins.clear()
+        flow = self.new_flow()
+        flow.request.host_header = host
+        flow.client_conn.sni = host
+        self.addon.requestheaders(flow)
+        self.assertEqual(flow.response.status_code, 403)
+        self.assertNotIn("x-aks-sandbox-identity", flow.request.headers)
+
+    def test_wildcard_rejects_apex_suffix_spoof_and_nonconcrete_names(self):
+        origins = {"https://*.kusto.windows.net"}
+        for host in (
+            "kusto.windows.net", "notkusto.windows.net",
+            "cluster.kusto.windows.net.evil.example", "*.kusto.windows.net",
+            "cluster..kusto.windows.net", "cluster.kusto.windows.net/evil",
+        ):
+            with self.subTest(host=host):
+                self.assertFalse(self.addon.origin_admitted(host, origins))
+        self.assertFalse(self.addon.origin_admitted("1.2.3.4", {"https://*.2.3.4"}))
 
     def test_origin_removal_is_seen_without_restart(self):
         self.origins.clear()

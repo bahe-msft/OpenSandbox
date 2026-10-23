@@ -31,10 +31,12 @@ func normalizeTransparentPolicy(p *NetworkPolicy) error {
 		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || origin != "https://"+parsed.Hostname() {
 			return fmt.Errorf("transparent origins must be canonical HTTPS DNS origins")
 		}
-		if len(validation.IsDNS1123Subdomain(parsed.Hostname())) != 0 {
+		host := parsed.Hostname()
+		suffix := strings.TrimPrefix(host, "*.")
+		if len(host) > 253 || len(validation.IsDNS1123Subdomain(suffix)) != 0 {
 			return fmt.Errorf("invalid transparent origin hostname")
 		}
-		if _, err := netip.ParseAddr(parsed.Hostname()); err == nil {
+		if _, err := netip.ParseAddr(suffix); err == nil {
 			return fmt.Errorf("transparent origins must not use IP addresses")
 		}
 	}
@@ -49,6 +51,21 @@ func (p *NetworkPolicy) TransparentHost(host string) bool {
 		return false
 	}
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	_, found := slices.BinarySearch(p.TransparentProxy.Origins, "https://"+host)
-	return found
+	if len(validation.IsDNS1123Subdomain(host)) != 0 {
+		return false
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return false
+	}
+
+	for _, origin := range p.TransparentProxy.Origins {
+		pattern := strings.TrimPrefix(origin, "https://")
+		if host == pattern {
+			return true
+		}
+		if strings.HasPrefix(pattern, "*.") && strings.HasSuffix(host, pattern[1:]) {
+			return true
+		}
+	}
+	return false
 }

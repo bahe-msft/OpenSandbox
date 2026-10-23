@@ -391,7 +391,9 @@ components:
       description: |
         Sidecar-only HTTPS/443 origins forwarded to an operator-fixed internal
         Gateway. Requires default-deny policy, authenticated management, and
-        transparent mitmproxy. An empty list removes all admitted origins.
+        transparent mitmproxy. Origins can use exact DNS names or a leading *.
+        wildcard, matching subdomains at any depth but excluding the suffix
+        itself. An empty list removes all admitted origins.
       required:
         - origins
       properties:
@@ -401,7 +403,7 @@ components:
           uniqueItems: true
           items:
             type: string
-            pattern: '^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
+            pattern: '^https://(\*\.)?[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
       additionalProperties: false
     NetworkRule:
       type: object
