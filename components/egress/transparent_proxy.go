@@ -42,18 +42,21 @@ func (s *policyServer) validateTransparentPolicy(pol *policy.NetworkPolicy) erro
 	return nil
 }
 
-func (s *policyServer) handleTransparentPolicy(w http.ResponseWriter, _ *http.Request) {
+func (s *policyServer) handleTransparentPolicy(w http.ResponseWriter, request *http.Request) {
+	hosts := request.URL.Query()["host"]
+	if len(hosts) != 1 || hosts[0] == "" {
+		http.Error(w, "one concrete hostname is required", http.StatusBadRequest)
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	current := s.effectivePolicy()
 	origins := []string{}
-	if current.TransparentProxy != nil {
-		for _, origin := range current.TransparentProxy.Origins {
-			host := strings.TrimPrefix(origin, "https://")
-			if current.Evaluate(host) == policy.ActionAllow {
-				origins = append(origins, origin)
-			}
-		}
+	// Evaluate the concrete hostname so exact and partial-subtree denies also
+	// apply to cached-address requests covered by a broader origin wildcard.
+	if current.TransparentHost(hosts[0]) && current.Evaluate(hosts[0]) == policy.ActionAllow {
+		origins = current.TransparentProxy.Origins
 	}
 	writeJSON(w, http.StatusOK, policy.TransparentProxyPolicy{Origins: origins})
 }

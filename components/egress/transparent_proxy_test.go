@@ -30,7 +30,7 @@ func TestTransparentPolicyRuntimeUpdateAndRemoval(t *testing.T) {
 		t.Fatal("network-only patch removed transparent origins", err)
 	}
 	private := httptest.NewRecorder()
-	server.handleTransparentPolicy(private, httptest.NewRequest(http.MethodGet, "/policy/_active", nil))
+	server.handleTransparentPolicy(private, httptest.NewRequest(http.MethodGet, "/policy/_active?host=github.com", nil))
 	var view policy.TransparentProxyPolicy
 	if err := json.Unmarshal(private.Body.Bytes(), &view); err != nil || len(view.Origins) != 1 {
 		t.Fatal("accepted private policy unavailable", err)
@@ -41,6 +41,51 @@ func TestTransparentPolicyRuntimeUpdateAndRemoval(t *testing.T) {
 	server.handlePolicy(response, request)
 	if response.Code != http.StatusOK || proxy.updated.TransparentHost("github.com") {
 		t.Fatal("origin removal was not applied")
+	}
+}
+
+func TestTransparentPrivateViewEvaluatesConcreteWildcardHost(t *testing.T) {
+	t.Parallel()
+	pol, err := policy.ParsePolicy(`{"defaultAction":"deny","transparentProxy":{"origins":["https://*.kusto.windows.net"]}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &policyServer{proxy: &stubProxy{updated: pol}}
+	var denies []policy.EgressRule
+	for _, target := range []string{"blocked.westus2.kusto.windows.net", "*.eastus2.kusto.windows.net"} {
+		rule, err := policy.ParseValidatedEgressRule(policy.ActionDeny, target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		denies = append(denies, rule)
+	}
+	server.setAlwaysRules(denies, nil)
+
+	for _, test := range []struct {
+		host    string
+		allowed bool
+	}{
+		{host: "cluster.westus2.kusto.windows.net", allowed: true},
+		{host: "blocked.westus2.kusto.windows.net"},
+		{host: "cluster.eastus2.kusto.windows.net"},
+		{host: "kusto.windows.net"},
+		{host: "*.kusto.windows.net"},
+	} {
+		response := httptest.NewRecorder()
+		server.handleTransparentPolicy(response, httptest.NewRequest(http.MethodGet, "/policy/_active?host="+test.host, nil))
+		var view policy.TransparentProxyPolicy
+		if err := json.Unmarshal(response.Body.Bytes(), &view); err != nil {
+			t.Fatal(err)
+		}
+		if (len(view.Origins) > 0) != test.allowed {
+			t.Fatalf("concrete-host policy differs for %s", test.host)
+		}
+	}
+
+	response := httptest.NewRecorder()
+	server.handleTransparentPolicy(response, httptest.NewRequest(http.MethodGet, "/policy/_active", nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatal("missing concrete hostname accepted")
 	}
 }
 

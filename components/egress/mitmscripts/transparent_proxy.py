@@ -7,7 +7,7 @@ import os
 import re
 import socket
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from mitmproxy import ctx, http
 
@@ -53,10 +53,10 @@ class PolicyConnection(http_client.HTTPConnection):
         self.sock.connect(os.environ.get(SOCKET_ENV, DEFAULT_SOCKET))
 
 
-def admitted_origins():
+def admitted_origins(host):
     connection = PolicyConnection("localhost", timeout=1)
     try:
-        connection.request("GET", "/policy/_active")
+        connection.request("GET", "/policy/_active?host=" + quote(host, safe=""))
         response = connection.getresponse()
         if response.status != 200:
             raise ValueError("policy unavailable")
@@ -103,7 +103,7 @@ def requestheaders(flow):
     try:
         original = urlsplit("https://" + authority)
         host = original.hostname or ""
-        origins = admitted_origins()
+        origins = admitted_origins(host)
         admitted = origin_admitted(host, origins)
         if host.endswith(".svc.cluster.local") and not admitted:
             # Existing explicit provider endpoints retain system-addon bindings.

@@ -31,7 +31,7 @@ class TransparentProxyTest(unittest.TestCase):
         self.addon = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.addon)
         self.origins = {"https://github.com"}
-        self.addon.admitted_origins = lambda: self.origins
+        self.addon.admitted_origins = lambda host: self.origins
         self.flow = self.new_flow()
 
     def new_flow(self):
@@ -136,7 +136,7 @@ class TransparentProxyTest(unittest.TestCase):
         self.assertEqual(self.flow.error, "killed")
 
     def test_private_policy_failure_denies_request(self):
-        def unavailable():
+        def unavailable(host):
             raise OSError("unavailable")
         self.addon.admitted_origins = unavailable
         self.addon.requestheaders(self.flow)
