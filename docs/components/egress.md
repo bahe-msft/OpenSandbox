@@ -209,19 +209,19 @@ required. The Gateway hostname must be allowed by the network policy.
 {
   "defaultAction": "deny",
   "egress": [
-    {"action": "allow", "target": "turn-egress.aks-sandbox-system.svc.cluster.local"}
+    {"action": "allow", "target": "egress-gateway.opensandbox.svc.cluster.local"}
   ],
   "transparentProxy": {
-    "origins": ["https://github.com", "https://dev.azure.com"]
+    "origins": ["https://api.example.com", "https://*.services.example.com"]
   }
 }
 ```
 
 Origins accept exact DNS names or a leading `*.` hostname wildcard. For example,
-`https://*.kusto.windows.net` matches `telemetry.westus2.kusto.windows.net`, but not
-`kusto.windows.net`. Partial-label and nonleading wildcards, ports, paths, and IP
-literals are rejected. Wildcards admit interception only; the Gateway and provider
-must still authorize the concrete original hostname and operation.
+`https://*.services.example.com` matches `api.region.services.example.com`, but not
+`services.example.com`. Partial-label and nonleading wildcards, ports, paths, and
+IP literals are rejected. Wildcards admit interception only; the Gateway and its
+backends must still authorize the concrete original hostname and operation.
 
 DNS returns a synthetic interception address for admitted names without adding
 public upstream IPs to nftables. The bundled forwarding addon reads the accepted
