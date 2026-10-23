@@ -280,7 +280,7 @@ func (s *bashSession) run(ctx context.Context, request *ExecuteCodeRequest) erro
 		return fmt.Errorf("start %s: %w", shell, err)
 	}
 	// The child holds its own copy of the write end; closing ours lets the
-	// scanner below see EOF as soon as the child (and its descendants that
+	// reader below see EOF as soon as the child (and its descendants that
 	// inherited stdout) exit.
 	_ = stdoutW.Close()
 	defer stdoutR.Close()
@@ -289,9 +289,6 @@ func (s *bashSession) run(ctx context.Context, request *ExecuteCodeRequest) erro
 
 	stopGroupKill := killProcessGroupOnDone(ctx, cmd.Process.Pid)
 	defer stopGroupKill()
-
-	scanner := bufio.NewScanner(stdoutR)
-	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 
 	var (
 		envLines []string
