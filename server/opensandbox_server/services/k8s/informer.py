@@ -49,13 +49,8 @@ class WorkloadInformer:
             list_fn: Callable that lists the custom resource, with signature
                      ``list_fn(**kwargs) -> dict``.  Typically a bound method
                      like ``custom_api.list_namespaced_custom_object``.
-<<<<<<< HEAD
-            resync_period_seconds: int: Full-resync interval for the cache.
-            watch_timeout_seconds: int: Per-stream watch timeout before restart.
-=======
             resync_period_seconds: Full-resync interval for the cache.
             watch_timeout_seconds: Per-stream watch timeout before restart.
->>>>>>> origin/main
             enable_watch: When False only the initial list is performed.
             thread_name: str: Name for the background thread, used in stack traces
                      and debuggers.  Should be unique per informer instance.
@@ -182,15 +177,7 @@ class WorkloadInformer:
         while not self._stop_event.is_set():
             try:
                 if not self._has_synced:
-<<<<<<< HEAD
-                    published = self._full_resync()
-                    if not published:
-                        logger.debug("Informer full resync invalidated before publication")
-                        backoff = self._wait_before_retry(backoff)
-                        continue
-=======
                     self._full_resync()
->>>>>>> origin/main
                     last_full_resync_at = time.monotonic()
                     backoff = 1.0
 
@@ -258,38 +245,14 @@ class WorkloadInformer:
             if self._invalidation_generation != start_generation:
                 return False
 
-<<<<<<< HEAD
-            self._cache = new_cache
-            self._resource_version = resource_version
-            self._has_synced = True
-            self._last_contact_at = time.monotonic()
-
-        # React to the snapshot outside the lock: a LIST reconciles objects
-        # that changed while no watch was connected (startup, reconnect).
-        if self._event_handlers or self._subscribers:
-            for item in new_cache.values():
-                self._dispatch_event("SYNC", item)
-        return True
-
-    def _run_watch_loop(self, timeout_seconds: int) -> None:
-=======
     def _run_watch_loop(self, timeout_seconds: int) -> None:
         """Stream watch events to keep the cache fresh."""
->>>>>>> origin/main
         w = watch.Watch()
         try:
             for event in w.stream(
                 self.list_fn,
                 resource_version=self._resource_version,
                 timeout_seconds=timeout_seconds,
-<<<<<<< HEAD
-                # Without this a half-open connection parks the thread forever.
-                _request_timeout=(
-                    _WATCH_CONNECT_TIMEOUT_SECONDS,
-                    timeout_seconds + _WATCH_READ_TIMEOUT_BUFFER_SECONDS,
-                ),
-=======
->>>>>>> origin/main
             ):
                 if self._stop_event.is_set():
                     break

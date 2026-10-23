@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-// Copyright 2025 The OpenSandbox Authors
-=======
 // Copyright 2025 Alibaba Group Holding Ltd.
->>>>>>> origin/main
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -101,8 +97,6 @@ func (b *HeadTailBuffer) String() string {
 	return string(output)
 }
 
-<<<<<<< HEAD
-=======
 // TruncateHeadTail bounds text without first copying the complete input.
 func TruncateHeadTail(value string, headBytes, tailBytes int, marker string) string {
 	validateHeadTailLimits(headBytes, tailBytes)
@@ -112,7 +106,6 @@ func TruncateHeadTail(value string, headBytes, tailBytes int, marker string) str
 	return value[:headBytes] + marker + value[len(value)-tailBytes:]
 }
 
->>>>>>> origin/main
 func validateHeadTailLimits(headBytes, tailBytes int) {
 	if headBytes < 0 || tailBytes < 0 {
 		panic("head and tail limits must not be negative")

@@ -212,8 +212,6 @@ export default defineConfig({
           items: [
             { text: "Overview", link: "/guides/" },
             { text: "Credential Vault", link: "/guides/credential-vault" },
-<<<<<<< HEAD
-=======
             { text: "Secure Container", link: "/guides/secure-container" },
             { text: "Multi-Tenancy", link: "/guides/multi-tenancy" },
             { text: "Isolation Sessions", link: "/guides/isolation-sessions" },
@@ -242,7 +240,6 @@ export default defineConfig({
           collapsed: false,
           items: [
             { text: "Python", link: "/sdks/code-interpreter/python" },
->>>>>>> origin/main
             {
               text: "Chained Upstream Proxy",
               link: "/guides/egress-upstream-proxy",

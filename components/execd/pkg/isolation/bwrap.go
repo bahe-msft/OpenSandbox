@@ -439,8 +439,6 @@ func unsetExecdConfigEnv() []string {
 	return argv
 }
 
-<<<<<<< HEAD
-=======
 // execdConfigEnvBlacklist enumerates execd's own configuration env vars.
 // They are always stripped so execd's credentials never leak into the sandbox.
 var execdConfigEnvBlacklist = []string{
@@ -460,7 +458,6 @@ func unsetExecdConfigEnv() []string {
 }
 
 // unsetBlacklistedEnv returns --unsetenv args for all env vars matching strictEnvBlacklist.
->>>>>>> origin/main
 func unsetBlacklistedEnv() []string {
 	var argv []string
 	for _, pattern := range strictEnvBlacklist {

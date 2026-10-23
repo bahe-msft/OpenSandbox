@@ -440,23 +440,12 @@ func (c *Controller) runBackgroundCommand(ctx context.Context, cancel context.Ca
 	// handler could return before the kernel was stored.
 	kernel.pid = cmd.Process.Pid
 	c.storeCommandKernel(session, kernel)
-<<<<<<< HEAD
-	endActivity := c.activity.Begin()
 
-	done := make(chan struct{})
-=======
-
->>>>>>> origin/main
 	safego.Go(func() {
 		defer pipe.Close()
 		defer endActivity()
 
-<<<<<<< HEAD
-		err = mp.Wait()
-		close(done)
-=======
 		err = cmd.Wait()
->>>>>>> origin/main
 		cancel()
 		if err != nil {
 			log.Error("command: run failed: %v", err)

@@ -46,13 +46,6 @@ func setupTestExecutor(t *testing.T) (Executor, string) {
 	return executor, dataDir
 }
 
-<<<<<<< HEAD
-// skipIfBinaryMissing skips the test when the given command is not available
-// on the host (e.g. running on a non-Linux/Unix system without sh or sleep).
-func skipIfBinaryMissing(t *testing.T, cmd string) {
-	if _, err := exec.LookPath(cmd); err != nil {
-		t.Skipf("%s not found, skipping process executor test", cmd)
-=======
 func TestProcessExecutor_UseNsenterForProcess(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -81,7 +74,6 @@ func TestProcessExecutor_Lifecycle(t *testing.T) {
 	// Skip if not running on Linux/Unix-like systems where sh is available
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh not found, skipping process executor test")
->>>>>>> origin/main
 	}
 }
 
@@ -430,13 +422,9 @@ func TestProcessExecutor_TimeoutNotExceeded(t *testing.T) {
 }
 
 func TestProcessExecutor_PreStartHook(t *testing.T) {
-<<<<<<< HEAD
-	skipIfBinaryMissing(t, "sh")
-=======
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh not found")
 	}
->>>>>>> origin/main
 
 	executor, _ := setupTestExecutor(t)
 	pExecutor := executor.(*processExecutor)
@@ -457,8 +445,6 @@ func TestProcessExecutor_PreStartHook(t *testing.T) {
 				},
 			},
 		},
-<<<<<<< HEAD
-=======
 	}
 	taskDir, err := utils.SafeJoin(pExecutor.rootDir, task.Name)
 	assert.Nil(t, err)
@@ -734,7 +720,6 @@ func TestProcessExecutor_LifecycleHookDefaultExecModeIsLocalInSidecarMode(t *tes
 func TestProcessExecutor_NoTimeout(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh not found")
->>>>>>> origin/main
 	}
 	taskDir, err := utils.SafeJoin(pExecutor.rootDir, task.Name)
 	assert.Nil(t, err)
@@ -1033,13 +1018,9 @@ func TestProcessExecutor_NoTimeout(t *testing.T) {
 }
 
 func TestProcessExecutor_LifecycleHookTimeout(t *testing.T) {
-<<<<<<< HEAD
-	skipIfBinaryMissing(t, "sh")
-=======
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh not found")
 	}
->>>>>>> origin/main
 
 	executor, _ := setupTestExecutor(t)
 	pExecutor := executor.(*processExecutor)
@@ -1080,13 +1061,9 @@ func TestProcessExecutor_LifecycleHookTimeout(t *testing.T) {
 }
 
 func TestProcessExecutor_LifecycleHookStderrCaptured(t *testing.T) {
-<<<<<<< HEAD
-	skipIfBinaryMissing(t, "sh")
-=======
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh not found")
 	}
->>>>>>> origin/main
 
 	executor, _ := setupTestExecutor(t)
 	pExecutor := executor.(*processExecutor)
@@ -1117,13 +1094,9 @@ func TestProcessExecutor_LifecycleHookStderrCaptured(t *testing.T) {
 }
 
 func TestProcessExecutor_LifecycleHookOutputIsBounded(t *testing.T) {
-<<<<<<< HEAD
-	skipIfBinaryMissing(t, "sh")
-=======
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh not found")
 	}
->>>>>>> origin/main
 
 	executor, _ := setupTestExecutor(t)
 	pExecutor := executor.(*processExecutor)
@@ -1153,13 +1126,9 @@ func TestProcessExecutor_LifecycleHookOutputIsBounded(t *testing.T) {
 }
 
 func TestProcessExecutor_LifecycleHookTimeoutZero_NoDeadline(t *testing.T) {
-<<<<<<< HEAD
-	skipIfBinaryMissing(t, "sh")
-=======
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh not found")
 	}
->>>>>>> origin/main
 
 	executor, _ := setupTestExecutor(t)
 	pExecutor := executor.(*processExecutor)

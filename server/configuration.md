@@ -12,24 +12,6 @@ Example files: [`example.config.toml`](opensandbox_server/examples/example.confi
 
 1. [Top-level sections](#top-level-sections)
 2. [`[server]`](#server--lifecycle-api)
-<<<<<<< HEAD
-3. [`[proxy]`](#proxy)
-4. [`[log]`](#log)
-5. [`[runtime]`](#runtime--required)
-6. [`[docker]`](#docker--only-when-runtime--docker)
-7. [`[kubernetes]`](#kubernetes--only-when-runtime--kubernetes)
-8. [`[agent_sandbox]`](#agent_sandbox--only-with-kubernetes--agent-sandbox)
-9. [`[ingress]`](#ingress)
-10. [`[egress]`](#egress)
-11. [`[storage]`](#storage)
-12. [`[store]`](#store)
-13. [`[secure_runtime]`](#secure_runtime)
-14. [`[renew_intent]`](#renew_intent)
-15. [`[automation]`](#automation)
-16. [`[otel]`](#otel)
-17. [Environment variables (outside TOML)](#environment-variables-outside-toml)
-18. [Cross-field validation rules](#cross-field-validation-rules)
-=======
 3. [`[log]`](#log)
 4. [`[runtime]`](#runtime--required)
 5. [`[docker]`](#docker--only-when-runtime--docker)
@@ -44,7 +26,6 @@ Example files: [`example.config.toml`](opensandbox_server/examples/example.confi
 14. [`[otel]`](#otel)
 15. [Environment variables (outside TOML)](#environment-variables-outside-toml)
 16. [Cross-field validation rules](#cross-field-validation-rules)
->>>>>>> origin/main
 
 ---
 
@@ -65,12 +46,7 @@ Example files: [`example.config.toml`](opensandbox_server/examples/example.confi
 | `[store]` | No | Server-managed persistence backend |
 | `[secure_runtime]` | No | gVisor / Kata / Firecracker |
 | `[renew_intent]` | No | Auto-renew on access |
-<<<<<<< HEAD
-| `[automation]` | No | Lifecycle automation umbrella (idle auto-pause today) |
-| `[otel]` | No | OTLP export for Server HTTP and ingested SDK metrics |
-=======
 | `[otel]` | No | OTLP export for ingested SDK metrics |
->>>>>>> origin/main
 
 ---
 
@@ -330,13 +306,9 @@ One server process has one `[secure_runtime]` profile; API requests cannot selec
 
 ## `[renew_intent]`
 
-<<<<<<< HEAD
-Auto-renew sandbox expiration on observed access (lifecycle proxy and/or Redis queue). Off by default. Design: [OSEP-0009](../oseps/0009-auto-renew-sandbox-on-ingress-access.md). Redis uses dotted keys under the same table.
-=======
 Auto-renew sandbox expiration when access is observed (lifecycle proxy and/or Redis queue). Off by default. Full design: [OSEP-0009](../oseps/0009-auto-renew-sandbox-on-ingress-access.md).
 
 Use **dotted keys** under the same table for Redis (valid in TOML):
->>>>>>> origin/main
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -402,21 +374,11 @@ Optional OpenTelemetry metrics export for SDK-reported sandbox creation latency 
 
 | Variable | Where used | Description |
 |----------|------------|-------------|
-<<<<<<< HEAD
-| `SANDBOX_CONFIG_PATH` | `config.py`, CLI | TOML file path; overrides default `~/.sandbox.toml`. |
-| `OPENSANDBOX_SERVER_API_KEY` | `config.py` | Overrides `server.api_key`. |
-| `OPENSANDBOX_INSECURE_SERVER` | `config.py` | `YES` acknowledges the risk of running without an API key. |
-| `OPENSANDBOX_STORE_POSTGRESQL_DSN` | `config.py` | Overrides `store.postgresql.dsn`. |
-| `OPENSANDBOX_SECURE_ACCESS_KEYS` / `OPENSANDBOX_SECURE_ACCESS_ACTIVE_KEY` | `config.py` | Inject `ingress.secure_access`. |
-| `DOCKER_HOST` | Docker service | Docker daemon address. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | OTEL exporter | Default endpoint when `[otel].endpoint` is omitted. |
-=======
 | `SANDBOX_CONFIG_PATH` | `config.py`, CLI | Path to the TOML file. Overrides the default `~/.sandbox.toml` when set. |
 | `OPENSANDBOX_SERVER_API_KEY` | `config.py` | Overrides the API key from the TOML file. |
 | `DOCKER_HOST` | Docker service | Standard Docker daemon address (e.g. `unix:///var/run/docker.sock`). |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTEL exporter | Default OTLP endpoint when `[otel].endpoint` is omitted. |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | OTEL exporter | Metrics-specific OTLP endpoint override. |
->>>>>>> origin/main
 
 ---
 

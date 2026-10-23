@@ -76,33 +76,6 @@ export interface ConnectionConfigOptions {
    * Also honored via `OPENSANDBOX_DISABLE_METRICS=1`.
    */
   disableMetrics?: boolean;
-<<<<<<< HEAD
-  /**
-   * Enable OpenTelemetry tracing for client-side pool warmup.
-   * Off by default.
-   */
-  enableTracing?: boolean;
-  /**
-   * Auto-retry gateway wake-timeout responses (OSEP-0024): a 503 carrying the
-   * `OpenSandbox-Wake: expired` marker proves the request was never
-   * forwarded, so the original request is resent for any method after
-   * waiting per `Retry-After` — provided the body is replayable. On by
-   * default; bare 503 responses are never affected.
-   */
-  wakeRetryEnabled?: boolean;
-  /**
-   * Maximum wake-timeout responses consumed before the wake retry gives up
-   * and throws {@link SandboxWakeTimeoutException}. Default: 5.
-   */
-  wakeMaxAttempts?: number;
-  /**
-   * Wall-clock cap in seconds spanning all wake cycles of one logical
-   * request (waits, retries, and request time). Set to `null` to remove the
-   * time bound (the attempt count still applies). Default: 60.
-   */
-  wakeOverallDeadlineSeconds?: number | null;
-=======
->>>>>>> origin/main
 }
 
 function isNodeRuntime(): boolean {
@@ -377,11 +350,6 @@ export class ConnectionConfig {
   readonly endpointCacheSize: number;
   readonly endpointCacheDisabled: boolean;
   readonly disableMetrics: boolean;
-<<<<<<< HEAD
-  readonly enableTracing: boolean;
-  readonly wakeRetry: WakeRetryOptions;
-=======
->>>>>>> origin/main
   private _closeTransport: () => Promise<void>;
   private _closePromise: Promise<void> | null = null;
   private _transportInitialized = false;
@@ -417,29 +385,6 @@ export class ConnectionConfig {
     this.endpointCacheSize = opts.endpointCacheSize ?? 1024;
     this.endpointCacheDisabled = !!opts.endpointCacheDisabled;
     this.disableMetrics = !!opts.disableMetrics;
-<<<<<<< HEAD
-    this.enableTracing = !!opts.enableTracing;
-
-    const wakeEnabled = opts.wakeRetryEnabled ?? true;
-    const wakeMaxAttempts = opts.wakeMaxAttempts ?? 5;
-    if (!Number.isInteger(wakeMaxAttempts) || wakeMaxAttempts < 1) {
-      throw new Error(`wakeMaxAttempts must be an integer >= 1, got ${String(opts.wakeMaxAttempts)}`);
-    }
-    const wakeDeadline = opts.wakeOverallDeadlineSeconds === undefined
-      ? 60
-      : opts.wakeOverallDeadlineSeconds;
-    if (wakeDeadline !== null && (!Number.isFinite(wakeDeadline) || wakeDeadline <= 0)) {
-      throw new Error(
-        `wakeOverallDeadlineSeconds must be a positive number or null, got ${String(opts.wakeOverallDeadlineSeconds)}`
-      );
-    }
-    this.wakeRetry = {
-      enabled: wakeEnabled,
-      maxAttempts: wakeMaxAttempts,
-      overallDeadlineSeconds: wakeDeadline,
-    };
-=======
->>>>>>> origin/main
 
     const headers: Record<string, string> = { ...(opts.headers ?? {}) };
     // Attach API key via header unless the user already provided one.
@@ -595,14 +540,6 @@ export class ConnectionConfig {
       endpointCacheSize: this.endpointCacheSize,
       endpointCacheDisabled: this.endpointCacheDisabled,
       disableMetrics: this.disableMetrics,
-<<<<<<< HEAD
-      enableTracing: this.enableTracing,
-      wakeRetryEnabled: this.wakeRetry.enabled,
-      wakeMaxAttempts: this.wakeRetry.maxAttempts,
-      wakeOverallDeadlineSeconds: this.wakeRetry.overallDeadlineSeconds,
-      ...overrides,
-=======
->>>>>>> origin/main
     });
   }
 

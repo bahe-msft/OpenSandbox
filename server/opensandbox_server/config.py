@@ -211,20 +211,12 @@ class RenewIntentRedisConfig(BaseModel):
 
 
 class OtelConfig(BaseModel):
-<<<<<<< HEAD
-    """Optional OpenTelemetry export for Server and ingested SDK metrics."""
-=======
     """Optional OpenTelemetry export for ingested SDK metrics."""
->>>>>>> origin/main
 
     enabled: bool = Field(
         default=False,
         description=(
-<<<<<<< HEAD
-            "Enable OTLP metrics export. When false, Server and SDK metrics are noops."
-=======
             "Enable OTLP metrics export. When false, SDK events are accepted but recorded as noop."
->>>>>>> origin/main
         ),
     )
     endpoint: Optional[str] = Field(
@@ -1587,16 +1579,6 @@ class AppConfig(BaseModel):
         default_factory=RenewIntentConfig,
         description="Auto-renew sandbox expiration when reverse-proxy access is observed.",
     )
-<<<<<<< HEAD
-    automation: AutomationConfig = Field(
-        default_factory=AutomationConfig,
-        description=(
-            "Lifecycle automation for fast sandboxes: idle auto-pause today "
-            "(OSEP-0024). Off by default."
-        ),
-    )
-=======
->>>>>>> origin/main
     otel: OtelConfig = Field(
         default_factory=OtelConfig,
         description="OpenTelemetry export for SDK metrics ingestion (Phase 1: create latency).",

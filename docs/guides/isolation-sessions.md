@@ -38,14 +38,8 @@ Component versions needed for the features covered by this guide:
   recommended** for `binds`, `List sessions`, `uid_mode: "userns"`, and the
   default writable allowlist (`/workspace`, `/mnt`, `/media`, `/data`)
 - `opensandbox-server` >= 0.2.1 — the server injects `CAP_SYS_ADMIN`,
-<<<<<<< HEAD
-  unconfined AppArmor, seccomp, and protected-system-path settings, and the
-  tmpfs mount required by `bwrap` when the execd image declares
-  `bootstrap.execd.isolation`
-=======
   `apparmor=unconfined`, and the tmpfs mount required by `bwrap` when the
   execd image declares `bootstrap.execd.isolation`
->>>>>>> origin/main
 - Python SDK >= 0.1.14 (`isolation.run_once` / `isolation.session` context
   manager); >= 0.1.13 for the generated isolation client only
 - JavaScript / TypeScript SDK >= 0.1.10 (`isolation.runOnce` /
@@ -64,17 +58,6 @@ older execd omits both fields (clients must tolerate their absence).
 Host requirements (`bwrap` binary, `CAP_SYS_ADMIN`, `overlayfs`, etc.) are
 listed under [Server Configuration → Host Requirements](#server-configuration).
 
-<<<<<<< HEAD
-The published execd image includes the fail-closed native workload gate used
-during session startup. For a Linux source build, `make build` requires a C
-compiler plus static libc and produces `bin/opensandbox-session-gate`; run
-`make build-session-gate` and then `sudo make install-session-gate` before
-starting execd to install the helper at
-`/opt/opensandbox/opensandbox-session-gate`. Keep that path and its parent
-directory root-owned and not group- or world-writable.
-
-=======
->>>>>>> origin/main
 ---
 
 ## Overview
@@ -230,13 +213,7 @@ an access token configured.
 | `POST` | `/session` | Create; returns `{session_id, created_at}`. |
 | `GET` | `/sessions` | List active sessions. |
 | `GET` | `/session/{id}` | Full state; echoes creation params so a stateless client can rebuild the handle. |
-<<<<<<< HEAD
-| `POST` | `/session/{id}/run` | Foreground (default): SSE stream `stdout` / `error` / `complete`. Background (`"background": true`): returns `202` with a run handle. Runs on the same session are serialized. |
-| `GET` | `/session/{id}/runs/{runId}` | Background run status: `running`, `exit_code`, `error`, timestamps. |
-| `GET` | `/session/{id}/runs/{runId}/logs` | Background run combined output as plain text, with byte-cursor pagination. |
-=======
 | `POST` | `/session/{id}/run` | SSE stream: `stdout` / `error` / `complete`. Runs on the same session are serialized. |
->>>>>>> origin/main
 | `DELETE` | `/session/{id}` | Destroy. |
 | `GET` | `/capabilities` | Probe. |
 
@@ -245,65 +222,6 @@ to disable idle GC and always `DELETE` explicitly.
 
 ---
 
-<<<<<<< HEAD
-## Background Runs
-
-A background run starts code detached inside the session and returns
-immediately; the run's combined stdout/stderr and exit code are captured by
-execd, and the client polls them while other work continues on the session.
-
-```bash
-# Start detached; 202 returns {"session_id", "run_id", "started_at"}.
-RUN=$(curl -s -X POST "http://localhost:44772/v1/isolated/session/$SESSION/run" \
-  -H "Content-Type: application/json" \
-  -d '{"code": "sleep 5 && echo done", "background": true}' | jq -r .run_id)
-
-# Poll status until running=false.
-curl -s "http://localhost:44772/v1/isolated/session/$SESSION/runs/$RUN"
-
-# Read output (plain text). The response header EXECD-ISOLATED-TAIL-CURSOR
-# carries the next byte offset for incremental reads.
-curl -s "http://localhost:44772/v1/isolated/session/$SESSION/runs/$RUN/logs"
-curl -s "http://localhost:44772/v1/isolated/session/$SESSION/runs/$RUN/logs?cursor=123"
-```
-
-Python SDK:
-
-```python
-session = await sandbox.isolation.create(CreateIsolatedSessionRequest(
-    workspace=IsolatedWorkspaceSpec(path="/workspace", mode="rw"),
-))
-
-run = await session.run_background("sleep 5 && echo done")
-while (status := await session.run_status(run.run_id)).running:
-    await asyncio.sleep(0.2)
-print(status.exit_code)
-logs = await session.run_logs(run.run_id)   # .text + .cursor for pagination
-```
-
-Background run semantics:
-
-- `timeout_seconds` is foreground-only; background runs are not time-limited.
-- Idle GC is suspended while a background run is active; after it finishes,
-  the normal idle window applies. Deleting the session kills the run.
-- Background runs require a writable log location, so sessions with a
-  read-only (`ro`) workspace reject them with `400`; `rw` and `overlay`
-  workspaces are supported.
-- Runs share the session's process group, so session-level signals (e.g. the
-  `SIGINT` sent when a foreground run times out or is cancelled) also reach
-  them.
-- Each `logs` request returns at most 16 MiB; page through large output with
-  the returned cursor. Per-run log retention is capped at 16 MiB — output
-  beyond the cap is discarded when the run completes, so drain incrementally
-  while the run is active if you need more than the first page.
-- A run whose session dies mid-flight reports `running: false` with
-  `error: "session terminated"`; run records and their logs are removed when
-  the session is deleted or garbage-collected.
-
----
-
-=======
->>>>>>> origin/main
 ## Workspace Modes
 
 | Mode | Semantics |
@@ -314,75 +232,12 @@ Background run semantics:
 
 Overlay upper dirs live under `upper_root` (default `/var/lib/execd/isolation`).
 
-<<<<<<< HEAD
-Because isolated-session state lives only in execd's memory, every session
-left under `upper_root` when execd exits is stale. Before publishing a new
-session, execd creates a durable cleanup record at
-`<upper_root>/.execd-cleanup/<session-id>`; on startup it recovers those
-records and removes the exact matching session directories. A record is
-retired only after the entire session subtree has been deleted, so partial
-deletion and transient filesystem failure retain a retryable identity across
-restarts. Residue that cannot be removed yet — e.g. an upper still referenced
-by a mount from the previous lifetime — stays counted toward
-`upper_max_bytes` and is retried by the idle collector.
-
-Only recorded session directories are removed. Unrecorded children under
-`upper_root`, including allocator-shaped directory trees, are treated as
-operator data and are never reclaimed automatically. Directories left by
-execd versions that predate the cleanup registry therefore require explicit
-migration or manual cleanup; keep `upper_root` dedicated to execd and do not
-modify the reserved `.execd-cleanup` registry. In pooled / pre-provisioned
-sandboxes this prevents one occupant's session data from leaking to the next.
-
-=======
->>>>>>> origin/main
 ```json
 { "workspace": { "path": "/workspace", "mode": "overlay" } }
 ```
 
 ---
 
-<<<<<<< HEAD
-## Multiple Overlay Mounts
-
-A session can carry **several independent overlay mounts** via the `overlays`
-request field (the single `workspace` remains supported as sugar for a
-one-element list; when both are present, `workspace` is prepended):
-
-```json
-{
-  "overlays": [
-    { "path": "/", "mode": "overlay" },
-    { "path": "/workspace", "mode": "overlay", "persist": true },
-    { "path": "/data/scratch", "mode": "overlay", "persist": false }
-  ]
-}
-```
-
-- Each entry has its own mount semantics, so workspace files, system-level
-  changes (`apt install` → `/usr`, config → `/etc`), and additional project
-  directories get **independent copy-on-write uppers**.
-- Mounts are applied shallow-first; a nested overlay (e.g. `/workspace` on
-  top of a `/` root overlay) shadows its ancestors within its own subtree.
-  Paths must be absolute and unique.
-- `persist` (overlay mode only, default `true`): `true` allocates a host
-  upper directory under `upper_root`; `false` uses an ephemeral tmpfs upper
-  whose writes are discarded when the session ends. `rw`/`ro` entries must
-  not set `persist`. An ephemeral upper lives inside the namespace only, so
-  the files API serves `persist=false` overlays from their host-side
-  content: in-session writes under such an overlay are not observable
-  through the files API and files-API writes into it are rejected.
-- The files API routes each request to the overlay whose mount path is the
-  longest prefix of the requested path; relative paths resolve against the
-  first overlay.
-- Background runs use the **first** overlay for their log location: it must
-  be `rw`, or `overlay` with `persist: true`; otherwise background runs are
-  rejected.
-
----
-
-=======
->>>>>>> origin/main
 ## Bind Mounts and Allowlist
 
 - **`extra_writable`** — paths bind-mounted read-write at the same path
@@ -437,31 +292,6 @@ host env passthrough (`"allow"`).
   [`/capabilities`](#capabilities-and-probing) before requesting a mode.
 - **`share_net: true`** shares the sandbox's network namespace. Sandbox-level
   egress and Credential Vault policies still apply.
-<<<<<<< HEAD
-- **`share_net: false`** creates a private network namespace. Before releasing
-  the workload startup gate, execd opens the authenticated NetNS, obtains its
-  real owning UserNS with `NS_GET_USERNS`, and bind-pins both below
-  `/run/execd/namespaces/<opaque-id>/`. Any validation or pin failure aborts
-  Session creation. Execd attempts pin cleanup on failed startup, process exit,
-  explicit delete, idle collection, and runner shutdown; retryable failures
-  retain Session ownership and are retried while execd remains alive. This
-  applies to both UID modes; hardened network backends will require
-  `uid_mode: "userns"`.
-
-The legacy default remains unchanged in this phase: omitting `share_net`
-continues to share the sandbox network namespace. Namespace pinning alone does
-not enable Session egress or ingress.
-
-Private Sessions are not recoverable across an execd restart. Deployments that
-enable them must treat execd as sandbox-critical and recreate the entire
-sandbox/container if execd exits; they must not launch a replacement execd
-inside the surviving mount namespace. Destroying the sandbox/container tears
-down that mount namespace and releases all pins. Execd intentionally does not
-scan and adopt opaque namespace-pin directories on startup because they do not
-carry a durable sandbox generation, so doing so could unmount another live
-process's resources.
-=======
->>>>>>> origin/main
 
 ---
 
@@ -509,14 +339,8 @@ curl -s http://localhost:44772/v1/isolated/capabilities
 }
 ```
 
-<<<<<<< HEAD
-- `available: false` — the trusted native workload gate is missing or
-  untrusted, bubblewrap is missing, or the host can't create the required
-  namespaces (missing `CAP_SYS_ADMIN`, restricted user-ns sysctl, etc.).
-=======
 - `available: false` — bubblewrap is missing or the host can't create the
   required namespaces (missing `CAP_SYS_ADMIN`, restricted user-ns sysctl, etc.).
->>>>>>> origin/main
 - `setpriv_available` / `userns_available` — whether sessions with
   `uid_mode: "setpriv"` or `"userns"` can be created. `setpriv_available`
   reflects only execd's **default** UID/GID; a session that requests a
@@ -538,14 +362,8 @@ Point execd at an optional TOML file:
 # Parent directory for per-session overlay upper dirs.
 upper_root = "/var/lib/execd/isolation"
 
-<<<<<<< HEAD
-# Allocation-time threshold for total overlay upper-directory size (bytes).
-# Existing sessions can write beyond this value.
-# Default: 8 GiB. Set to 0 to disable the allocation check.
-=======
 # Hard limit on total upper directory size across all sessions (bytes).
 # Default: 8 GiB. Set to 0 only if you want to disable the quota entirely.
->>>>>>> origin/main
 upper_max_bytes = 8589934592  # 8 GiB
 
 # Sources allowed for extra_writable / binds (symlink-resolved).
@@ -555,31 +373,6 @@ allowed_writable = ["/workspace", "/mnt", "/media", "/data"]
 
 Example: `components/execd/configs/isolation.example.toml`.
 
-<<<<<<< HEAD
-`upper_max_bytes` is checked when creating an `overlay` workspace (the default
-mode). If a successful usage scan reports a total at or above the configured
-positive limit, the new session is rejected. This setting does not cap writes
-by existing sessions and does not apply to `rw` or `ro` workspaces.
-
-Deleting an overlay session can restore admission once its cleanup succeeds
-and total usage falls below the threshold. Deletion discards that session's
-private upper data, so preserve any data you need before deleting it.
-
-**Host requirements:** `bwrap` and the trusted native workload gate in the
-execd image; `CAP_SYS_ADMIN` (and `kernel.unprivileged_userns_clone=1` for
-`uid_mode: "userns"`); `overlayfs` in the kernel for `overlay` workspaces.
-The published image installs the gate automatically. Linux source builds must
-run `make build-session-gate` and then `sudo make install-session-gate` from
-`components/execd` before starting execd.
-
-Note: `/capabilities` reports `available: false` when the native workload gate
-cannot be opened as a trusted executable or when bwrap itself cannot be
-started (missing binary or missing namespace capabilities). A missing
-`overlayfs` does **not** flip `available` — the overlay probe only influences
-Phase 2 `commit`/`diff` support, and default overlay-mode session creation can
-still fail at runtime on such hosts. If you rely on `workspace.mode:
-"overlay"`, verify `overlayfs` support directly on the host.
-=======
 **Host requirements:** `bwrap` binary in the execd image; `CAP_SYS_ADMIN`
 (and `kernel.unprivileged_userns_clone=1` for `uid_mode: "userns"`);
 `overlayfs` in the kernel for `overlay` workspaces.
@@ -591,18 +384,13 @@ influences Phase 2 `commit`/`diff` support, and default overlay-mode session
 creation can still fail at runtime on such hosts. If you rely on
 `workspace.mode: "overlay"`, verify `overlayfs` support directly on the
 host.
->>>>>>> origin/main
 
 ---
 
 ## Limitations
 
-<<<<<<< HEAD
-- **`diff` / `commit` are Phase 2 stubs**, currently return `503`.
-=======
 - **`diff` / `commit` are Phase 2 stubs**, currently return `503`. Tracked
   in [OSEP-0013](https://github.com/opensandbox-group/OpenSandbox/blob/main/oseps/0013-isolated-execution-api.md).
->>>>>>> origin/main
 - **No hardware-level guarantee.** Namespaces + seccomp only; pair with a
   secure runtime for kernel-exploit defense.
 - **Linux only.** Non-Linux builds return `available: false`.
@@ -613,11 +401,7 @@ host.
 
 ## See Also
 
-<<<<<<< HEAD
-- [execd](/architecture/data-plane/execd)
-=======
 - [OSEP-0013 — Isolated Execution API](https://github.com/opensandbox-group/OpenSandbox/blob/main/oseps/0013-isolated-execution-api.md)
 - [execd](/components/execd)
->>>>>>> origin/main
 - [Secure Container Runtime](/guides/secure-container)
 - [execd OpenAPI spec](/api/)

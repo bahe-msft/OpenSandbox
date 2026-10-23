@@ -1737,64 +1737,7 @@ export interface components {
              */
             background?: boolean;
         };
-<<<<<<< HEAD
-        /** @description Handle returned when a run is started with background: true */
-        IsolatedBackgroundRunResponse: {
-            /**
-             * Format: uuid
-             * @description Session the run was started in
-             */
-            session_id: string;
-            /**
-             * Format: uuid
-             * @description Run ID for status and logs polling
-             */
-            run_id: string;
-            /**
-             * Format: date-time
-             * @description Run start time in RFC3339 format
-             */
-            started_at: string;
-        };
-        /** @description Lifecycle state of an isolated background run */
-        IsolatedRunStatus: {
-            /** Format: uuid */
-            session_id: string;
-            /** Format: uuid */
-            run_id: string;
-            /**
-             * @description Whether the run is still executing
-             * @example false
-             */
-            running: boolean;
-            /**
-             * Format: int32
-             * @description Exit code of the code if the run has finished
-             * @example 0
-             */
-            exit_code?: number | null;
-            /**
-             * @description Error message if the run failed (e.g. session terminated)
-             * @example session terminated
-             */
-            error?: string;
-            /**
-             * Format: date-time
-             * @description Run start time in RFC3339 format
-             * @example 2025-12-22T09:08:05Z
-             */
-            started_at: string;
-            /**
-             * Format: date-time
-             * @description Run finish time in RFC3339 format (null if still running)
-             * @example 2025-12-22T09:08:09Z
-             */
-            finished_at?: string | null;
-        };
-        /** @description State of an isolated session. Runtime status fields (status, created_at, last_run_at, idle_remaining_seconds) are always present. Creation-parameter fields (profile, workspace, overlays, binds, share_net, env_passthrough, uid, gid, uid_mode, extra_writable, idle_timeout_seconds) echo the parameters used to create the session and let a stateless client rebuild a session handle from just a session ID (e.g. after a client restart or in serverless workers). `overlays` lists the effective mounts; for sessions created via the legacy `workspace` field it repeats that workspace as a single element, and `workspace` itself is only echoed for such single-overlay sessions. Older execd builds may omit the creation-parameter fields; clients must tolerate them being absent. */
-=======
         /** @description State of an isolated session. Runtime status fields (status, created_at, last_run_at, idle_remaining_seconds) are always present. Creation-parameter fields (profile, workspace, binds, share_net, env_passthrough, uid, gid, uid_mode, extra_writable, idle_timeout_seconds) echo the parameters used to create the session and let a stateless client rebuild a session handle from just a session ID (e.g. after a client restart or in serverless workers). Older execd builds may omit the creation-parameter fields; clients must tolerate them being absent. */
->>>>>>> origin/main
         SessionState: {
             /** @enum {string} */
             status?: "active" | "dead" | "destroyed";
@@ -1809,11 +1752,6 @@ export interface components {
              */
             profile?: "strict" | "balanced";
             workspace?: components["schemas"]["IsolatedWorkspaceSpec"];
-<<<<<<< HEAD
-            /** @description Effective overlay mounts of the session. */
-            overlays?: components["schemas"]["IsolatedOverlaySpec"][];
-=======
->>>>>>> origin/main
             extra_writable?: string[];
             binds?: components["schemas"]["BindMount"][];
             share_net?: boolean;

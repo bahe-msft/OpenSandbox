@@ -1,9 +1,5 @@
 #!/bin/bash
-<<<<<<< HEAD
-# Copyright 2026 The OpenSandbox Authors
-=======
 # Copyright 2026 Alibaba Group Holding Ltd.
->>>>>>> origin/main
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,12 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-<<<<<<< HEAD
-# Smoke test: build execd image, extract execd+bwrap+the native workload gate,
-# and verify the packaged isolation artifacts work.
-=======
 # Smoke test: build execd image, extract execd+bwrap, verify bwrap works.
->>>>>>> origin/main
 #
 # Prerequisites: docker
 #

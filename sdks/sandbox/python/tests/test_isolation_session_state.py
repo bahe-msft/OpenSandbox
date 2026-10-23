@@ -1,9 +1,5 @@
 #
-<<<<<<< HEAD
-# Copyright 2026 The OpenSandbox Authors
-=======
 # Copyright 2026 Alibaba Group Holding Ltd.
->>>>>>> origin/main
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,10 +30,6 @@ from opensandbox.adapters.isolated_adapter import IsolatedSessionsAdapter
 from opensandbox.models.isolated import (
     BindMount,
     EnvPassthroughSpec,
-<<<<<<< HEAD
-    IsolatedOverlaySpec,
-=======
->>>>>>> origin/main
     IsolatedWorkspaceSpec,
 )
 from opensandbox.sync.adapters.isolated_adapter import IsolatedSessionsAdapterSync
@@ -49,10 +41,6 @@ _FULL_STATE_PAYLOAD = {
     "idle_remaining_seconds": 30,
     "profile": "strict",
     "workspace": {"path": "/workspace", "mode": "rw"},
-<<<<<<< HEAD
-    "overlays": [{"path": "/workspace", "mode": "overlay", "persist": False}],
-=======
->>>>>>> origin/main
     "extra_writable": ["/tmp", "/var/tmp"],
     "binds": [{"source": "/host/a", "dest": "/sbx/a", "readonly": True}],
     "share_net": False,
@@ -132,13 +120,6 @@ async def test_get_populates_full_state_when_execd_returns_all_fields(
     assert isinstance(state.workspace, IsolatedWorkspaceSpec)
     assert state.workspace.path == "/workspace"
     assert state.workspace.mode == "rw"
-<<<<<<< HEAD
-    assert state.overlays is not None
-    assert isinstance(state.overlays[0], IsolatedOverlaySpec)
-    assert state.overlays[0].path == "/workspace"
-    assert state.overlays[0].persist is False
-=======
->>>>>>> origin/main
     assert state.extra_writable == ["/tmp", "/var/tmp"]
     assert state.binds is not None
     assert len(state.binds) == 1

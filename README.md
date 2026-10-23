@@ -244,12 +244,11 @@ three official registries:
 - GitHub Container Registry: `ghcr.io/opensandbox-group/opensandbox/<component>`
 - Alibaba Cloud Container Registry: `sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox/<component>`
 
-<<<<<<< HEAD
 Tagged release images are signed keylessly with Cosign and include provenance
 attestations. Pin production images by digest and follow the
 [release verification guide](docs/community/release-verification.md) to verify
 the image against the OpenSandbox GitHub Actions identity before deployment.
-=======
+
 ### Install and Configure the Sandbox Server
 
 ```bash
@@ -379,7 +378,6 @@ For more details, please refer to the [examples documentation](docs/examples/ind
 | [`scripts/`](scripts/) | Development and maintenance scripts                              |
 
 For detailed architecture, see [Architecture](docs/architecture/).
->>>>>>> origin/main
 
 ## Documentation
 

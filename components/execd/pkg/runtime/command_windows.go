@@ -156,11 +156,7 @@ func (c *Controller) runBackgroundCommand(ctx context.Context, cancel context.Ca
 	// callers find the session immediately.
 	err = cmd.Start()
 	if err != nil {
-<<<<<<< HEAD
-		log.Error("command: start failed: %v", err)
-=======
 		log.Error("CommandExecError: error starting commands: %v", err)
->>>>>>> origin/main
 		pipe.Close() // best-effort
 		cancel()
 		return fmt.Errorf("failed to start commands: %w", err)
@@ -168,11 +164,7 @@ func (c *Controller) runBackgroundCommand(ctx context.Context, cancel context.Ca
 
 	kernel := &commandKernel{
 		pid:          cmd.Process.Pid,
-<<<<<<< HEAD
-		content:      request.commandContent(),
-=======
 		content:      request.Code,
->>>>>>> origin/main
 		stdoutPath:   stdoutPath,
 		stderrPath:   stderrPath,
 		startedAt:    startAt,

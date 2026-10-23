@@ -696,25 +696,6 @@ export class Sandbox {
         createDurationMs: Date.now() - createStarted,
         success: false,
       });
-<<<<<<< HEAD
-      if (opts.signal?.aborted) {
-        void (async () => {
-          try {
-            if (sandboxId) {
-              await sandboxes.deleteSandbox(sandboxId);
-            }
-          } catch {
-            // Preserve the caller's abort error if sandbox cleanup fails.
-          } finally {
-            if (connectionConfig !== baseConnectionConfig) {
-              await connectionConfig.closeTransport().catch(() => undefined);
-            }
-          }
-        })();
-        throw err;
-      }
-=======
->>>>>>> origin/main
       if (sandboxId) {
         try {
           await sandboxes.deleteSandbox(sandboxId);

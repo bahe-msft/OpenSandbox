@@ -131,13 +131,6 @@ class ConnectionConfig(BaseModel):
             "Also honored via OPENSANDBOX_DISABLE_METRICS=1."
         ),
     )
-<<<<<<< HEAD
-    enable_tracing: bool = Field(
-        default=False,
-        description="Enable OpenTelemetry tracing for SDK operations.",
-    )
-=======
->>>>>>> origin/main
 
     # Environment variable names
     _ENV_API_KEY = "OPEN_SANDBOX_API_KEY"

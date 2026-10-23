@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-// Copyright 2025 The OpenSandbox Authors
-=======
 // Copyright 2025 Alibaba Group Holding Ltd.
->>>>>>> origin/main
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -36,8 +32,6 @@ func TestHeadTailBuffer(t *testing.T) {
 		t.Fatalf("String() = %q, want %q", got, want)
 	}
 }
-<<<<<<< HEAD
-=======
 
 func TestTruncateHeadTail(t *testing.T) {
 	tests := []struct {
@@ -57,4 +51,3 @@ func TestTruncateHeadTail(t *testing.T) {
 		})
 	}
 }
->>>>>>> origin/main

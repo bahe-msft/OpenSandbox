@@ -540,11 +540,7 @@ A 307/308 redirect resends the request body once per hop. A seekable upload sour
 | `RequestTimeoutSeconds` | Request timeout applied to SDK HTTP calls | `30` | - |
 | `UseServerProxy` | Request server-proxied sandbox endpoint URLs | `false` | - |
 | `Headers` | Extra headers applied to every request | `{}` | - |
-<<<<<<< HEAD
-| `DisableMetrics` | Disable SDK create-latency telemetry (see [SDK Telemetry](/sdks/observability#creation-metrics)) | `false` | `OPENSANDBOX_DISABLE_METRICS` |
-=======
 | `DisableMetrics` | Disable SDK create-latency telemetry (see [SDK Telemetry](/guides/sdk-telemetry)) | `false` | `OPENSANDBOX_DISABLE_METRICS` |
->>>>>>> origin/main
 
 ```csharp
 using OpenSandbox.Config;
@@ -571,15 +567,10 @@ var config2 = new ConnectionConfig(new ConnectionConfigOptions
 ```
 
 ::: tip SDK Telemetry
-<<<<<<< HEAD
-`Sandbox.CreateAsync` reports create latency to `POST /v1/metrics/events` by default. Set `ConnectionConfigOptions.DisableMetrics = true` or export `OPENSANDBOX_DISABLE_METRICS=1` to opt out. See [SDK Telemetry](/sdks/observability#creation-metrics).
-:::
-=======
 `Sandbox.CreateAsync` reports create latency to `POST /v1/metrics/events` by default. Set `ConnectionConfigOptions.DisableMetrics = true` or export `OPENSANDBOX_DISABLE_METRICS=1` to opt out. See [SDK Telemetry](/guides/sdk-telemetry).
 :::
 
 ### 2. Diagnostics and Logging
->>>>>>> origin/main
 
 ### 2. SDK Logging
 

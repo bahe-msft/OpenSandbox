@@ -13,10 +13,7 @@
 # limitations under the License.
 
 import sqlite3
-<<<<<<< HEAD
-=======
 from datetime import datetime, timedelta
->>>>>>> origin/main
 
 import pytest
 
@@ -69,8 +66,6 @@ def test_sqlite_snapshot_repository_indexes_name_queries_after_migration(
             )
             """
         )
-<<<<<<< HEAD
-=======
 
     repo = SQLiteSnapshotRepository(db_path)
 
@@ -99,29 +94,9 @@ def test_sqlite_snapshot_repository_lists_and_updates_records(tmp_path) -> None:
     first = _record("snap-001", "sbx-001", now)
     second = _record("snap-002", "sbx-001", now + timedelta(seconds=1), state=SnapshotState.READY)
     third = _record("snap-003", "sbx-002", now + timedelta(seconds=2), state=SnapshotState.FAILED)
->>>>>>> origin/main
 
     repo = SQLiteSnapshotRepository(db_path)
 
-<<<<<<< HEAD
-    with repo._connect() as conn:
-        indexes = {row["name"] for row in conn.execute("PRAGMA index_list(snapshots)")}
-        name_plan = conn.execute(
-            "EXPLAIN QUERY PLAN SELECT COUNT(*) FROM snapshots WHERE name = ?",
-            ("cache-key",),
-        ).fetchall()
-        tenant_plan = conn.execute(
-            """
-            EXPLAIN QUERY PLAN
-            SELECT COUNT(*) FROM snapshots WHERE namespace = ? AND name = ?
-            """,
-            ("tenant-a", "cache-key"),
-        ).fetchall()
-
-    assert "idx_snapshots_name_namespace" in indexes
-    assert any("idx_snapshots_name_namespace" in row["detail"] for row in name_plan)
-    assert any("idx_snapshots_name_namespace" in row["detail"] for row in tenant_plan)
-=======
     page = repo.list(
         SnapshotListQuery(
             page=1,
@@ -208,7 +183,6 @@ def test_sqlite_snapshot_repository_update_if_state_is_atomic(tmp_path) -> None:
     assert loaded is not None
     assert loaded.status.state == SnapshotState.READY
     assert loaded.restore_config.image == "opensandbox-snapshots:snap-001"
->>>>>>> origin/main
 
 
 def test_snapshot_repository_factory_defaults_to_sqlite(tmp_path) -> None:

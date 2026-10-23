@@ -28,12 +28,7 @@ Defines the complete lifecycle interfaces for creating, managing, and destroying
 - **Resource & Runtime Configuration**: Specify resource limits and optional Kubernetes `resourceRequests`, image startup `entrypoint`, `platform`, lifecycle hooks, optional `secureAccess`, volumes, environment variables, and opaque `extensions`
 - **Image Support**: Create sandboxes from public or private registries, including registry auth
 - **Timeout Management**: Optional `timeout` on creation (omit or set to `null` to disable automatic expiration) with explicit renewal via API
-<<<<<<< HEAD
-- **Endpoint Access**: Retrieve public access endpoints for services running inside sandboxes, including required headers when secured access is enabled; endpoint lookups report the sandbox origin via the `OPEN-SANDBOX-ORIGIN` response header (`template` for fsb golden-image sandboxes)
-- **Template Management**: Create, list, inspect, and delete fsb golden-image templates; template builds are asynchronous (poll until `Succeeded`)
-=======
 - **Endpoint Access**: Retrieve public access endpoints for services running inside sandboxes, including required headers when secured access is enabled
->>>>>>> origin/main
 - **Snapshot Management**: Create snapshots from sandboxes, list snapshots with source/name filters, and delete snapshots
 
 **Main Endpoints (base path `/v1`):**

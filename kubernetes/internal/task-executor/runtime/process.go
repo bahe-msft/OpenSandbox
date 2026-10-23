@@ -35,17 +35,10 @@ import (
 )
 
 const (
-<<<<<<< HEAD
-	exitFile   = "exit"
-	pidFile    = "pid"
-	stdoutFile = "stdout.log"
-	stderrFile = "stderr.log"
-=======
 	ExitFile   = "exit"
 	PidFile    = "pid"
 	StdoutFile = "stdout.log"
 	StderrFile = "stderr.log"
->>>>>>> origin/main
 
 	lifecycleHookOutputHeadBytes = 8 * 1024
 	lifecycleHookOutputTailBytes = 8 * 1024
@@ -365,11 +358,7 @@ func (e *processExecutor) stopMainProcess(ctx context.Context, task *types.Task)
 	if err != nil {
 		return fmt.Errorf("invalid task name: %w", err)
 	}
-<<<<<<< HEAD
-	exitPath := filepath.Join(taskDir, exitFile)
-=======
 	exitPath := filepath.Join(taskDir, ExitFile)
->>>>>>> origin/main
 	if _, err := os.ReadFile(exitPath); err == nil {
 		klog.V(1).InfoS("Skipping process signal because task already exited", "name", task.Name)
 		return nil
@@ -377,11 +366,7 @@ func (e *processExecutor) stopMainProcess(ctx context.Context, task *types.Task)
 		return fmt.Errorf("failed to inspect exit marker: %w", err)
 	}
 
-<<<<<<< HEAD
-	pidPath := filepath.Join(taskDir, pidFile)
-=======
 	pidPath := filepath.Join(taskDir, PidFile)
->>>>>>> origin/main
 	pidData, err := os.ReadFile(pidPath)
 	if err != nil {
 		return nil

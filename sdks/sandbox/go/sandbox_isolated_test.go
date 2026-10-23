@@ -335,15 +335,7 @@ func TestIsolationAttach_PopulatesFullInfo(t *testing.T) {
 				"idle_remaining_seconds": 42,
 				"profile":                "python",
 				"workspace":              map[string]any{"path": "/workspace", "mode": "overlay"},
-<<<<<<< HEAD
-				"overlays": []map[string]any{
-					{"path": "/", "mode": "overlay"},
-					{"path": "/workspace", "mode": "overlay", "persist": false},
-				},
-				"extra_writable": []string{"/tmp", "/var/tmp"},
-=======
 				"extra_writable":         []string{"/tmp", "/var/tmp"},
->>>>>>> origin/main
 				"binds": []map[string]any{
 					{"source": "/data/in", "dest": "/mnt/in", "readonly": true},
 					{"source": "/data/out"},
@@ -381,17 +373,6 @@ func TestIsolationAttach_PopulatesFullInfo(t *testing.T) {
 	require.Equal(t, "/workspace", info.Workspace.Path)
 	require.Equal(t, "overlay", info.Workspace.Mode)
 
-<<<<<<< HEAD
-	require.Len(t, info.Overlays, 2)
-	require.Equal(t, "/", info.Overlays[0].Path)
-	require.Equal(t, "overlay", info.Overlays[0].Mode)
-	require.True(t, info.Overlays[0].Persist == nil, "Overlays[0].Persist should be nil")
-	require.Equal(t, "/workspace", info.Overlays[1].Path)
-	require.NotNil(t, info.Overlays[1].Persist)
-	require.True(t, !*info.Overlays[1].Persist, "Overlays[1].Persist should be false")
-
-=======
->>>>>>> origin/main
 	require.Len(t, info.ExtraWritable, 2)
 	require.Equal(t, "/tmp", info.ExtraWritable[0])
 	require.Equal(t, "/var/tmp", info.ExtraWritable[1])
@@ -503,12 +484,9 @@ func TestIsolationAttach_ToleratesMissingCreationParams(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
-=======
 // TestIsolationAttach_NotFound verifies that a 404 from the server surfaces
 // as an *APIError with StatusCode 404, matching the error type used by
 // IsolatedGet for a missing session.
->>>>>>> origin/main
 // TestIsolationAttach_PreservesIdleTimeoutZero verifies that a session
 // created with idle_timeout_seconds=0 (idle GC disabled — the long-window
 // stateless-recovery configuration) round-trips through attach as a
@@ -546,12 +524,6 @@ func TestIsolationAttach_PreservesIdleTimeoutZero(t *testing.T) {
 	require.Equal(t, 0, *info.IdleTimeoutSeconds)
 }
 
-<<<<<<< HEAD
-// TestIsolationAttach_NotFound verifies that a 404 from the server surfaces
-// as an *APIError with StatusCode 404, matching the error type used by
-// IsolationGet for a missing session.
-=======
->>>>>>> origin/main
 func TestIsolationAttach_NotFound(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/v1/isolated/session/missing" {

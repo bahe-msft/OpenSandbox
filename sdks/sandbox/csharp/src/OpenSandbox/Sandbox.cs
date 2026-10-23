@@ -193,12 +193,6 @@ public sealed class Sandbox : IAsyncDisposable
         options.Lifecycle?.IdlePolicy?.Validate();
         ValidateHostPaths(options.Volumes);
         var startupSource = options.Image ?? options.SnapshotId;
-<<<<<<< HEAD
-
-        if (options.NetworkPolicy?.Egress is { Count: > 0 })
-        {
-            NetworkPolicyCodec.ValidateRules(options.NetworkPolicy.Egress, nameof(options.NetworkPolicy.Egress));
-=======
         var createStopwatch = Stopwatch.StartNew();
         var httpClientProvider = new HttpClientProvider(connectionConfig, loggerFactory);
 
@@ -230,7 +224,6 @@ public sealed class Sandbox : IAsyncDisposable
                 loggerFactory);
             httpClientProvider.Dispose();
             throw;
->>>>>>> origin/main
         }
 
         var request = new CreateSandboxRequest

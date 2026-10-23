@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-// Copyright 2026 The OpenSandbox Authors
-=======
 // Copyright 2026 Alibaba Group Holding Ltd.
->>>>>>> origin/main
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -78,8 +74,6 @@ func TestStaleConn_GetEndpointRecoversFromBlackHoledConn(t *testing.T) {
 	require.NoError(t, err, "GetEndpoint must recover from a black-holed reused connection")
 }
 
-<<<<<<< HEAD
-=======
 // TestStaleConn_GetEndpointRecovers_RealTimescale exercises the same recovery at
 // realistic (second-scale) timings. Skipped under `go test -short`.
 func TestStaleConn_GetEndpointRecovers_RealTimescale(t *testing.T) {
@@ -108,7 +102,6 @@ func TestStaleConn_GetEndpointRecovers_RealTimescale(t *testing.T) {
 	require.NoError(t, err, "GetEndpoint must recover from a black-holed reused connection at second scale")
 }
 
->>>>>>> origin/main
 // TestStaleConn_IdleConnEvictedBeforeLBDrops verifies the "A" lever: when a
 // connection stays idle longer than IdleConnTimeout, the SDK evicts it, so the
 // next request dials a FRESH connection instead of reusing a possibly-dead one.

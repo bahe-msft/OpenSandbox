@@ -98,37 +98,6 @@ def test_get_endpoint_use_server_proxy_rewrites_url(
     assert response.json()["endpoint"] == "testserver/v1/sandboxes/sbx-001/proxy/44772"
 
 
-<<<<<<< HEAD
-def test_get_endpoint_use_server_proxy_omits_ingress_header(
-    client: TestClient,
-    auth_headers: dict,
-    monkeypatch,
-) -> None:
-    class StubService:
-        @staticmethod
-        def get_endpoint(sandbox_id: str, port: int, **kwargs) -> Endpoint:
-            return Endpoint(
-                endpoint="gateway.example.com",
-                headers={
-                    OPEN_SANDBOX_INGRESS_HEADER.lower(): "sbx-001-44772",
-                    OPEN_SANDBOX_SECURE_ACCESS_HEADER: "secure-token",
-                },
-            )
-
-    monkeypatch.setattr(lifecycle, "sandbox_service", StubService())
-
-    response = client.get(
-        "/v1/sandboxes/sbx-001/endpoints/44772",
-        params={"use_server_proxy": "true"},
-        headers=auth_headers,
-    )
-
-    assert response.status_code == 200
-    assert response.json()["headers"] == {OPEN_SANDBOX_SECURE_ACCESS_HEADER: "secure-token"}
-
-
-=======
->>>>>>> origin/main
 def test_get_endpoint_use_server_proxy_without_mount_prefix(
     client: TestClient,
     auth_headers: dict,

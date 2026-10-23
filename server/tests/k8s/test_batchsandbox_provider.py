@@ -1744,11 +1744,6 @@ spec:
                 expires_at=datetime(2025, 12, 31, tzinfo=timezone.utc),
                 execd_image="execd:latest",
                 extensions={"poolRef": "my-pool"},
-<<<<<<< HEAD
-                egress_settings=_egress_settings(
-                    NetworkPolicy(default_action="deny", egress=[])
-                ),
-=======
                 network_policy=NetworkPolicy(default_action="deny", egress=[]),
             )
 
@@ -1770,7 +1765,6 @@ spec:
                 execd_image="execd:latest",
                 extensions={"poolRef": "my-pool"},
                 credential_proxy_enabled=True,
->>>>>>> origin/main
             )
 
         mock_k8s_client.create_custom_object.assert_not_called()

@@ -182,10 +182,6 @@ internal sealed class IsolatedSessionsAdapter : IIsolatedSessions
             CreatedAt: state.CreatedAt,
             Profile: state.Profile,
             Workspace: state.Workspace,
-<<<<<<< HEAD
-            Overlays: state.Overlays,
-=======
->>>>>>> origin/main
             ExtraWritable: state.ExtraWritable,
             Binds: state.Binds,
             ShareNet: state.ShareNet,

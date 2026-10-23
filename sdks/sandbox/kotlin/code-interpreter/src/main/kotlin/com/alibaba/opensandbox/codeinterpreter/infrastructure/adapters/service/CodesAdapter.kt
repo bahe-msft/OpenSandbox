@@ -28,15 +28,9 @@ import com.alibaba.opensandbox.sandbox.domain.exceptions.InvalidArgumentExceptio
 import com.alibaba.opensandbox.sandbox.domain.models.execd.executions.Execution
 import com.alibaba.opensandbox.sandbox.domain.models.sandboxes.SandboxEndpoint
 import com.alibaba.opensandbox.sandbox.infrastructure.adapters.converter.ExecutionEventDispatcher
-<<<<<<< HEAD
-import com.alibaba.opensandbox.sandbox.infrastructure.adapters.converter.toSandboxApiException
-import com.alibaba.opensandbox.sandbox.infrastructure.adapters.converter.toSandboxException
-import com.alibaba.opensandbox.sandbox.infrastructure.adapters.service.ExecdEventSupport
-=======
 import com.alibaba.opensandbox.sandbox.infrastructure.adapters.converter.parseSandboxError
 import com.alibaba.opensandbox.sandbox.infrastructure.adapters.converter.toSandboxException
 import kotlinx.serialization.decodeFromString
->>>>>>> origin/main
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.Headers.Companion.toHeaders
