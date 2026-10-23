@@ -264,8 +264,7 @@ await sandbox.commands.run(
 );
 ```
 
-To execute a native program without shell parsing, pass an argument list. On Linux,
-this example prints literal `$HOME` and keeps `hello world` as one argument:
+To execute a native program without shell parsing, pass an argument list. On Linux, this example prints literal `$HOME` and keeps `hello world` as one argument:
 
 ```ts
 await sandbox.commands.run(["printf", "%s\n", "$HOME", "hello world"]);
@@ -652,15 +651,11 @@ await sandbox.credentialVault.create({
 });
 ```
 
-See [Credential Vault](/guides/credential-vault) for auth types, binding
-guidance, and Git/curl examples.
+See [Credential Vault](/guides/credential-vault) for auth types, binding guidance, and Git/curl examples.
 
 ### 5. Resource Cleanup
 
-Both `Sandbox` and `SandboxManager` own a scoped HTTP agent when running on Node.js
-so you can safely reuse the same `ConnectionConfig`. Once you are finished interacting
-with the sandbox or administration APIs, call `sandbox.close()` / `manager.close()` to
-release the underlying agent.
+Both `Sandbox` and `SandboxManager` own a scoped HTTP agent when running on Node.js so you can safely reuse the same `ConnectionConfig`. Once you are finished interacting with the sandbox or administration APIs, call `sandbox.close()` / `manager.close()` to release the underlying agent.
 
 ## Browser Notes
 

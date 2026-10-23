@@ -34,9 +34,11 @@ export OPENSANDBOX_EGRESS_MITMPROXY_PORT=18081
 export OPENSANDBOX_EGRESS_MITMPROXY_SCRIPT=/path/to/your/addon.py,/path/to/another.py
 ```
 
-To bypass decryption for selected domains, edit the baked-in
-`components/egress/mitmproxy/config.yaml` and rebuild the image — see
-"Static Configuration (config.yaml)" below.
+To bypass decryption for selected domains, edit the baked-in `components/egress/mitmproxy/config.yaml` and rebuild the image — see "Static Configuration (config.yaml)" below.
+
+## Experimental live static TLS bypass
+
+The default-off live revision runtime uses typed static TLS/443 selectors; legacy mode continues to use `ignore_hosts`. For configuration, migration, limits and verification boundaries, see the [credential vault guide](../../../docs/guides/credential-vault.md#experimental-live-credential-bound-admission-osep-0023).
 
 ## Experimental live static TLS bypass
 
@@ -69,10 +71,7 @@ Notes:
 
 ### Static Configuration (config.yaml)
 
-Fast Sandbox-wide, rarely-changing mitm options live in
-`components/egress/mitmproxy/config.yaml`, baked into the image at
-`/var/lib/mitmproxy/.mitmproxy/config.yaml` and auto-loaded by mitmdump.
-This is the single source of truth for:
+Fast Sandbox-wide, rarely-changing mitm options live in `components/egress/mitmproxy/config.yaml`, baked into the image at `/var/lib/mitmproxy/.mitmproxy/config.yaml` and auto-loaded by mitmdump. This is the single source of truth for:
 
 - `mode` (`transparent`) — mitm default is `regular`
 - `listen_host` (`127.0.0.1`) — mitm default is `0.0.0.0`
@@ -157,17 +156,16 @@ User addons are loaded after the system addon (`-s system.py -s auth.py -s loggi
 
 ### 4) Bypass Decryption for Specific Domains (e.g. log upload)
 
-Edit `components/egress/mitmproxy/config.yaml` and append to `ignore_hosts`,
-then rebuild the egress image:
+Edit `components/egress/mitmproxy/config.yaml` and append to `ignore_hosts`, then rebuild the egress image:
 
 ```yaml
 ignore_hosts:
   - '.*\.log\.aliyuncs\.com'
 ```
 
-`ignore_hosts` means **no decryption**, not "completely bypass mitm process":
-mitm still proxies the TCP connection, it just forwards bytes without
-breaking TLS, and addons do not see request/response content.
+`ignore_hosts` means **no decryption**, not "completely bypass mitm process": mitm still proxies the TCP connection, it just forwards bytes without breaking TLS, and addons do not see request/response content.
+
+`ignore_hosts` (like `tcp_hosts`/`udp_hosts`) is **incompatible** with `OPENSANDBOX_EGRESS_UPSTREAM_PROXY`: pass-through connections cannot be chained through a CONNECT proxy, so the upstream addon refuses to load when any pass-through list is non-empty instead of letting those destinations bypass the proxy.
 
 `ignore_hosts` (like `tcp_hosts`/`udp_hosts`) is **incompatible** with
 `OPENSANDBOX_EGRESS_UPSTREAM_PROXY`: pass-through connections cannot be chained

@@ -18,6 +18,7 @@ Connection configuration for OpenSandbox operations.
 """
 
 import os
+import ssl
 from datetime import timedelta
 
 import httpx  # type: ignore[reportMissingImports]
@@ -52,6 +53,7 @@ class ConnectionConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     _owns_transport: bool = PrivateAttr(default=True)
+    _ssl_context: ssl.SSLContext | None = PrivateAttr(default=None)
 
     api_key: str | None = Field(
         default=None, description="API key for authentication with sandbox service"
@@ -253,7 +255,12 @@ class ConnectionConfig(BaseModel):
 
     def get_base_url(self) -> str:
         """Get the full base URL for API requests."""
-        domain = self.get_domain()
+        # Ignore a trailing "/" or "/v1" like the other SDKs, so the version
+        # prefix is never doubled ("//v1", "/v1/v1").
+        domain = self.get_domain().rstrip("/")
+        version_suffix = f"/{self._API_VERSION}"
+        if domain.endswith(version_suffix):
+            domain = domain[: -len(version_suffix)]
         # Allow domain to override protocol if it explicitly starts with a scheme
         if domain.startswith("http://") or domain.startswith("https://"):
             return f"{domain}/{self._API_VERSION}"

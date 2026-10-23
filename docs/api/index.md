@@ -47,6 +47,7 @@ Defines the complete lifecycle interfaces for creating, managing, and destroying
 - `PATCH /sandboxes/{sandboxId}/metadata` - Patch sandbox metadata (JSON Merge Patch, RFC 7396)
 - `GET /sandboxes/{sandboxId}/endpoints/{port}` - Get an access endpoint and required headers; supports `use_server_proxy` and signed-endpoint `expires` parameters
 - `GET/PUT/PATCH/DELETE /sandboxes/{sandboxId}/networkpolicy` - Inspect and manage the sandbox egress network policy (Fsb persists intent on the Sandbox CR; other backends proxy the sandbox-side egress service)
+- `POST/GET/PATCH/DELETE /sandboxes/{sandboxId}/credential-vault` (+ sanitized `credentials` / `bindings` reads) - Manage the sandbox Credential Vault (fsb relays to the egress-held vault over FastPath; other backends proxy the sandbox-side egress service; values are write-only and never returned)
 - `POST /templates` - Create a fsb template (asynchronous golden-image build)
 - `GET /templates` - List templates with metadata filters and pagination
 - `GET /templates/{templateId}` - Get template status and artifact references

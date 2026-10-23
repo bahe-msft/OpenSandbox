@@ -24,7 +24,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Body, Header, HTTPException, Query, Request, status
 from fastapi.responses import Response
 
-from opensandbox_server.extensions import validate_extensions
+from opensandbox_server.extensions import validate_extensions, validate_renew_policy_conflict
 from opensandbox_server.config import get_config
 from opensandbox_server.api.schema import (
     CreateSnapshotRequest,
@@ -113,6 +113,7 @@ async def create_sandbox(
         HTTPException: If sandbox creation scheduling fails
     """
     validate_extensions(request.extensions)
+    validate_renew_policy_conflict(request.lifecycle, request.extensions)
     # Resolve snapshotId before backend routing: the owning backend recorded
     # on the snapshot row selects the fsb vs pod backend for restores.
     if not (request.template_id or "").strip():
@@ -237,7 +238,10 @@ def patch_sandbox_metadata(
     """
     Patch sandbox metadata via JSON Merge Patch (RFC 7396).
     Non-null adds/replaces, null deletes, absent keeps.
-    Read-modify-write without optimistic locking — concurrent PATCH may drop updates.
+    Docker: concurrent PATCH requests apply one after another, last write wins per key.
+    Kubernetes: a PATCH writes back the whole label set it read, with no resourceVersion check,
+    so a concurrent PATCH may revert a value another PATCH changed or resurrect a key it deleted;
+    a PATCH on an fsb sandbox sends only its own keys, fenced by the sandbox UID and generation.
     """
     return sandbox_service.patch_sandbox_metadata(sandbox_id, patch)
 

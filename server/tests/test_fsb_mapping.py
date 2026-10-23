@@ -29,6 +29,7 @@ from opensandbox_server.api.schema import (
     NetworkPolicy,
     NetworkRule,
     PlatformSpec,
+    RenewalPolicy,
     ResourceLimits,
     SandboxLifecycle,
     Volume,
@@ -118,13 +119,6 @@ def test_map_create_request_strips_pool_ref():
     assert padded.pool_ref == "ml-pool"
 
 
-def test_map_create_request_rejects_renew_extension_until_it_has_a_read_path():
-    request = _base_request(extensions={"access.renew.extend.seconds": "300"})
-    with pytest.raises(UnsupportedFieldError) as exc_info:
-        map_create_request(request, "sbx-1", "ns-1", now=NOW)
-    assert exc_info.value.field == "extensions['access.renew.extend.seconds']"
-
-
 @pytest.mark.parametrize(
     "field_name,payload",
     [
@@ -133,15 +127,6 @@ def test_map_create_request_rejects_renew_extension_until_it_has_a_read_path():
             "resourceRequests",
             {"resource_requests": ResourceLimits(root={"cpu": "1"})},
         ),
-        (
-            "credentialProxy",
-            {
-                "credential_proxy": CredentialProxyConfig(enabled=True),
-                "network_policy": NetworkPolicy(
-                    egress=[NetworkRule(action="allow", target="a.com")]
-                ),
-            },
-        ),
         ("secureAccess", {"secure_access": True}),
         ("volumes", {"volumes": [_host_volume()]}),
         (
@@ -149,6 +134,14 @@ def test_map_create_request_rejects_renew_extension_until_it_has_a_read_path():
             {
                 "lifecycle": SandboxLifecycle(
                     preStart=LifecycleHook(command=["true"]),
+                )
+            },
+        ),
+        (
+            "lifecycle.renewalPolicy",
+            {
+                "lifecycle": SandboxLifecycle(
+                    renewalPolicy=RenewalPolicy(extendSeconds=300),
                 )
             },
         ),

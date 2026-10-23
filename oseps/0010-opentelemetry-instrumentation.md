@@ -278,9 +278,7 @@ Policy **deny** is not represented in this log (use **`egress.policy.denied_tota
   - **Do not** set `TracerProvider` for production use; omit or use a no-op tracer provider.
 
 - **OTLP exporter**  
-  The current shared exporter supports OTLP HTTP/protobuf. gRPC transport remains
-  unimplemented; setting `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` does not select it.
-  Configure HTTP endpoints via environment variables:
+  The current shared exporter supports OTLP HTTP/protobuf. gRPC transport remains unimplemented; setting `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` does not select it. Configure HTTP endpoints via environment variables:
   - `OTEL_EXPORTER_OTLP_ENDPOINT` (or per-signal `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`).
   - R5 calls for no export when unconfigured. The current execd/egress/ingress
     implementation retains a historical `HOST_IP:4318` / `/etc/hostinfo` fallback

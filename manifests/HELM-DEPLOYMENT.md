@@ -540,27 +540,13 @@ rotating the Secret, `kubectl rollout restart` the server Deployment.
 
 ## fast-sandbox Runtime (Firecracker)
 
-The optional `fast-sandbox` chart deploys the fast-sandbox Firecracker chain
-(`sandbox.fast.io`): the all-in-one control plane (reconcilers + FastPath
-gRPC), the janitor, and the node-side firecracker runtime (UDS management
-API, DART P2P delivery, janitor sidecar, and the node readiness loop that
-installs the Firecracker assets and self-labels the nodes). Only
-Firecracker is covered; boxlite and other non-Firecracker runtimes are out
-of scope, and the upstream central sandbox-proxy is not deployed
-(OpenSandbox reaches fastlets through the ingress gateway's direct route
-resolution).
+The optional `fast-sandbox` chart deploys the fast-sandbox Firecracker chain (`sandbox.fast.io`): the all-in-one control plane (reconcilers + FastPath gRPC), the janitor, and the node-side firecracker runtime (UDS management API, DART P2P delivery, janitor sidecar, and the node readiness loop that installs the Firecracker assets and self-labels the nodes). Only Firecracker is covered; boxlite and other non-Firecracker runtimes are out of scope, and the upstream central sandbox-proxy is not deployed (OpenSandbox reaches fastlets through the ingress gateway's direct route resolution).
 
-The CRDs (`sandbox.fast.io`) and the component RBAC ship in the `base` chart
-(gated by `fastSandbox.*` values), so install `base` first.
+The CRDs (`sandbox.fast.io`) and the component RBAC ship in the `base` chart (gated by `fastSandbox.*` values), so install `base` first.
 
 ### 1. Build the companion images from the pinned source
 
-The upstream source is pinned Git-LFS-pointer style in
-[`manifests/third-party/fast-sandbox.commit`](third-party/fast-sandbox.commit)
-(repo + commit). The build script materializes a checkout of exactly that
-commit and builds the six Firecracker-scope images (controller, fastlet,
-fastlet-proxy, janitor, firecracker-runtime,
-sandboxtemplate-builder):
+The upstream source is pinned Git-LFS-pointer style in [`manifests/third-party/fast-sandbox.commit`](third-party/fast-sandbox.commit) (repo + commit). The build script materializes a checkout of exactly that commit and builds the six Firecracker-scope images (controller, fastlet, fastlet-proxy, janitor, firecracker-runtime, sandboxtemplate-builder):
 
 ```bash
 # Build all images; --load-kind also pushes them into a kind cluster
@@ -570,15 +556,7 @@ manifests/release/build-fast-sandbox.sh --load-kind <kind-cluster>
 manifests/release/build-fast-sandbox.sh --list-images
 ```
 
-`REGISTRY` / `TAG` environment variables override the default
-`fast-sandbox/<component>:dev` refs — keep the chart `image.*` values in
-sync when you override them. To publish, `--push` follows the
-`components/*/build.sh` convention: bare `--push` retags and pushes to
-`docker.io/opensandbox` and
-`sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox` (plus
-`$GHCR_REPO/<component>` when `GHCR_REPO` is set), `--push r1[,r2...]`
-pushes to exactly the listed registries, and a `v*` `TAG` additionally
-pushes `:latest`. Images are linux/amd64 only.
+`REGISTRY` / `TAG` environment variables override the default `fast-sandbox/<component>:dev` refs — keep the chart `image.*` values in sync when you override them. To publish, `--push` follows the `components/*/build.sh` convention: bare `--push` retags and pushes to `docker.io/opensandbox` and `sandbox-registry.cn-zhangjiakou.cr.aliyuncs.com/opensandbox` (plus `$GHCR_REPO/<component>` when `GHCR_REPO` is set), `--push r1[,r2...]` pushes to exactly the listed registries, and a `v*` `TAG` additionally pushes `:latest`. Images are linux/amd64 only.
 
 ### 2. Prepare the cluster
 
@@ -620,16 +598,8 @@ helm install opensandbox manifests/charts/opensandbox \
 
 Two key systems apply (do not conflate them):
 
-- The fast-sandbox controller's Ed25519 route keys default to the published
-  development-only test keys (`fast-sandbox.io/development-only: "true"`
-  label). For production, set `routeKeys.existingSecret` or
-  `routeKeys.privateKey` / `routeKeys.publicKey` with
-  `routeKeys.developmentOnly=false`.
-- The OpenSandbox f1.* route-scope ring is HMAC-SHA256 and independent: the
-  server signs with `[ingress.secure_access]` (`server.gateway.secureAccess`
-  in charts/server) and the ingress gateway verifies with the same symmetric
-  ring (`gateway.secureAccess` in charts/ingress-gateway). Configure both
-  with matching key material for production.
+- The fast-sandbox controller's Ed25519 route keys default to the published development-only test keys (`fast-sandbox.io/development-only: "true"` label). For production, set `routeKeys.existingSecret` or `routeKeys.privateKey` / `routeKeys.publicKey` with `routeKeys.developmentOnly=false`.
+- The OpenSandbox f1.* route-scope ring is HMAC-SHA256 and independent: the server signs with `[ingress.secure_access]` (`server.gateway.secureAccess` in charts/server) and the ingress gateway verifies with the same symmetric ring (`gateway.secureAccess` in charts/ingress-gateway). Configure both with matching key material for production.
 
 Point the OpenSandbox server's
 `[runtime]`/fsb configuration and the ingress gateway's

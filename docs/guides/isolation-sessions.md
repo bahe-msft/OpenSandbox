@@ -5,11 +5,7 @@ description: Per-execution bubblewrap-isolated bash sessions inside a sandbox fo
 
 # Isolation Sessions
 
-Isolation sessions run a **long-lived `bash` inside a
-[bubblewrap](https://github.com/containers/bubblewrap) namespace**, so one
-sandbox pod can host many mutually isolated task runs without spinning up a
-new container. Each session gets its own PID, mount, tmpfs, and env
-namespaces; startup is sub-millisecond.
+Isolation sessions run a **long-lived `bash` inside a [bubblewrap](https://github.com/containers/bubblewrap) namespace**, so one sandbox pod can host many mutually isolated task runs without spinning up a new container. Each session gets its own PID, mount, tmpfs, and env namespaces; startup is sub-millisecond.
 
 ## Table of Contents
 
@@ -51,21 +47,11 @@ Component versions needed for the features covered by this guide:
 - C# SDK >= 0.1.4 (`RunOnceAsync` / `WithSessionAsync`)
 - Go SDK >= 1.0.4 (`IsolationRunOnce` / `IsolationWithSession`)
 
-The `setpriv_available` / `userns_available` fields on
-[`/capabilities`](#capabilities-and-probing) were added after execd v1.0.21
-and are only present on execd builds from `main` at the time of writing;
-older execd omits both fields (clients must tolerate their absence).
+The `setpriv_available` / `userns_available` fields on [`/capabilities`](#capabilities-and-probing) were added after execd v1.0.21 and are only present on execd builds from `main` at the time of writing; older execd omits both fields (clients must tolerate their absence).
 
-Host requirements (`bwrap` binary, `CAP_SYS_ADMIN`, `overlayfs`, etc.) are
-listed under [Server Configuration → Host Requirements](#server-configuration).
+Host requirements (`bwrap` binary, `CAP_SYS_ADMIN`, `overlayfs`, etc.) are listed under [Server Configuration → Host Requirements](#server-configuration).
 
-The published execd image includes the fail-closed native workload gate used
-during session startup. For a Linux source build, `make build` requires a C
-compiler plus static libc and produces `bin/opensandbox-session-gate`; run
-`make build-session-gate` and then `sudo make install-session-gate` before
-starting execd to install the helper at
-`/opt/opensandbox/opensandbox-session-gate`. Keep that path and its parent
-directory root-owned and not group- or world-writable.
+The published execd image includes the fail-closed native workload gate used during session startup. For a Linux source build, `make build` requires a C compiler plus static libc and produces `bin/opensandbox-session-gate`; run `make build-session-gate` and then `sudo make install-session-gate` before starting execd to install the helper at `/opt/opensandbox/opensandbox-session-gate`. Keep that path and its parent directory root-owned and not group- or world-writable.
 
 ---
 
@@ -79,35 +65,25 @@ directory root-owned and not group- or world-writable.
 | Secure runtime (gVisor / Kata) | user-space kernel or VM per sandbox | 10–500 ms | Hardware-level protection against container escape |
 
 ::: info Session creation vs. per-run cost
-Creating a session takes about 100 ms because execd waits briefly after
-starting `bwrap` to detect an immediately-exiting child. Once the session
-exists, each `POST /run` reuses the same bash process, so per-run overhead
-is negligible. Design workloads that amortize the create cost across many
-`run` calls in one session.
+Creating a session takes about 100 ms because execd waits briefly after starting `bwrap` to detect an immediately-exiting child. Once the session exists, each `POST /run` reuses the same bash process, so per-run overhead is negligible. Design workloads that amortize the create cost across many `run` calls in one session.
 :::
 
-Good fits: **RL rollouts**, **batch code grading**, **multi-tool agent
-runs** — one sandbox per worker, many isolated tasks inside.
+Good fits: **RL rollouts**, **batch code grading**, **multi-tool agent runs** — one sandbox per worker, many isolated tasks inside.
 
-Not a fit: cross-language kernels (use `/code`), interactive REPLs (use
-`/session`), or hard trust boundaries against kernel exploits (use gVisor /
-Kata; see [Secure Container Runtime](/guides/secure-container)).
+Not a fit: cross-language kernels (use `/code`), interactive REPLs (use `/session`), or hard trust boundaries against kernel exploits (use gVisor / Kata; see [Secure Container Runtime](/guides/secure-container)).
 
 ---
 
 ## How It Works
 
-`execd` forks one `bwrap` child per session; `bwrap` sets up Linux
-namespaces, then `exec`s a long-lived `bash` inside them.
+`execd` forks one `bwrap` child per session; `bwrap` sets up Linux namespaces, then `exec`s a long-lived `bash` inside them.
 
 ![Isolation session runtime layout](../public/images/isolation-sessions-layout.svg)
 
 Two things the diagram doesn't show:
 
-- `bash` is long-lived, so `export X=1` in one `run` is visible to the next
-  `run` **in the same session** (never in another session).
-- The FS proxy reads and writes the merged workspace view from **outside**
-  the namespace, so uploads and downloads work while `bash` is busy.
+- `bash` is long-lived, so `export X=1` in one `run` is visible to the next `run` **in the same session** (never in another session).
+- The FS proxy reads and writes the merged workspace view from **outside** the namespace, so uploads and downloads work while `bash` is busy.
 
 ### `run` request flow
 
@@ -214,8 +190,7 @@ sandbox.isolation().withSession(request) { session ->
 
 ## Session Lifecycle
 
-Under `/v1/isolated/` on execd. Use `X-EXECD-ACCESS-TOKEN` when execd has
-an access token configured.
+Under `/v1/isolated/` on execd. Use `X-EXECD-ACCESS-TOKEN` when execd has an access token configured.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -228,16 +203,13 @@ an access token configured.
 | `DELETE` | `/session/{id}` | Destroy. |
 | `GET` | `/capabilities` | Probe. |
 
-`idle_timeout_seconds > 0` destroys idle sessions automatically; set to `0`
-to disable idle GC and always `DELETE` explicitly.
+`idle_timeout_seconds > 0` destroys idle sessions automatically; set to `0` to disable idle GC and always `DELETE` explicitly.
 
 ---
 
 ## Background Runs
 
-A background run starts code detached inside the session and returns
-immediately; the run's combined stdout/stderr and exit code are captured by
-execd, and the client polls them while other work continues on the session.
+A background run starts code detached inside the session and returns immediately; the run's combined stdout/stderr and exit code are captured by execd, and the client polls them while other work continues on the session.
 
 ```bash
 # Start detached; 202 returns {"session_id", "run_id", "started_at"}.
@@ -271,21 +243,11 @@ logs = await session.run_logs(run.run_id)   # .text + .cursor for pagination
 Background run semantics:
 
 - `timeout_seconds` is foreground-only; background runs are not time-limited.
-- Idle GC is suspended while a background run is active; after it finishes,
-  the normal idle window applies. Deleting the session kills the run.
-- Background runs require a writable log location, so sessions with a
-  read-only (`ro`) workspace reject them with `400`; `rw` and `overlay`
-  workspaces are supported.
-- Runs share the session's process group, so session-level signals (e.g. the
-  `SIGINT` sent when a foreground run times out or is cancelled) also reach
-  them.
-- Each `logs` request returns at most 16 MiB; page through large output with
-  the returned cursor. Per-run log retention is capped at 16 MiB — output
-  beyond the cap is discarded when the run completes, so drain incrementally
-  while the run is active if you need more than the first page.
-- A run whose session dies mid-flight reports `running: false` with
-  `error: "session terminated"`; run records and their logs are removed when
-  the session is deleted or garbage-collected.
+- Idle GC is suspended while a background run is active; after it finishes, the normal idle window applies. Deleting the session kills the run.
+- Background runs require a writable log location, so sessions with a read-only (`ro`) workspace reject them with `400`; `rw` and `overlay` workspaces are supported.
+- Runs share the session's process group, so session-level signals (e.g. the `SIGINT` sent when a foreground run times out or is cancelled) also reach them.
+- Each `logs` request returns at most 16 MiB; page through large output with the returned cursor. Per-run log retention is capped at 16 MiB — output beyond the cap is discarded when the run completes, so drain incrementally while the run is active if you need more than the first page.
+- A run whose session dies mid-flight reports `running: false` with `error: "session terminated"`; run records and their logs are removed when the session is deleted or garbage-collected.
 
 ---
 
@@ -364,11 +326,8 @@ one-element list; when both are present, `workspace` is prepended):
 
 ## Bind Mounts and Allowlist
 
-- **`extra_writable`** — paths bind-mounted read-write at the same path
-  (`source == destination`).
-- **`binds`** — explicit `source` → `dest` mappings, optionally `readonly`.
-  `source` must already exist; `dest` must already exist inside the
-  namespace (bake it into the sandbox image).
+- **`extra_writable`** — paths bind-mounted read-write at the same path (`source == destination`).
+- **`binds`** — explicit `source` → `dest` mappings, optionally `readonly`. `source` must already exist; `dest` must already exist inside the namespace (bake it into the sandbox image).
 
 ```json
 {
@@ -381,72 +340,47 @@ one-element list; when both are present, `workspace` is prepended):
 }
 ```
 
-Every `source` is checked against the operator-configured `allowed_writable`
-allowlist **after** symlink resolution, so symlinks cannot escape it. Default
-allowlist: `/workspace`, `/mnt`, `/media`, `/data` (subpaths allowed). Empty
-allowlist rejects all extra binds.
+Every `source` is checked against the operator-configured `allowed_writable` allowlist **after** symlink resolution, so symlinks cannot escape it. Default allowlist: `/workspace`, `/mnt`, `/media`, `/data` (subpaths allowed). Empty allowlist rejects all extra binds.
+
+Bind destinations are also served by the session files API: paths under `dest` resolve to the host `source` directory, so `session.files` and `session.run` see the same data in both directions (a bind is a live mount, unlike the overlay-mode upper). The bind view mirrors the namespace exactly: symlinked entries are followed (bubblewrap binds do not redirect symlink traversal) and `.wh.`-prefixed names are ordinary files, not overlay whiteouts. Writes through the files API are rejected for `readonly` binds, matching `--ro-bind` inside the namespace. When a bind shares a `dest` with an overlay or `extra_writable` path, the bind shadows it in both the namespace and the files view.
+
+Destination constraints keep the two views in agreement; session creation rejects otherwise-valid-looking configs:
+
+- **No duplicate `dest`** across `binds` entries (bwrap would expose only the last).
+- **A `dest` must not be a strict ancestor** of another mount destination (`binds`, `overlays`, or `extra_writable`) — the later parent mount would hide that subtree in the namespace while the files API would still route into it.
+- **A `dest` must not be `/run`, `/dev`, or `/proc`** (or nested under them) — the trusted base mounts are applied after every caller mount and always win.
 
 ---
 
 ## Profiles and Defaults
 
-The `profile` field currently controls only how `/tmp` is exposed inside the
-namespace:
+The `profile` field currently controls only how `/tmp` is exposed inside the namespace:
 
 | Profile | `/tmp` |
 |---|---|
 | `strict` (default) | Private tmpfs (`--tmpfs /tmp`) |
 | `balanced` | Shared with the sandbox (`--bind /tmp /tmp`) |
 
-`workspace.mode` and `env_passthrough` are **independent** of the profile:
-when they are omitted, execd normalizes `workspace.mode` to `overlay` and
-`env_passthrough.mode` to `deny` regardless of which profile you pick. Set
-those fields explicitly if you want persistent workspace writes (`"rw"`) or
-host env passthrough (`"allow"`).
+`workspace.mode` and `env_passthrough` are **independent** of the profile: when they are omitted, execd normalizes `workspace.mode` to `overlay` and `env_passthrough.mode` to `deny` regardless of which profile you pick. Set those fields explicitly if you want persistent workspace writes (`"rw"`) or host env passthrough (`"allow"`).
 
 ---
 
 ## Environment, UID, and Networking
 
-- **`env_passthrough`** — `mode: "allow"` + `keys` whitelists host env vars;
-  default `deny`. Per-run overrides go in `IsolatedRunRequest.envs`.
-- **`uid` / `gid`** with **`uid_mode: "setpriv"`** (default, real
-  setuid/setgid drop) or **`"userns"`** (user namespace remap). Check
-  `setpriv_available` / `userns_available` from
-  [`/capabilities`](#capabilities-and-probing) before requesting a mode.
-- **`share_net: true`** shares the sandbox's network namespace. Sandbox-level
-  egress and Credential Vault policies still apply.
-- **`share_net: false`** creates a private network namespace. Before releasing
-  the workload startup gate, execd opens the authenticated NetNS, obtains its
-  real owning UserNS with `NS_GET_USERNS`, and bind-pins both below
-  `/run/execd/namespaces/<opaque-id>/`. Any validation or pin failure aborts
-  Session creation. Execd attempts pin cleanup on failed startup, process exit,
-  explicit delete, idle collection, and runner shutdown; retryable failures
-  retain Session ownership and are retried while execd remains alive. This
-  applies to both UID modes; hardened network backends will require
-  `uid_mode: "userns"`.
+- **`env_passthrough`** — `mode: "allow"` + `keys` whitelists host env vars; default `deny`. Per-run overrides go in `IsolatedRunRequest.envs`.
+- **`uid` / `gid`** with **`uid_mode: "setpriv"`** (default, real setuid/setgid drop) or **`"userns"`** (user namespace remap). Check `setpriv_available` / `userns_available` from [`/capabilities`](#capabilities-and-probing) before requesting a mode.
+- **`share_net: true`** shares the sandbox's network namespace. Sandbox-level egress and Credential Vault policies still apply.
+- **`share_net: false`** creates a private network namespace. Before releasing the workload startup gate, execd opens the authenticated NetNS, obtains its real owning UserNS with `NS_GET_USERNS`, and bind-pins both below `/run/execd/namespaces/<opaque-id>/`. Any validation or pin failure aborts Session creation. Execd attempts pin cleanup on failed startup, process exit, explicit delete, idle collection, and runner shutdown; retryable failures retain Session ownership and are retried while execd remains alive. This applies to both UID modes; hardened network backends will require `uid_mode: "userns"`.
 
-The legacy default remains unchanged in this phase: omitting `share_net`
-continues to share the sandbox network namespace. Namespace pinning alone does
-not enable Session egress or ingress.
+The legacy default remains unchanged in this phase: omitting `share_net` continues to share the sandbox network namespace. Namespace pinning alone does not enable Session egress or ingress.
 
-Private Sessions are not recoverable across an execd restart. Deployments that
-enable them must treat execd as sandbox-critical and recreate the entire
-sandbox/container if execd exits; they must not launch a replacement execd
-inside the surviving mount namespace. Destroying the sandbox/container tears
-down that mount namespace and releases all pins. Execd intentionally does not
-scan and adopt opaque namespace-pin directories on startup because they do not
-carry a durable sandbox generation, so doing so could unmount another live
-process's resources.
+Private Sessions are not recoverable across an execd restart. Deployments that enable them must treat execd as sandbox-critical and recreate the entire sandbox/container if execd exits; they must not launch a replacement execd inside the surviving mount namespace. Destroying the sandbox/container tears down that mount namespace and releases all pins. Execd intentionally does not scan and adopt opaque namespace-pin directories on startup because they do not carry a durable sandbox generation, so doing so could unmount another live process's resources.
 
 ---
 
 ## Filesystem Proxy
 
-Reads and writes the session's **merged** workspace view from outside the
-namespace — this is how SDKs `upload`, `download`, and `list` without
-spawning a shell. All paths are per session under
-`/v1/isolated/session/{id}/`:
+Reads and writes the session's **merged** mount view — the workspace overlays plus every `binds` destination — from outside the namespace. This is how SDKs `upload`, `download`, and `list` without spawning a shell, including against bind-mounted persistent data. The files API serves exactly those session mounts: absolute paths outside every mount (namespace-only locations such as a strict profile's private `/tmp`, or unconfigured `binds` destinations) are rejected with an error rather than resolving to a different file. All paths are per session under `/v1/isolated/session/{id}/`:
 
 | Method | Path |
 |---|---|
@@ -462,8 +396,7 @@ spawning a shell. All paths are per session under
 | `POST` | `directories` |
 | `DELETE` | `directories?path=...` |
 
-Writes on a `ro` workspace fail; writes on `overlay` land in the upper dir
-and vanish on `DELETE`.
+Writes on a `ro` workspace fail; writes on `overlay` land in the upper dir and vanish on `DELETE`, and while the session runs they are not visible to `session.run` (see [Workspace Modes](#workspace-modes)); writes on a `readonly` bind fail.
 
 ---
 
@@ -485,14 +418,8 @@ curl -s http://localhost:44772/v1/isolated/capabilities
 }
 ```
 
-- `available: false` — the trusted native workload gate is missing or
-  untrusted, bubblewrap is missing, or the host can't create the required
-  namespaces (missing `CAP_SYS_ADMIN`, restricted user-ns sysctl, etc.).
-- `setpriv_available` / `userns_available` — whether sessions with
-  `uid_mode: "setpriv"` or `"userns"` can be created. `setpriv_available`
-  reflects only execd's **default** UID/GID; a session that requests a
-  different UID/GID may still return `503 NOT_SUPPORTED` when identity
-  switching is unavailable.
+- `available: false` — the trusted native workload gate is missing or untrusted, bubblewrap is missing, or the host can't create the required namespaces (missing `CAP_SYS_ADMIN`, restricted user-ns sysctl, etc.).
+- `setpriv_available` / `userns_available` — whether sessions with `uid_mode: "setpriv"` or `"userns"` can be created. `setpriv_available` reflects only execd's **default** UID/GID; a session that requests a different UID/GID may still return `503 NOT_SUPPORTED` when identity switching is unavailable.
 - `commit_supported` / `diff_supported` — Phase 2 stubs, currently return `503`.
 
 ---
@@ -521,29 +448,13 @@ allowed_writable = ["/workspace", "/mnt", "/media", "/data"]
 
 Example: `components/execd/configs/isolation.example.toml`.
 
-`upper_max_bytes` is checked when creating an `overlay` workspace (the default
-mode). If a successful usage scan reports a total at or above the configured
-positive limit, the new session is rejected. This setting does not cap writes
-by existing sessions and does not apply to `rw` or `ro` workspaces.
+`upper_max_bytes` is checked when creating an `overlay` workspace (the default mode). If a successful usage scan reports a total at or above the configured positive limit, the new session is rejected. This setting does not cap writes by existing sessions and does not apply to `rw` or `ro` workspaces.
 
-Deleting an overlay session can restore admission once its cleanup succeeds
-and total usage falls below the threshold. Deletion discards that session's
-private upper data, so preserve any data you need before deleting it.
+Deleting an overlay session can restore admission once its cleanup succeeds and total usage falls below the threshold. Deletion discards that session's private upper data, so preserve any data you need before deleting it.
 
-**Host requirements:** `bwrap` and the trusted native workload gate in the
-execd image; `CAP_SYS_ADMIN` (and `kernel.unprivileged_userns_clone=1` for
-`uid_mode: "userns"`); `overlayfs` in the kernel for `overlay` workspaces.
-The published image installs the gate automatically. Linux source builds must
-run `make build-session-gate` and then `sudo make install-session-gate` from
-`components/execd` before starting execd.
+**Host requirements:** `bwrap` and the trusted native workload gate in the execd image; `CAP_SYS_ADMIN` (and `kernel.unprivileged_userns_clone=1` for `uid_mode: "userns"`); `overlayfs` in the kernel for `overlay` workspaces. The published image installs the gate automatically. Linux source builds must run `make build-session-gate` and then `sudo make install-session-gate` from `components/execd` before starting execd.
 
-Note: `/capabilities` reports `available: false` when the native workload gate
-cannot be opened as a trusted executable or when bwrap itself cannot be
-started (missing binary or missing namespace capabilities). A missing
-`overlayfs` does **not** flip `available` — the overlay probe only influences
-Phase 2 `commit`/`diff` support, and default overlay-mode session creation can
-still fail at runtime on such hosts. If you rely on `workspace.mode:
-"overlay"`, verify `overlayfs` support directly on the host.
+Note: `/capabilities` reports `available: false` when the native workload gate cannot be opened as a trusted executable or when bwrap itself cannot be started (missing binary or missing namespace capabilities). A missing `overlayfs` does **not** flip `available` — the overlay probe only influences Phase 2 `commit`/`diff` support, and default overlay-mode session creation can still fail at runtime on such hosts. If you rely on `workspace.mode: "overlay"`, verify `overlayfs` support directly on the host.
 
 ---
 

@@ -18,7 +18,9 @@
 //
 // Control flow:
 //
-//	fastlet action protocol --(SET_BINDING / LIFECYCLE_HOOK / REMOVE_BINDING)-->
+//	fastlet action protocol --(SET_BINDING / LIFECYCLE_HOOK / REMOVE_BINDING /
+//	                         VAULT_EXPORT / VAULT_IMPORT /
+//	                         POLICY_EXPORT / POLICY_IMPORT)-->
 //	  fastSandboxPolicyServer:18080 (loopback): subject lifecycle + deny-first nft,
 //	  policy activation on sandbox.data-plane-ready (the binding input is the
 //	  policy; the credential vault is egress-held behind the FastPath
@@ -39,6 +41,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 

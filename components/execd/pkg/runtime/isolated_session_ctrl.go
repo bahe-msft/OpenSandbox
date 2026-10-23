@@ -103,10 +103,11 @@ func (r *IsolatedRunner) statsSnapshot() telemetry.IsolationStats {
 		sessionCount++
 		return true
 	})
-	usage, _ := r.upperMgr.Usage()
+	usage, err := r.upperMgr.Usage()
 	return telemetry.IsolationStats{
 		ActiveSessions:  sessionCount,
 		UpperUsageBytes: usage,
+		UpperUsageValid: err == nil,
 	}
 }
 
@@ -1065,6 +1066,102 @@ func (r *IsolatedRunner) pathAllowedResolved(resolved string) bool {
 		}
 	}
 	return false
+}
+
+// trustedBaseMounts are the bwrap mounts applied AFTER every caller-
+// controlled mount (buildArgvWithLifecycle): a bind whose destination falls
+// under one of them is shadowed inside the namespace, so the files view
+// must not serve it either.
+var trustedBaseMounts = []string{"/run", "/dev", "/proc"}
+
+// validateNormalizedCreate checks the invariants that depend on the
+// normalized options shape.
+func validateNormalizedCreate(opts *IsolatedSessionOptions) error {
+	if len(opts.Overlays) == 0 {
+		return fmt.Errorf("at least one overlay is required")
+	}
+	// Keep the files view and the namespace in agreement: a bind whose
+	// destination shadows (or is shadowed by) another caller mount would be
+	// served by different host directories through session.run and
+	// session.files, so reject the overlap up front.
+	return validateBindMountStack(opts.Overlays, opts.ExtraWritable, opts.Binds)
+}
+
+// validateBindMountStack rejects bind destinations whose mount-stack
+// visibility would disagree with the files view's longest-prefix routing:
+//
+//   - duplicate bind destinations (bwrap exposes the last, the router the
+//     first),
+//   - a destination that is a strict ancestor of another mount (bwrap's
+//     later mount hides the earlier subtree; the router would pick the
+//     deeper mount),
+//   - a destination under the trusted base mounts (/run, /dev, /proc),
+//     which bwrap always mounts last.
+//
+// A bind destination exactly equal to an overlay or extra_writable path is
+// allowed: the bind is applied later and wins in both the namespace and
+// the files view.
+func validateBindMountStack(
+	overlays []IsolatedOverlayOptions,
+	extraWritable []string,
+	binds []isolation.BindMount,
+) error {
+	bindDests := make([]string, 0, len(binds))
+	for _, b := range binds {
+		dest := b.Dest
+		if dest == "" {
+			dest = b.Source
+		}
+		bindDests = append(bindDests, filepath.Clean(dest))
+	}
+
+	otherMounts := make([]string, 0, len(overlays)+len(extraWritable))
+	for _, ov := range overlays {
+		otherMounts = append(otherMounts, filepath.Clean(ov.Path))
+	}
+	for _, p := range extraWritable {
+		otherMounts = append(otherMounts, filepath.Clean(p))
+	}
+
+	for i, dest := range bindDests {
+		for j, other := range bindDests {
+			if i == j {
+				continue
+			}
+			if dest == other {
+				return fmt.Errorf("binds dest %q: duplicate bind destination", dest)
+			}
+			if pathIsStrictAncestor(dest, other) {
+				return fmt.Errorf(
+					"binds dest %q shadows bind mount %q; nested bind destinations are not supported",
+					dest, other,
+				)
+			}
+		}
+		for _, mount := range otherMounts {
+			if pathIsStrictAncestor(dest, mount) {
+				return fmt.Errorf(
+					"binds dest %q shadows mount %q; ancestor bind destinations are not supported",
+					dest, mount,
+				)
+			}
+		}
+		for _, base := range trustedBaseMounts {
+			if dest == base || strings.HasPrefix(dest, base+"/") {
+				return fmt.Errorf(
+					"binds dest %q is shadowed by the trusted base mount %q",
+					dest, base,
+				)
+			}
+		}
+	}
+	return nil
+}
+
+// pathIsStrictAncestor reports whether ancestor is a proper path prefix of
+// descendant (equal paths are not a strict ancestor relation).
+func pathIsStrictAncestor(ancestor, descendant string) bool {
+	return ancestor != descendant && strings.HasPrefix(descendant, ancestor+"/")
 }
 
 // resolveSymlinks returns the real path of p with symlinks resolved. Because p

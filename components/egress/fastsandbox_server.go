@@ -69,6 +69,39 @@ type fastSandboxPolicyServer struct {
 	// cleanup (gateway refcounts) even when the REMOVE_BINDING envelope omits
 	// the attachment block.
 	subjAtt map[subject.Subject]actionhandler.NetworkAttachment
+	// subjFence mirrors the registered fence per subject: the relay paths
+	// pre-read the registry before s.mu (lock order: registry → s.mu), and
+	// this in-lock comparison rejects requests whose pre-read went stale
+	// across a rebind.
+	subjFence map[subject.Subject]subject.Fencing
+
+	// vaultFiles owns the per-subject vault files; nil keeps the vault
+	// memory-only (the default, and the sidecar posture).
+	vaultFiles *vaultPersistence
+	// vaultRecovery is the sticky recovery latch: non-nil freezes vault
+	// writes until the process restarts (first reason wins; reads are
+	// lock-free so healthz never contends).
+	vaultRecovery atomic.Pointer[vaultRecoveryState]
+
+	// policies tracks the recorded policy of each subject: the revision the
+	// relay preconditions fence on, the runtime fence the state was
+	// materialized under, and whether the policy is file-backed (loaded from
+	// the persisted file — the binding input no longer drives it). The
+	// policy itself lives in the registry (active subjects) or
+	// pendingPolicies (denying subjects); this entry carries only the
+	// bookkeeping the vault entry carries for vault state.
+	policies map[subject.Subject]*policyEntry
+	// policyFiles owns the per-subject policy files. Always non-nil in the
+	// fast-sandbox profile (startup fails without it); nil only in unit
+	// tests that assemble the server directly.
+	policyFiles *policyPersistence
+	// policyRecovery is the policy persistence recovery latch (same
+	// mechanics as vaultRecovery).
+	policyRecovery atomic.Pointer[policyRecoveryState]
+	// policyCommitMu serializes policy file-commit operations process-wide
+	// (relay writers from different server replicas do not serialize with
+	// each other or with a concurrent SET_BINDING commit).
+	policyCommitMu sync.Mutex
 
 	// vaultFiles owns the per-subject vault files; nil keeps the vault
 	// memory-only (the default, and the sidecar posture).
@@ -115,6 +148,7 @@ func newFastSandboxPolicyServer(ctx context.Context, reg *subject.MemoryRegistry
 		vaults:             make(map[subject.Subject]vaultEntry),
 		pendingPolicies:    make(map[subject.Subject]*policy.NetworkPolicy),
 		subjAtt:            make(map[subject.Subject]actionhandler.NetworkAttachment),
+		subjFence:          make(map[subject.Subject]subject.Fencing),
 		gatewayDNSRefs:     make(map[subject.Subject]netip.Addr),
 		dnsRedirectInstall: iptables.SetupGatewayDNSRedirect,
 		dnsRedirectRemove:  iptables.RemoveGatewayDNSRedirect,
@@ -157,6 +191,10 @@ func (s *fastSandboxPolicyServer) mitmRedirectRebuild() error {
 // fastSandboxDNSProxyPort is where the shared DNS proxy listens on loopback; the
 // per-subject gateway REDIRECT forwards sandbox DNS here.
 const fastSandboxDNSProxyPort = 15353
+
+// policyApplyTimeout bounds one kernel policy transaction on every path
+// that runs under policyCommitMu (see applyPolicy).
+const policyApplyTimeout = 10 * time.Second
 
 // installGatewayDNSRedirect records a subject's gateway and installs (once)
 // the prerouting REDIRECT for it. Idempotent under at-least-once SET_BINDING
@@ -336,7 +374,10 @@ func (s *fastSandboxPolicyServer) applyPolicy(subj subject.Subject, pol *policy.
 	s.policyMu.Lock()
 	defer s.policyMu.Unlock()
 	eff := s.reg.EffectiveOf(pol)
-	nftCtx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+	// Bounded (policyApplyTimeout): every applyPolicy caller runs under
+	// policyCommitMu, so one slow nft transaction would head-of-line-block
+	// every subject's writes.
+	nftCtx, cancel := context.WithTimeout(s.ctx, policyApplyTimeout)
 	defer cancel()
 	if err := s.nft.ApplyPolicy(nftCtx, subj, eff); err != nil {
 		return fmt.Errorf("nft policy apply: %w", err)
@@ -344,6 +385,7 @@ func (s *fastSandboxPolicyServer) applyPolicy(subj subject.Subject, pol *policy.
 	if err := s.reg.ApplyPolicy(subj, pol); err != nil {
 		return err
 	}
+	log.Infof("subject %s: policy applied (defaultAction=%s, rules=%d)", subj, pol.DefaultAction, len(pol.Egress))
 	return nil
 }
 
@@ -368,6 +410,7 @@ type vaultEntry struct {
 // never carries old credentials into a new sandbox (OSEP-0022). The fence is
 // read under s.mu, serialized with the rebind purge in applySetBinding.
 func (s *fastSandboxPolicyServer) vaultFor(subj subject.Subject) *credentialvault.Store {
+	fence, _ := s.reg.Fence(subj)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	fence, _ := s.reg.Fence(subj)
@@ -398,17 +441,24 @@ func (s *fastSandboxPolicyServer) dropVault(subj subject.Subject) {
 // (nft rules + gateway DNS redirect + MITM interception). Runs under the
 // registry write lock, so no registry calls here.
 func (s *fastSandboxPolicyServer) OnRegistered(subj subject.Subject, att actionhandler.NetworkAttachment) error {
-	nftCtx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+	// Bounded (policyApplyTimeout): SET_BINDING runs under policyCommitMu,
+	// so a slow deny-first install would head-of-line-block every subject's
+	// policy writes.
+	nftCtx, cancel := context.WithTimeout(s.ctx, policyApplyTimeout)
 	defer cancel()
+	denyFirstStarted := time.Now()
 	if err := s.nft.ApplyDenyFirst(nftCtx, subj, att); err != nil {
 		return err
 	}
+	dnsStarted := time.Now()
 	if err := s.installGatewayDNSRedirect(subj, att.Gateway); err != nil {
 		// Fail closed: sandbox DNS addressed to gateway:53 must reach the
 		// proxy; without the redirect the sandbox would fall back to a
 		// resolver the policy cannot see.
 		return err
 	}
+	dnsRedirect := time.Since(dnsStarted)
+	mitmStarted := time.Now()
 	if err := s.setMitmRedirect(subj, att, false); err != nil {
 		// Fail closed: a sandbox whose HTTP(S) is not intercepted must not
 		// register as usable (it could exfiltrate credentials-bearing
@@ -418,7 +468,8 @@ func (s *fastSandboxPolicyServer) OnRegistered(subj subject.Subject, att actionh
 		s.releaseGatewayDNSRedirect(subj)
 		return err
 	}
-	log.Infof("subject %s deny-first enforced (nft + gateway redirect + mitm redirect)", subj)
+	log.Infof("subject %s deny-first enforced (nft + gateway redirect + mitm redirect) total=%dms denyFirst=%dms dnsRedirect=%dms mitm=%dms",
+		subj, time.Since(denyFirstStarted).Milliseconds(), dnsStarted.Sub(denyFirstStarted).Milliseconds(), dnsRedirect.Milliseconds(), time.Since(mitmStarted).Milliseconds())
 	return nil
 }
 
@@ -519,7 +570,16 @@ func (s *fastSandboxPolicyServer) dropSubjectState(subj subject.Subject) {
 func (s *fastSandboxPolicyServer) recordBindingState(subj subject.Subject, att actionhandler.NetworkAttachment) {
 	s.mu.Lock()
 	s.subjAtt[subj] = att
+	s.subjFence[subj] = fence
 	s.mu.Unlock()
+}
+
+// fenceMatchesLocked reports whether the recorded fence equals the request
+// fence (commit-time re-validation for the pre-read window). Callers hold
+// s.mu.
+func (s *fastSandboxPolicyServer) fenceMatchesLocked(subj subject.Subject, fence subject.Fencing) bool {
+	got, ok := s.subjFence[subj]
+	return ok && got == fence
 }
 
 // attachment returns the last observed network attachment for a registered
@@ -563,7 +623,7 @@ func (s *fastSandboxPolicyServer) pendingPolicy(subj subject.Subject) *policy.Ne
 // sandbox must be fully blocked again). nft commits before the registry
 // state, so the transition stays fail-closed.
 func (s *fastSandboxPolicyServer) revertToDenyFirst(subj subject.Subject, att actionhandler.NetworkAttachment) error {
-	nftCtx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+	nftCtx, cancel := context.WithTimeout(s.ctx, policyApplyTimeout)
 	defer cancel()
 	if err := s.nft.ApplyDenyFirst(nftCtx, subj, att); err != nil {
 		return fmt.Errorf("revert to deny-first: %w", err)

@@ -211,6 +211,12 @@ func (s *fastSandboxPolicyServer) applySetBinding(env *actionhandler.Envelope) (
 		// (a re-added binding gets a fresh input — never apply the removed
 		// binding's policy to a policy-less subject).
 		s.clearPendingPolicy(subj)
+		if err := s.clearPolicyRecordLocked(subj); err != nil {
+			// The durable removal did not confirm: fail the action so the
+			// Fastlet's retry re-runs the purge/tombstone instead of acking
+			// a removal whose file may still carry the removed policy.
+			return http.StatusInternalServerError, fmt.Errorf("policy record removal: %w", err)
+		}
 		if state == subject.StateActive {
 			if err := s.revertToDenyFirst(subj, att); err != nil {
 				return http.StatusInternalServerError, err
@@ -219,15 +225,12 @@ func (s *fastSandboxPolicyServer) applySetBinding(env *actionhandler.Envelope) (
 		log.Infof("subject %s: binding removed (deny-first)", subj)
 		return http.StatusOK, nil
 	}
-	if state == subject.StateActive {
-		// Ordinary input update on an already-ready sandbox: apply in place,
-		// no Hook replay (the Fastlet does not send one for updates).
-		if err := s.applyPolicy(subj, pol); err != nil {
-			return http.StatusInternalServerError, fmt.Errorf("policy apply: %w", err)
-		}
-	} else {
-		// Deny-first until sandbox.data-plane-ready activates the subject.
-		s.storePendingPolicy(subj, pol)
+	// Install the binding policy (or honor the file-backed record that
+	// supersedes it) through the policy commit protocol.
+	policyStarted := time.Now()
+	if err := s.applyBindingPolicyLocked(subj, fence, pol, state == subject.StateActive); err != nil {
+		log.Errorf("subject %s: binding policy commit failed: %v", subj, err)
+		return http.StatusInternalServerError, fmt.Errorf("binding policy commit: %w", err)
 	}
 	log.Infof("subject %s: SET_BINDING applied (state=%s)", subj, state)
 	return http.StatusOK, nil
@@ -256,21 +259,42 @@ func (s *fastSandboxPolicyServer) applyLifecycleHook(env *actionhandler.Envelope
 	case constants.HookRuntimeReady:
 		return http.StatusOK, nil
 	case constants.HookDataPlaneReady:
-		// Peek, do not consume: a transient nft failure must leave the
-		// pending policy in place so the Fastlet's retry of the same Hook
-		// succeeds instead of 409-ing forever with the subject deny-first.
-		pol := s.pendingPolicy(subj)
+		// Serialized with the policy relay commits (policyCommitMu): a
+		// relay write that passed its guards before this hook must either
+		// land first (the activation below then applies the relayed
+		// pending policy) or after (its apply-time state re-read then sees
+		// Active and updates enforcement in place) — it can never land
+		// after the activation as a pending-only write that nothing will
+		// ever consume.
+		s.policyCommitMu.Lock()
+		defer s.policyCommitMu.Unlock()
+		// Fence re-validation AND the pending peek under one s.mu hold
+		// (policyCommitMu → s.mu, the established order): fenceMatchesLocked
+		// reads subjFence, which terminal cleanup deletes under s.mu without
+		// policyCommitMu (dropSubjectState is called under the registry write
+		// lock from takeover) — an unsynchronized read here would race that
+		// delete. The pre-lock fence check above cannot see a rebind or
+		// removal that completes while this Hook waits on policyCommitMu —
+		// a stale Hook must never activate the successor.
+		s.mu.Lock()
+		stale := !s.fenceMatchesLocked(subj, fence)
+		pol := s.pendingPolicies[subj]
+		s.mu.Unlock()
+		if stale {
+			return http.StatusConflict, fmt.Errorf("stale %s (fence mismatch) for subject %s", env.Hook.Name, subj)
+		}
 		if pol == nil {
 			// No pending policy: SET_BINDING has not landed (protocol
 			// ordering violation) or the binding was removed. Fail closed —
 			// the subject must never activate without its current policy.
 			return http.StatusConflict, fmt.Errorf("data-plane-ready for subject %s with no pending policy", subj)
 		}
+		applyStarted := time.Now()
 		if err := s.applyPolicy(subj, pol); err != nil {
 			return http.StatusInternalServerError, fmt.Errorf("policy apply: %w", err)
 		}
 		s.clearPendingPolicy(subj)
-		log.Infof("subject %s: data-plane-ready, policy active", subj)
+		log.Infof("subject %s: data-plane-ready, policy active applyPolicy=%dms", subj, time.Since(applyStarted).Milliseconds())
 		return http.StatusOK, nil
 	default:
 		// Unreachable: ParseEnvelope validated the Hook name.

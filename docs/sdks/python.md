@@ -94,10 +94,7 @@ finally:
     sandbox.destroy()
 ```
 
-Use `destroy()` for create-use-discard workflows. It calls `kill()` before
-`close()` and still closes local resources if remote termination fails. Context
-managers continue to call only `close()`, so the remote sandbox remains available
-for later `connect()` calls unless you explicitly kill or destroy it.
+Use `destroy()` for create-use-discard workflows. It calls `kill()` before `close()` and still closes local resources if remote termination fails. Context managers continue to call only `close()`, so the remote sandbox remains available for later `connect()` calls unless you explicitly kill or destroy it.
 
 ## Client Pool and observability
 
@@ -321,8 +318,7 @@ result = await sandbox.commands.run(
 )
 ```
 
-To execute a native program without shell parsing, pass an argument list. On Linux,
-this example prints literal `$HOME` and keeps `hello world` as one argument:
+To execute a native program without shell parsing, pass an argument list. On Linux, this example prints literal `$HOME` and keeps `hello world` as one argument:
 
 ```python
 result = await sandbox.commands.run(["printf", "%s\n", "$HOME", "hello world"])
@@ -561,6 +557,8 @@ await sandbox.patch_metadata({"project": "demo", "obsolete-key": None})
 
 The `ConnectionConfig` class manages API server connection settings.
 
+Reuse a `ConnectionConfig` (or `ConnectionConfigSync`) when creating multiple sandboxes. SDK-owned transports share that configuration's lazily loaded SSL context, avoiding repeated CA certificate loading, while each Sandbox/Manager keeps its own connection pool and closes it independently. TLS verification remains enabled. Create a new configuration to reload the system or environment-configured trust store. For connection pooling across sandboxes, supply a shared `transport` and close it after all users finish.
+
 | Parameter         | Description                                | Default                      | Environment Variable   |
 | ----------------- | ------------------------------------------ | ---------------------------- | ---------------------- |
 | `api_key`         | API Key for authentication                 | Optional; needed when server auth is enabled | `OPEN_SANDBOX_API_KEY` |
@@ -640,27 +638,17 @@ config = ConnectionConfig(
 
 ### 2. Automatic retries
 
-The SDK retries transient failures automatically. `ConnectionConfig` /
-`ConnectionConfigSync` install a retry wrapper around the default shared
-transport, controlled by `retry_policy` (`opensandbox.transport.RetryPolicy`).
+The SDK retries transient failures automatically. `ConnectionConfig` / `ConnectionConfigSync` install a retry wrapper around the default shared transport, controlled by `retry_policy` (`opensandbox.transport.RetryPolicy`).
 
 Default behavior:
 
-- **Enabled by default.** Idempotent methods (`GET/HEAD/PUT/DELETE/OPTIONS`)
-  are retried on `429`, `502`, `503`, and on pre-send transport failures
-  (DNS, TCP connect, TLS handshake, fresh-connection reset).
-- **`POST`/`PATCH` are never retried on a status code by default**, since the
-  request may already have been applied server-side. Pre-send transport
-  failures (before any byte is written) are still retried for these methods.
-- Up to `3` retries with decorrelated-jitter exponential backoff, honoring a
-  server `Retry-After` header (capped at 60s).
-- **SSE / streaming requests bypass retry** entirely (bodies are not
-  replayable).
+- **Enabled by default.** Idempotent methods (`GET/HEAD/PUT/DELETE/OPTIONS`) are retried on `429`, `502`, `503`, and on pre-send transport failures (DNS, TCP connect, TLS handshake, fresh-connection reset).
+- **`POST`/`PATCH` are never retried on a status code by default**, since the request may already have been applied server-side. Pre-send transport failures (before any byte is written) are still retried for these methods.
+- Up to `3` retries with decorrelated-jitter exponential backoff, honoring a server `Retry-After` header (capped at 60s).
+- **SSE / streaming requests bypass retry** entirely (bodies are not replayable).
 
 ::: warning Behavior change
-Retries are on by default. This can increase the number of HTTP attempts and
-tail latency compared to earlier SDK versions. If you rely on fast-fail
-semantics, opt out explicitly with `RetryPolicy.disabled()`.
+Retries are on by default. This can increase the number of HTTP attempts and tail latency compared to earlier SDK versions. If you rely on fast-fail semantics, opt out explicitly with `RetryPolicy.disabled()`.
 :::
 
 ```python
@@ -694,8 +682,7 @@ config = ConnectionConfig(
 ```
 
 ::: info
-If you pass a custom `transport`, the SDK does **not** wrap it; installing
-retry behavior is then your responsibility.
+If you pass a custom `transport`, the SDK does **not** wrap it; installing retry behavior is then your responsibility.
 :::
 
 ### 3. Sandbox Creation Configuration
@@ -814,5 +801,4 @@ await sandbox.credential_vault.create(
 )
 ```
 
-See [Credential Vault](/guides/credential-vault) for auth types, binding
-guidance, and Git/curl examples.
+See [Credential Vault](/guides/credential-vault) for auth types, binding guidance, and Git/curl examples.

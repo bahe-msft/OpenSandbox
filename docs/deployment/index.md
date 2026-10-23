@@ -130,12 +130,7 @@ Use an external secret manager instead of creating the Secret manually in produc
 The chart installs the server into `opensandbox-system`, while the default `configToml` creates sandbox and pool resources in `opensandbox`. If you change `[kubernetes].namespace` in `configToml`, create that namespace instead of `opensandbox` before submitting workloads.
 
 ::: warning Single-active Server default
-The chart defaults to `server.replicaCount: 1`. Keep one active Lifecycle Server
-unless you deliberately use the PostgreSQL-backed Kubernetes public snapshot
-topology documented below. That exception coordinates public snapshots only; it
-does not provide general multi-replica Server HA. The Server Deployment uses the
-`Recreate` strategy so an upgrade stops the active Server before starting its
-replacement; expect a brief API interruption during upgrades.
+The chart defaults to `server.replicaCount: 1`. Keep one active Lifecycle Server unless you deliberately use the PostgreSQL-backed Kubernetes public snapshot topology documented below. That exception coordinates public snapshots only; it does not provide general multi-replica Server HA. The Server Deployment uses the `Recreate` strategy so an upgrade stops the active Server before starting its replacement; expect a brief API interruption during upgrades.
 :::
 
 ### Use PostgreSQL for server persistence
@@ -151,9 +146,7 @@ kubectl create secret generic opensandbox-postgresql \
 unset OPENSANDBOX_POSTGRESQL_DSN
 ```
 
-In `values-server.yaml`, keep the default `server.replicaCount` at `1`, add the
-Secret-backed environment variable below, and add the shown `[store]` tables to
-the complete `configToml` value:
+In `values-server.yaml`, keep the default `server.replicaCount` at `1`, add the Secret-backed environment variable below, and add the shown `[store]` tables to the complete `configToml` value:
 
 ```yaml
 server:
@@ -177,10 +170,7 @@ configToml: |
 ```
 
 ::: info
-The chart default remains one Server replica. You may explicitly set
-`server.replicaCount: 2` for multi-active public snapshot handling only when
-both replicas use the same PostgreSQL database and the Kubernetes runtime.
-SQLite and Docker snapshot execution do not support this multi-active topology.
+The chart default remains one Server replica. You may explicitly set `server.replicaCount: 2` for multi-active public snapshot handling only when both replicas use the same PostgreSQL database and the Kubernetes runtime. SQLite and Docker snapshot execution do not support this multi-active topology.
 :::
 
 ### Install the server with the API key and verify

@@ -20,6 +20,7 @@ from typing import Any, cast
 
 import httpx
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import ClientDisconnect
 from starlette.types import Message
@@ -33,6 +34,8 @@ from opensandbox_server.api.schema import Endpoint
 from opensandbox_server.middleware.auth import SANDBOX_API_KEY_HEADER
 from opensandbox_server.services.constants import OPEN_SANDBOX_EGRESS_AUTH_HEADER, OPEN_SANDBOX_INGRESS_HEADER
 from opensandbox_server.services.constants import OPEN_SANDBOX_SECURE_ACCESS_HEADER
+from opensandbox_server.tenants.context import get_current_tenant
+from opensandbox_server.tenants.models import TenantEntry
 
 
 class _FakeStreamingResponse:

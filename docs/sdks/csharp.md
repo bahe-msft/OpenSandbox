@@ -268,8 +268,7 @@ await sandbox.Commands.RunAsync(
 );
 ```
 
-To execute a native program without shell parsing, pass an argument list. On Linux,
-this example prints literal `$HOME` and keeps `hello world` as one argument:
+To execute a native program without shell parsing, pass an argument list. On Linux, this example prints literal `$HOME` and keeps `hello world` as one argument:
 
 ```csharp
 await sandbox.Commands.RunAsync(new[] { "printf", "%s\n", "$HOME", "hello world" });
@@ -734,8 +733,7 @@ await sandbox.CreateCredentialVaultAsync(
     });
 ```
 
-See [Credential Vault](/guides/credential-vault) for auth types, binding
-guidance, and Git/curl examples.
+See [Credential Vault](/guides/credential-vault) for auth types, binding guidance, and Git/curl examples.
 
 ### 6. Timeout and Retry Behavior
 
@@ -758,8 +756,7 @@ await using var sandbox = await Sandbox.CreateAsync(options);
 
 ## Error Handling
 
-The SDK throws `SandboxException` (and derived exceptions such as `SandboxApiException`,
-`SandboxReadyTimeoutException`, and `InvalidArgumentException`) when operations fail.
+The SDK throws `SandboxException` (and derived exceptions such as `SandboxApiException`, `SandboxReadyTimeoutException`, and `InvalidArgumentException`) when operations fail.
 
 ```csharp
 try

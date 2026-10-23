@@ -5,22 +5,18 @@ description: How the SDK-side sandbox pool works, how to configure it, and a min
 
 # Client Pool
 
-The OpenSandbox SDKs ship an experimental **client-side sandbox pool** that keeps a small
-buffer of ready sandboxes warm on the server so that `acquire()` returns quickly instead
-of paying the full sandbox creation latency on the hot path.
+The OpenSandbox SDKs ship an experimental **client-side sandbox pool** that keeps a small buffer of ready sandboxes warm on the server so that `acquire()` returns quickly instead of paying the full sandbox creation latency on the hot path.
 
 Available in Python (async and sync), JavaScript/TypeScript, Kotlin/Java, and Go.
 C# does not currently ship a client pool.
 
 ::: warning Experimental
-The client pool API is marked experimental and may change between minor releases. Pin
-your SDK version if you rely on it in production.
+The client pool API is marked experimental and may change between minor releases. Pin your SDK version if you rely on it in production.
 :::
 
 ## What it actually pools
 
-The pool does **not** pool SDK `Sandbox` objects. It pools the **IDs of
-pre-warmed, ready sandboxes** running on the OpenSandbox server.
+The pool does **not** pool SDK `Sandbox` objects. It pools the **IDs of pre-warmed, ready sandboxes** running on the OpenSandbox server.
 
 Use a pool for latency-sensitive workers that repeatedly need a fresh sandbox.
 The pool keeps remote sandboxes ready; it is separate from an HTTP connection pool.
@@ -48,8 +44,7 @@ client-side `Sandbox` objects. The state store also coordinates the leader lease
 shared idle target and TTL, and namespace-destroy fence. A Redis-backed store makes
 that coordination and idle membership visible across processes and pods.
 
-The warmup path — the leader-only replenish flow above — is worth zooming in on
-because it is the only part of the pool that is gated by a distributed lock:
+The warmup path — the leader-only replenish flow above — is worth zooming in on because it is the only part of the pool that is gated by a distributed lock:
 
 ![Warmup reconcile sequence](../public/images/client-pool-warmup-sequence.svg)
 
@@ -92,10 +87,9 @@ creation and `AcquirePolicy.DIRECT_CREATE` retain their usual transport behavior
 
 ### There is no `release()`
 
-Sandboxes are ephemeral. Once you have called `acquire()`, the sandbox is yours until you
-`destroy()` / `kill()` it. `max_idle` bounds the **warm buffer**, not the number of
-sandboxes borrowed by application code and not the number of sandboxes produced by
-`DIRECT_CREATE` fallback.
+Sandboxes are ephemeral. Once you have called `acquire()`, the sandbox is yours until you `destroy()` / `kill()` it. `max_idle` bounds the **warm buffer**, not the number of sandboxes borrowed by application code and not the number of sandboxes produced by `DIRECT_CREATE` fallback.
+
+In Python's `SandboxPoolAsync`, ownership transfers when `acquire()` returns. If the call fails or is cancelled after connecting to or creating a sandbox, the pool attempts to kill that sandbox and closes its local resources before propagating the error. Cancellation during renewal or the final pool-state checks, including repeated cancellation during cleanup, does not skip that cleanup. Once acquisition succeeds, the caller remains responsible for disposal.
 
 In Python's `SandboxPoolAsync`, ownership transfers when `acquire()` returns.
 If the call fails or is cancelled after connecting to or creating a sandbox,
@@ -237,15 +231,8 @@ and a delayed/skipped reconcile tick can all reduce observed warmup throughput.
 
 ### Rules that apply to every deployment
 
-- `max_idle` bounds the warm buffer only. It does not cap borrowed sandboxes or
-  `DIRECT_CREATE` fallbacks.
-- All nodes sharing one pool must use the same creation and warmup definition. If that
-  definition changes, roll out under a **new** `pool_name` (or Redis `key_prefix`) and
-  retire the old one (see "Retiring an old pool namespace" below). Do not attempt to
-  refill a changed template into the same `pool_name`: `release_all_idle()` does not
-  fence other nodes, does not lower `max_idle`, and does not stop any current leader
-  (which may still be running the old code) from immediately re-publishing
-  old-template sandbox IDs into the shared buffer during a rolling deploy.
+- `max_idle` bounds the warm buffer only. It does not cap borrowed sandboxes or `DIRECT_CREATE` fallbacks.
+- All nodes sharing one pool must use the same creation and warmup definition. If that definition changes, roll out under a **new** `pool_name` (or Redis `key_prefix`) and retire the old one (see "Retiring an old pool namespace" below). Do not attempt to refill a changed template into the same `pool_name`: `release_all_idle()` does not fence other nodes, does not lower `max_idle`, and does not stop any current leader (which may still be running the old code) from immediately re-publishing old-template sandbox IDs into the shared buffer during a rolling deploy.
 - `resize(max_idle)` and `release_all_idle()` can be called from any node.
 - Configure `primary_lock_ttl` above `warmup_ready_timeout` plus expected preparer time
   and operational headroom. The SDKs renew leadership independently and fence every
@@ -461,8 +448,60 @@ without stopping the callback itself.
 
 Each pool SDK exposes these operations (names follow language conventions):
 
-- `snapshot()` — pool phase, health, counters (idle size, in-flight warmups,
-  consecutive failures, last error).
+const pool = SandboxPool.create({
+  poolName: "demo-pool",
+  maxIdle: 2,
+  connectionConfig: { domain: "localhost:8080", useServerProxy: true },
+  creationSpec: { image: "python:3.12" },
+  warmupCreateQps: 10,
+  warmupConcurrency: 128,
+});
+
+await pool.start();
+try {
+  const sandbox = await pool.acquire({
+    sandboxTimeoutSeconds: 600,
+    policy: AcquirePolicy.DIRECT_CREATE,
+  });
+  try {
+    const result = await sandbox.commands.run("echo pool-ok");
+    console.log(result.logs.stdout);
+  } finally {
+    try {
+      await sandbox.kill();
+    } finally {
+      await sandbox.close();
+    }
+  }
+} finally {
+  await pool.shutdown(true);
+}
+```
+
+To share state across processes, install `redis`, connect it in the application, and pass this store as `stateStore`:
+
+```ts
+import { createClient } from "redis";
+import { RedisPoolStateStore } from "@alibaba-group/opensandbox/pool-redis";
+
+const redis = createClient({ url: process.env.REDIS_URL });
+await redis.connect();
+const stateStore = new RedisPoolStateStore({
+  client: redis,
+  keyPrefix: "opensandbox:pool:prod",
+});
+// Pass stateStore to SandboxPool.create(...).
+// After all pools/managers using it are shut down:
+// await redis.quit();
+```
+
+The caller owns the Redis connection. Custom JavaScript preparers and health checks must bound their own work: cancellation can stop waiting for a callback without stopping the callback itself.
+
+## Diagnostics and operations
+
+Each pool SDK exposes these operations (names follow language conventions):
+
+- `snapshot()` — pool phase, health, counters (idle size, in-flight warmups, consecutive failures, last error).
 - `snapshot_idle_entries()` — the current idle sandbox IDs with expiry timestamps.
 - `resize(max_idle)` — change the target buffer size at runtime.
   For business-hours sizing, see the [scheduled client pool example](/examples/client-pool-schedule),
@@ -499,20 +538,16 @@ already handed to callers. To retire a shared namespace, use the manager below.
 Each supported pool SDK exposes a `SandboxPoolManager` with a `destroy` operation that applies the
 same `DESTROYING → DESTROYED` protocol:
 
-1. Write a `DESTROYING` fence into the state store, so any still-running peer instance
-   sees it and stops replenishing instead of racing the retirement.
+1. Write a `DESTROYING` fence into the state store, so any still-running peer instance sees it and stops replenishing instead of racing the retirement.
 2. Best-effort drain and kill every idle sandbox, bounded by the drain timeout.
 3. Clear the persistent per-pool state.
-4. Write a `DESTROYED` tombstone with the tombstone TTL (default 7 days) so future
-   callers cannot silently rebind to the same `pool_name`.
+4. Write a `DESTROYED` tombstone with the tombstone TTL (default 7 days) so future callers cannot silently rebind to the same `pool_name`.
 
-Destroy is idempotent: calling it on an already-tombstoned namespace reports
-`DESTROYED` without draining or killing anything. If the drain or the cleanup cannot
-finish, the namespace stays `DESTROYING` and the call reports the destroy as
-incomplete; retrying is safe and picks up where it left off.
+Destroy is idempotent: calling it on an already-tombstoned namespace reports `DESTROYED` without draining or killing anything. If the drain or the cleanup cannot finish, the namespace stays `DESTROYING` and the call reports the destroy as incomplete; retrying is safe and picks up where it left off.
 
-**Python / Kotlin** — `SandboxPoolManager.destroy(poolName, options)`, configured
-through `PoolDestroyOptions` (`strategy`, `drain_timeout`, `tombstone_ttl`).
+**Python / Kotlin** — `SandboxPoolManager.destroy(poolName, options)`, configured through `PoolDestroyOptions` (`strategy`, `drain_timeout`, `tombstone_ttl`).
+
+**JavaScript** — `SandboxPoolManager.create({ stateStore, connectionConfig })`, then `await manager.destroy(poolName, options)`.
 
 **JavaScript** — `SandboxPoolManager.create({ stateStore, connectionConfig })`,
 then `await manager.destroy(poolName, options)`.
@@ -536,25 +571,9 @@ log.Printf("retired %s: drained=%d killed=%d",
     result.PoolName, result.DrainedIdleCount, result.KilledIdleCount)
 ```
 
-`PoolDestroyOptions` mirrors the other SDKs. `Strategy` selects the algorithm and only
-`PoolDestroyForce` is implemented. `DrainTimeout` and `TombstoneTTL` are `*time.Duration`:
-leave them nil for the defaults (30s and 7 days), or set an explicit zero to drain
-without a deadline and to write a tombstone that never expires.
+`PoolDestroyOptions` mirrors the other SDKs. `Strategy` selects the algorithm and only `PoolDestroyForce` is implemented. `DrainTimeout` and `TombstoneTTL` are `*time.Duration`: leave them nil for the defaults (30s and 7 days), or set an explicit zero to drain without a deadline and to write a tombstone that never expires.
 
-The fence is what makes retirement safe without stopping every writer first, and it
-is enforced on two levels. The state store refuses `PutIdle`, `SetMaxIdle` and
-`SetIdleEntryTTL` with a `*PoolDestroyedError` and hands out no primary lock, which
-stops replenishment. The pool itself also checks the fence when it starts, before every
-acquire, again once an acquire holds a live sandbox, and on each reconcile tick: a
-surviving peer stops outright on its next tick, an in-flight acquire fails rather
-than minting a fresh sandbox into the retired namespace through the direct-create
-fallthrough, and a sandbox obtained just before the fence landed is killed instead
-of handed out. The post-acquire check matters because the idle take is deliberately
-left unfenced so `destroy` can drain: once an ID has been taken, `destroy` can no
-longer reach it, so the acquire has to dispose of it itself.
-Starting a fresh pool against a tombstoned `PoolName` fails for the same reason, so
-rebinding the name requires either waiting out the tombstone TTL or rotating to a new
-`PoolName`.
+The fence is what makes retirement safe without stopping every writer first, and it is enforced on two levels. The state store refuses `PutIdle`, `SetMaxIdle` and `SetIdleEntryTTL` with a `*PoolDestroyedError` and hands out no primary lock, which stops replenishment. The pool itself also checks the fence when it starts, before every acquire, again once an acquire holds a live sandbox, and on each reconcile tick: a surviving peer stops outright on its next tick, an in-flight acquire fails rather than minting a fresh sandbox into the retired namespace through the direct-create fallthrough, and a sandbox obtained just before the fence landed is killed instead of handed out. The post-acquire check matters because the idle take is deliberately left unfenced so `destroy` can drain: once an ID has been taken, `destroy` can no longer reach it, so the acquire has to dispose of it itself. Starting a fresh pool against a tombstoned `PoolName` fails for the same reason, so rebinding the name requires either waiting out the tombstone TTL or rotating to a new `PoolName`.
 
 One deliberate exception: if the state store itself is unreachable, the destroy state
 is unknowable, so policies that already fall through to direct create on a store

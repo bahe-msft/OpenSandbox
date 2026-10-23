@@ -83,15 +83,28 @@ public sealed class Sandbox : IAsyncDisposable
     /// <summary>
     /// Gets the sandbox-scoped Credential Vault service.
     /// </summary>
-    /// <exception cref="SandboxException">Thrown for template-backed sandboxes: they have no sandbox-side egress sidecar.</exception>
+    /// <remarks>
+    /// Direct sidecar sandboxes write straight to the sandbox egress sidecar.
+    /// Template-backed sandboxes route through the lifecycle control plane
+    /// (OSEP-0022): the server relays vault revisions to the egress-held vault
+    /// over the FastPath handler relay, so the ack is synchronous and values
+    /// never appear on any read. A 412 patch failure means another writer won
+    /// the revision — re-read and retry with the fresh <c>ExpectedRevision</c>.
+    /// </remarks>
+    /// <exception cref="SandboxException">
+    /// Thrown for a template-backed sandbox whose adapter factory did not
+    /// provide a Credential Vault service. For direct sidecar sandboxes the
+    /// unavailable marker is returned instead and each operation throws
+    /// <see cref="InvalidArgumentException"/> when invoked.
+    /// </exception>
     public ICredentialVault CredentialVault
     {
         get
         {
-            if (Origin == SandboxOrigin.Template)
+            if (Origin == SandboxOrigin.Template && _credentialVault is UnavailableCredentialVault)
             {
                 throw new SandboxException(
-                    "Credential Vault is not available for template-backed sandboxes: they have no sandbox-side egress sidecar.");
+                    "Credential Vault is not available: the adapter factory did not provide a Credential Vault service. Provide NetworkPolicyStack.CredentialVault (the server-routed vault for template-backed sandboxes) or EgressStack.CredentialVault in the adapter factory.");
             }
 
             return _credentialVault;
@@ -117,6 +130,10 @@ public sealed class Sandbox : IAsyncDisposable
     private readonly IEgress _egress;
 
     private readonly ISandboxes _sandboxes;
+    private readonly IDiagnostics? _diagnostics;
+
+    private IDiagnostics Diagnostics => _diagnostics
+        ?? throw new NotSupportedException("The adapter factory does not provide diagnostics.");
     private readonly IAdapterFactory _adapterFactory;
     private readonly string _lifecycleBaseUrl;
     private readonly string _execdBaseUrl;
@@ -144,7 +161,8 @@ public sealed class Sandbox : IAsyncDisposable
         IIsolatedSessions isolated,
         IEgress egress,
         ICredentialVault? credentialVault,
-        string? origin = null)
+        string? origin = null,
+        IDiagnostics? diagnostics = null)
     {
         Id = id;
         ConnectionConfig = connectionConfig;
@@ -155,6 +173,7 @@ public sealed class Sandbox : IAsyncDisposable
         _httpClientProvider = httpClientProvider;
         _logger = _loggerFactory.CreateLogger("OpenSandbox.Sandbox");
         _sandboxes = sandboxes;
+        _diagnostics = diagnostics;
         Commands = commands;
         Files = files;
         Health = health;
@@ -339,6 +358,7 @@ public sealed class Sandbox : IAsyncDisposable
         var httpClientProvider = new HttpClientProvider(connectionConfig, loggerFactory);
 
         ISandboxes sandboxes;
+        IDiagnostics? diagnosticService;
         logger.LogInformation(
             "Creating sandbox (startupSource={StartupSource}, useServerProxy={UseServerProxy})",
             startupSource,
@@ -353,6 +373,7 @@ public sealed class Sandbox : IAsyncDisposable
                 LoggerFactory = loggerFactory
             });
             sandboxes = lifecycleStack.Sandboxes;
+            diagnosticService = lifecycleStack.Diagnostics;
         }
         catch
         {
@@ -414,14 +435,16 @@ public sealed class Sandbox : IAsyncDisposable
                 logger.LogInformation(
                     "Sandbox {SandboxId} is template-backed; routing egress policy through the lifecycle control plane",
                     sandboxId);
-                egress = factory.CreateNetworkPolicyStack(new CreateNetworkPolicyStackOptions
+                var policyStack = factory.CreateNetworkPolicyStack(new CreateNetworkPolicyStackOptions
                 {
                     ConnectionConfig = connectionConfig,
                     LifecycleBaseUrl = lifecycleBaseUrl,
                     SandboxId = sandboxId,
                     HttpClientProvider = httpClientProvider,
                     LoggerFactory = loggerFactory
-                }).Egress;
+                });
+                egress = policyStack.Egress;
+                credentialVault = policyStack.CredentialVault;
             }
             else
             {
@@ -461,7 +484,8 @@ public sealed class Sandbox : IAsyncDisposable
                 execdStack.Isolation,
                 egress,
                 credentialVault,
-                effectiveOrigin);
+                effectiveOrigin,
+                diagnosticService);
 
             if (!skipHealthCheck)
             {
@@ -535,6 +559,7 @@ public sealed class Sandbox : IAsyncDisposable
         logger.LogInformation("Connecting to sandbox: {SandboxId}", options.SandboxId);
 
         ISandboxes sandboxes;
+        IDiagnostics? diagnostics;
         try
         {
             var lifecycleStack = adapterFactory.CreateLifecycleStack(new CreateLifecycleStackOptions
@@ -545,6 +570,7 @@ public sealed class Sandbox : IAsyncDisposable
                 LoggerFactory = loggerFactory
             });
             sandboxes = lifecycleStack.Sandboxes;
+            diagnostics = lifecycleStack.Diagnostics;
         }
         catch (Exception ex)
         {
@@ -586,15 +612,16 @@ public sealed class Sandbox : IAsyncDisposable
                 logger.LogInformation(
                     "Sandbox {SandboxId} is template-backed; routing egress policy through the lifecycle control plane",
                     options.SandboxId);
-                egress = adapterFactory.CreateNetworkPolicyStack(new CreateNetworkPolicyStackOptions
+                var policyStack = adapterFactory.CreateNetworkPolicyStack(new CreateNetworkPolicyStackOptions
                 {
                     ConnectionConfig = connectionConfig,
                     LifecycleBaseUrl = lifecycleBaseUrl,
                     SandboxId = options.SandboxId,
                     HttpClientProvider = httpClientProvider,
                     LoggerFactory = loggerFactory
-                }).Egress;
-                credentialVault = null;
+                });
+                egress = policyStack.Egress;
+                credentialVault = policyStack.CredentialVault;
             }
             else
             {
@@ -634,7 +661,8 @@ public sealed class Sandbox : IAsyncDisposable
                 execdStack.Isolation,
                 egress,
                 credentialVault,
-                origin);
+                origin,
+                diagnostics);
 
             if (!options.SkipHealthCheck)
             {
@@ -702,6 +730,18 @@ public sealed class Sandbox : IAsyncDisposable
     {
         return _sandboxes.GetSandboxAsync(Id, cancellationToken);
     }
+
+    /// <summary>Gets this sandbox's backend routing context.</summary>
+    public Task<DiagnosticContext> GetDiagnosticContextAsync(CancellationToken cancellationToken = default) =>
+        Diagnostics.GetContextAsync(Id, cancellationToken);
+
+    /// <summary>Gets this sandbox's scoped diagnostic log descriptor.</summary>
+    public Task<DiagnosticContent> GetDiagnosticLogsAsync(string scope, CancellationToken cancellationToken = default) =>
+        Diagnostics.GetLogsAsync(Id, scope, cancellationToken);
+
+    /// <summary>Gets this sandbox's scoped diagnostic event descriptor.</summary>
+    public Task<DiagnosticContent> GetDiagnosticEventsAsync(string scope, CancellationToken cancellationToken = default) =>
+        Diagnostics.GetEventsAsync(Id, scope, cancellationToken);
 
     /// <summary>
     /// Patches metadata for this sandbox.

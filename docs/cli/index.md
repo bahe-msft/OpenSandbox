@@ -297,6 +297,17 @@ osb command session run <sandbox-id> <session-id> -o raw -- sh -c 'echo $FOO'
 osb command session delete <sandbox-id> <session-id> -o json
 ```
 
+### Open an interactive terminal
+
+`osb terminal` attaches your current terminal to a real PTY inside the sandbox (colors, `stty`, and resize all behave like a local shell). Exit the remote shell (or press Ctrl-D) to leave; the remote exit code becomes the command's exit code.
+
+```bash
+osb terminal <sandbox-id>
+osb terminal <sandbox-id> -w /workspace
+```
+
+Requires an interactive TTY, and is supported on Unix, macOS, and Linux. If the connection drops while the shell is still running, the session is kept server-side and its id is printed so it can be inspected or removed via the execd API; a clean exit tears the session down.
+
 ### Work with files
 
 ```bash
@@ -308,19 +319,11 @@ osb file replace <sandbox-id> /workspace/app.py --old old --new new -o json
 osb file chmod <sandbox-id> /workspace/script.sh --mode 755 -o json
 ```
 
-For regular files, `file download` replaces the local destination only after the entire download
-succeeds. If the download fails or you interrupt it, an existing file stays
-unchanged and temporary download files are removed. The destination directory
-must be writable so the CLI can stage the download before replacing the file.
+For regular files, `file download` replaces the local destination only after the entire download succeeds. If the download fails or you interrupt it, an existing file stays unchanged and temporary download files are removed. The destination directory must be writable so the CLI can stage the download before replacing the file.
 
-Existing devices (such as `/dev/null`) and named pipes receive the download
-directly. They are not replaced, and bytes already written cannot be rolled back
-if the download fails or is interrupted.
+Existing devices (such as `/dev/null`) and named pipes receive the download directly. They are not replaced, and bytes already written cannot be rolled back if the download fails or is interrupted.
 
-Destinations that refer to standard output, such as `/dev/stdout` and `/dev/fd/1`,
-stream directly even when stdout is redirected to a regular file. These downloads
-omit the success message in all output formats so stdout contains only file bytes;
-errors still go to stderr. A failed or interrupted stream can contain partial data.
+Destinations that refer to standard output, such as `/dev/stdout` and `/dev/fd/1`, stream directly even when stdout is redirected to a regular file. These downloads omit the success message in all output formats so stdout contains only file bytes; errors still go to stderr. A failed or interrupted stream can contain partial data.
 
 ### Manage runtime egress policy
 
@@ -364,9 +367,10 @@ Use `--file -` to read a JSON/YAML payload from stdin. Do not pass plaintext cre
 
 ### Collect diagnostics
 
-Use the stable diagnostics commands for API-backed log and event descriptors.
+Use context to identify the runtime backend, then collect log and event descriptors.
 
 ```bash
+osb diagnostics context <sandbox-id> -o json
 osb diagnostics events <sandbox-id> --scope runtime -o raw
 osb diagnostics events <sandbox-id> --scope all -o raw
 osb diagnostics logs <sandbox-id> --scope container -o raw
@@ -423,6 +427,7 @@ The main command groups are:
 - `osb template`: golden-image template builds
 - `osb snapshot`: snapshot management
 - `osb command`: command execution and persistent sessions
+- `osb terminal`: interactive PTY terminal into a sandbox
 - `osb file`: file and directory operations
 - `osb egress`: runtime egress policy
 - `osb credential-vault`: sandbox-local credentials and bindings

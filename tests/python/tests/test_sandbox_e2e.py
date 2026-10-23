@@ -50,7 +50,9 @@ from opensandbox.models.sandboxes import (
     Host,
     NetworkPolicy,
     NetworkRule,
+    RenewalPolicy,
     SandboxImageSpec,
+    SandboxLifecycle,
     Volume,
 )
 from pydantic import ValidationError
@@ -70,9 +72,6 @@ from tests.base_e2e_test import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Keep in sync with server ``opensandbox_server/extensions/keys.py``
-ACCESS_RENEW_EXTEND_SECONDS_KEY = "access.renew.extend.seconds"
 
 
 def _now_ms() -> int:
@@ -679,7 +678,9 @@ class TestSandboxE2E:
             connection_config=cfg,
             timeout=sandbox_ttl,
             ready_timeout=timedelta(seconds=90),
-            extensions={ACCESS_RENEW_EXTEND_SECONDS_KEY: "300"},
+            lifecycle=SandboxLifecycle(
+                renewal_policy=RenewalPolicy(extend_seconds=300)
+            ),
             network_policy=NetworkPolicy(
                 defaultAction="deny",
                 egress=[NetworkRule(action="allow", target="pypi.org")],
@@ -1349,6 +1350,14 @@ class TestSandboxE2E:
         assert fail.exit_code == 7
         assert fail.complete is None
         logger.info("✓ run_in_session failure propagated exit_code=7")
+
+        logger.info("Step 3d: Session stdout events preserve line endings (incl. blank lines)")
+        out_lines = await sandbox.commands.run_in_session(sid, "printf 'a\\n\\nb\\n'")
+        assert out_lines.error is None
+        assert out_lines.exit_code == 0
+        joined = "".join(m.text for m in out_lines.logs.stdout)
+        assert joined == "a\n\nb\n", f"session stdout should reconstruct exactly, got: {joined!r}"
+        logger.info("✓ session stdout line endings preserved: %r", joined)
 
         logger.info("Step 4: New session with working_directory=/var — verify create_session working directory again")
         sid2 = await sandbox.commands.create_session(working_directory="/var")
