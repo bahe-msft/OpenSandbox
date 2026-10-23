@@ -24,6 +24,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -55,6 +57,31 @@ type Client struct {
 	// timeout (see streamHTTPClient).
 	streamClient *http.Client
 	streamOnce   sync.Once
+
+	// transferClient is a dedicated HTTP client for file uploads and downloads,
+	// created lazily. Like streamClient it has no overall request timeout, but
+	// it keeps connection pooling (see transferHTTPClient).
+	transferClient *http.Client
+	transferOnce   sync.Once
+}
+
+func (c *Client) cloneWithBaseURL(baseURL string) *Client {
+	// Streaming state contains sync.Once and must never be copied from a live client.
+	cloned := &Client{
+		baseURL:    baseURL,
+		apiKey:     c.apiKey,
+		authHeader: c.authHeader,
+		httpClient: c.httpClient,
+		timeout:    c.timeout,
+		retry:      c.retry,
+	}
+	if c.headers != nil {
+		cloned.headers = make(map[string]string, len(c.headers))
+		for k, v := range c.headers {
+			cloned.headers[k] = v
+		}
+	}
+	return cloned
 }
 
 // streamHTTPClient returns a dedicated HTTP client for SSE streaming.
@@ -98,6 +125,28 @@ func (c *Client) streamHTTPClient() *http.Client {
 		c.streamClient = &sc
 	})
 	return c.streamClient
+}
+
+// transferHTTPClient returns the HTTP client for file uploads and downloads.
+//
+// http.Client.Timeout covers the whole exchange, including sending the request
+// body and reading the response body, so the shared httpClient would cut off
+// any transfer that takes longer than the request timeout. Like
+// streamHTTPClient, this client has no overall timeout and bounds only the wait
+// for response headers; callers can still bound a transfer through ctx. Unlike
+// streams, transfers keep connection pooling.
+func (c *Client) transferHTTPClient() *http.Client {
+	c.transferOnce.Do(func() {
+		tc := *c.httpClient // shallow copy: keep Jar, CheckRedirect, etc.
+		tc.Timeout = 0
+		if tr, ok := c.httpClient.Transport.(*http.Transport); ok && tr != nil && tr.ResponseHeaderTimeout == 0 {
+			clone := tr.Clone()
+			clone.ResponseHeaderTimeout = streamResponseHeaderTimeout
+			tc.Transport = clone
+		}
+		c.transferClient = &tc
+	})
+	return c.transferClient
 }
 
 // Option configures a Client.
@@ -254,12 +303,12 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body any, r
 func (c *Client) doRequestCapture(ctx context.Context, method, path string, body, result any, capture func(http.Header)) error {
 	return c.withRetry(ctx, func() error {
 		var reused bool
-		err := c.doRequestOnce(ctx, method, path, body, result, &reused)
+		err := c.doRequestOnce(ctx, method, path, body, result, &reused, capture)
 		if err != nil && reused && c.shouldRetryOnFreshConn(ctx, method, err) {
 			// The reused pooled connection was likely silently dropped by an
 			// intermediary. Drop idle connections so the retry dials a new one.
 			c.httpClient.CloseIdleConnections()
-			err = c.doRequestOnce(ctx, method, path, body, result, nil)
+			err = c.doRequestOnce(ctx, method, path, body, result, nil, capture)
 		}
 		return err
 	})
@@ -301,8 +350,9 @@ func (c *Client) shouldRetryOnFreshConn(ctx context.Context, method string, err 
 
 // doRequestOnce is the single-attempt implementation of doRequest. If reused is
 // non-nil it is set to whether this attempt was carried over a reused pooled
-// connection (observed via httptrace GotConn).
-func (c *Client) doRequestOnce(ctx context.Context, method, path string, body any, result any, reused *bool) error {
+// connection (observed via httptrace GotConn). If capture is non-nil it is
+// invoked with the response headers once the response is deemed successful.
+func (c *Client) doRequestOnce(ctx context.Context, method, path string, body any, result any, reused *bool, capture func(http.Header)) error {
 	var bodyReader io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)

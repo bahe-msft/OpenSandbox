@@ -25,11 +25,15 @@ import httpx
 from opensandbox._httpx import build_redirect_client_options
 from opensandbox.adapters.converter.event_node import EventNode
 from opensandbox.adapters.converter.exception_converter import ExceptionConverter
-from opensandbox.adapters.converter.response_handler import extract_request_id
+from opensandbox.adapters.converter.response_handler import (
+    build_api_exception_from_httpx,
+)
 from opensandbox.adapters.isolated_adapter import (
+    TAIL_CURSOR_HEADER,
     _build_attach_info,
     _build_session_state,
 )
+from opensandbox.adapters.sse import iter_sse_events
 from opensandbox.config.connection_sync import ConnectionConfigSync
 from opensandbox.exceptions import InvalidArgumentException
 from opensandbox.models.execd import Execution
@@ -235,10 +239,8 @@ class IsolatedSessionsAdapterSync(IsolationServiceSyncMixin, IsolationServiceSyn
             url = self._get_url(self.SESSION_PATH.format(session_id=session_id))
             response = self._httpx_client.get(url)
             if response.status_code != 200:
-                raise SandboxApiException(
-                    message=f"attach isolated session failed. Status: {response.status_code}",
-                    status_code=response.status_code,
-                    request_id=extract_request_id(response.headers),
+                raise build_api_exception_from_httpx(
+                    response, "attach isolated session"
                 )
             info = _build_attach_info(session_id, response.json())
             return IsolationSessionHandleSync(info, self)

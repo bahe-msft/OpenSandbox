@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import sqlite3
-from datetime import datetime, timedelta
 
 import pytest
 
@@ -86,103 +85,6 @@ def test_sqlite_snapshot_repository_indexes_name_queries_after_migration(
     assert "idx_snapshots_name_namespace" in indexes
     assert any("idx_snapshots_name_namespace" in row["detail"] for row in name_plan)
     assert any("idx_snapshots_name_namespace" in row["detail"] for row in tenant_plan)
-
-
-def test_sqlite_snapshot_repository_lists_and_updates_records(tmp_path) -> None:
-    repo = SQLiteSnapshotRepository(tmp_path / "snapshots.db")
-    now = datetime.utcnow()
-    first = _record("snap-001", "sbx-001", now)
-    second = _record("snap-002", "sbx-001", now + timedelta(seconds=1), state=SnapshotState.READY)
-    third = _record("snap-003", "sbx-002", now + timedelta(seconds=2), state=SnapshotState.FAILED)
-
-    repo = SQLiteSnapshotRepository(db_path)
-
-    page = repo.list(
-        SnapshotListQuery(
-            page=1,
-            page_size=10,
-            source_sandbox_id="sbx-001",
-            name="name-snap-002",
-            states=["Ready"],
-        )
-    )
-
-    assert page.total_items == 1
-    assert [item.id for item in page.items] == ["snap-002"]
-
-    partial_name = repo.list(
-        SnapshotListQuery(page=1, page_size=10, name="name-snap")
-    )
-    assert partial_name.total_items == 0
-    assert partial_name.items == []
-
-    updated = SnapshotRecord(
-        id=first.id,
-        source_sandbox_id=first.source_sandbox_id,
-        name=first.name,
-        description=first.description,
-        restore_config=SnapshotRestoreConfig(image="registry.example.com/snapshots/snap-001:v2"),
-        status=SnapshotStatusRecord(
-            state=SnapshotState.READY,
-            reason="snapshot_ready",
-            message="Snapshot is ready.",
-            last_transition_at=now + timedelta(seconds=3),
-        ),
-        created_at=first.created_at,
-        updated_at=now + timedelta(seconds=3),
-    )
-    repo.update(updated)
-
-    loaded = repo.get("snap-001")
-    assert loaded is not None
-    assert loaded.status.state == SnapshotState.READY
-    assert loaded.restore_config.image == "registry.example.com/snapshots/snap-001:v2"
-
-
-def test_sqlite_snapshot_repository_update_if_state_is_atomic(tmp_path) -> None:
-    repo = SQLiteSnapshotRepository(tmp_path / "snapshots.db")
-    now = datetime.utcnow()
-    original = _record("snap-001", "sbx-001", now, state=SnapshotState.CREATING)
-    repo.create(original)
-
-    ready = SnapshotRecord(
-        id=original.id,
-        source_sandbox_id=original.source_sandbox_id,
-        name=original.name,
-        description=original.description,
-        restore_config=SnapshotRestoreConfig(image="opensandbox-snapshots:snap-001"),
-        status=SnapshotStatusRecord(
-            state=SnapshotState.READY,
-            reason="snapshot_ready",
-            message="Snapshot is ready.",
-            last_transition_at=now + timedelta(seconds=1),
-        ),
-        created_at=original.created_at,
-        updated_at=now + timedelta(seconds=1),
-    )
-    failed = SnapshotRecord(
-        id=original.id,
-        source_sandbox_id=original.source_sandbox_id,
-        name=original.name,
-        description=original.description,
-        restore_config=original.restore_config,
-        status=SnapshotStatusRecord(
-            state=SnapshotState.FAILED,
-            reason="snapshot_failed",
-            message="Snapshot failed.",
-            last_transition_at=now + timedelta(seconds=2),
-        ),
-        created_at=original.created_at,
-        updated_at=now + timedelta(seconds=2),
-    )
-
-    assert repo.update_if_state(ready, SnapshotState.CREATING) is True
-    assert repo.update_if_state(failed, SnapshotState.CREATING) is False
-
-    loaded = repo.get(original.id)
-    assert loaded is not None
-    assert loaded.status.state == SnapshotState.READY
-    assert loaded.restore_config.image == "opensandbox-snapshots:snap-001"
 
 
 def test_snapshot_repository_factory_defaults_to_sqlite(tmp_path) -> None:

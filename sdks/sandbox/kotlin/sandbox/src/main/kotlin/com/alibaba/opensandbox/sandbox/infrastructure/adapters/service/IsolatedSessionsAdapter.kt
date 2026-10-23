@@ -22,6 +22,9 @@ import com.alibaba.opensandbox.sandbox.domain.models.execd.executions.Execution
 import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.BindMount
 import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.CreateIsolatedSessionRequest
 import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.EnvPassthroughSpec
+import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.HardeningLayerState
+import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.HardeningStatus
+import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.IsolatedBackgroundRun
 import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.IsolatedCapabilities
 import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.IsolatedOverlaySpec
 import com.alibaba.opensandbox.sandbox.domain.models.execd.isolated.IsolatedRunLogs
@@ -127,6 +130,7 @@ private data class IsolatedSessionStateResponse(
     // Creation-parameter echo fields. Older execd builds omit them.
     val profile: String? = null,
     val workspace: IsolatedWorkspaceBody? = null,
+    val overlays: List<IsolatedOverlayBody>? = null,
     val extra_writable: List<String>? = null,
     val binds: List<BindMountBody>? = null,
     val share_net: Boolean? = null,
@@ -310,6 +314,7 @@ internal class IsolatedSessionsAdapter(
                             resp.workspace?.let {
                                 IsolatedWorkspaceSpec(path = it.path, mode = it.mode)
                             },
+                        overlays = resp.overlays?.map { it.toDomain() },
                         extraWritable = resp.extra_writable,
                         binds =
                             resp.binds?.map { BindMount(it.source, it.dest, it.readonly) },
@@ -360,6 +365,7 @@ internal class IsolatedSessionsAdapter(
                         resp.workspace?.let {
                             IsolatedWorkspaceSpec(path = it.path, mode = it.mode)
                         },
+                    overlays = resp.overlays?.map { it.toDomain() },
                     extraWritable = resp.extra_writable,
                     binds =
                         resp.binds?.map { BindMount(it.source, it.dest, it.readonly) },

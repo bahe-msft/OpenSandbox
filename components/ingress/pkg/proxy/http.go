@@ -76,9 +76,12 @@ func (hp *HTTPProxy) newReverseProxy(targetURL *url.URL) *httputil.ReverseProxy 
 			slogger.Field{Key: "uri", Value: req.RequestURI},
 			slogger.Field{Key: "method", Value: req.Method},
 		).Errorf("ingress: reverse proxy upstream error")
+		if req.Context().Err() == nil && hp.errorObserver != nil {
+			hp.errorObserver(err)
+		}
 
 		// Attempt to set 502; this is a no-op if headers are already sent.
 		rw.WriteHeader(http.StatusBadGateway)
 	}
-	return proxy, nil
+	return proxy
 }

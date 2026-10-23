@@ -623,10 +623,6 @@ class Sandbox:
         logger.info(
             f"Creating sandbox with startup source: {startup_source} (timeout: {timeout_log})"
         )
-        factory = AdapterFactory(config)
-        sandbox_id: str | None = None
-        sandbox_service: Sandboxes | None = None
-        create_started = time.monotonic()
 
         return await cls._launch(
             config=config,

@@ -116,7 +116,6 @@ func setBwrapModeAvailability(result *ProbeResult, setprivErr, setprivIdentitySw
 	result.Available = result.SetprivAvailable || result.UsernsAvailable
 }
 
-// probeBwrapVersion returns the bwrap version string if available.
 func probeBwrapVersion() (string, error) {
 	p := findBwrap()
 	if p == "" {

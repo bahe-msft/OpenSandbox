@@ -77,7 +77,6 @@ func currentProcessIDs() (uint32, uint32) {
 	return uint32(os.Getuid()), uint32(os.Getgid())
 }
 
-// bwrapImpl is the Linux bwrap Isolator.
 type bwrapImpl struct {
 	probe ProbeResult
 }
@@ -109,12 +108,20 @@ func NewBwrapWithProbe(cfg Config, probe ProbeResult) Isolator {
 func (b *bwrapImpl) Name() string { return "bwrap" }
 
 func (b *bwrapImpl) Available() bool {
-	return b.probe.Available
+	if !b.probe.Available {
+		return false
+	}
+	gate, err := openSessionGate()
+	if err != nil {
+		return false
+	}
+	_ = gate.Close()
+	return true
 }
 
 func (b *bwrapImpl) Capabilities() Capabilities {
 	return Capabilities{
-		Available:              b.probe.Available,
+		Available:              b.Available(),
 		Isolator:               b.probe.Isolator,
 		Version:                b.probe.Version,
 		SetprivAvailable:       b.probe.SetprivAvailable,

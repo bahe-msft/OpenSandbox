@@ -388,8 +388,14 @@ func (r *IsolatedRunner) CreateIsolatedSession(opts *IsolatedSessionOptions) (st
 	// behavior.
 	normalizeIsolatedOptions(opts)
 
-	if err := os.MkdirAll(opts.WorkspacePath, 0o755); err != nil {
-		return "", fmt.Errorf("create workspace: %w", err)
+	if len(opts.Overlays) == 0 {
+		return "", fmt.Errorf("at least one overlay is required")
+	}
+
+	for _, ov := range opts.Overlays {
+		if err := os.MkdirAll(ov.Path, 0o755); err != nil {
+			return "", fmt.Errorf("create workspace %s: %w", ov.Path, err)
+		}
 	}
 
 	id := uuid.New().String()
@@ -509,8 +515,7 @@ func (r *IsolatedRunner) GetIsolatedSession(id string) (*IsolatedSessionState, e
 		LastRunAt: s.lastRunAt,
 
 		Profile:            s.opts.Profile,
-		WorkspacePath:      s.opts.WorkspacePath,
-		WorkspaceMode:      s.opts.WorkspaceMode,
+		Overlays:           append([]IsolatedOverlayOptions(nil), s.opts.Overlays...),
 		ExtraWritable:      s.opts.ExtraWritable,
 		Binds:              s.opts.Binds,
 		ShareNet:           s.opts.ShareNet,
@@ -553,8 +558,7 @@ type IsolatedSessionState struct {
 	// Creation-parameter echoes. Populated for sessions the current execd
 	// process created; snapshot of the *IsolatedSessionOptions at GET time.
 	Profile            string
-	WorkspacePath      string
-	WorkspaceMode      string
+	Overlays           []IsolatedOverlayOptions
 	ExtraWritable      []string
 	Binds              []isolation.BindMount
 	ShareNet           *bool
@@ -1092,14 +1096,11 @@ func shellescape(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
-// normalizeIsolatedOptions fills in the effective values for fields that
-// (*isolatedSession).start would otherwise substitute silently, so that
-// GetIsolatedSession echoes back the configuration execd is actually
-// running with. Only empty/omitted string fields are rewritten; explicit
-// values (including unknown enum strings) are left untouched so that
-// start() surfaces them as errors as before.
-//
-// Kept in sync with the switch statements in (*isolatedSession).start.
+// normalizeIsolatedOptions fills in the effective values start would
+// otherwise substitute silently, so GetIsolatedSession echoes the config
+// execd is actually running with. The legacy workspace fields are merged
+// into Overlays (prepended) and cleared. Explicit values, including
+// unknown enum strings, are left for start() to surface as errors.
 func normalizeIsolatedOptions(opts *IsolatedSessionOptions) {
 	if opts == nil {
 		return
@@ -1107,11 +1108,30 @@ func normalizeIsolatedOptions(opts *IsolatedSessionOptions) {
 	if opts.Profile == "" {
 		opts.Profile = string(isolation.ProfileStrict)
 	}
-	// start() treats any non-rw/non-ro string as overlay, but only "" is
-	// really "unset" from the caller's perspective. Unknown enum values
-	// are left in place so a future normalize→start mismatch is loud.
-	if opts.WorkspaceMode == "" {
-		opts.WorkspaceMode = string(isolation.WorkspaceOverlay)
+	if opts.WorkspacePath != "" {
+		opts.Overlays = append(
+			[]IsolatedOverlayOptions{{Path: opts.WorkspacePath, Mode: opts.WorkspaceMode}},
+			opts.Overlays...,
+		)
+		opts.WorkspacePath = ""
+		opts.WorkspaceMode = ""
+	}
+	for i := range opts.Overlays {
+		ov := &opts.Overlays[i]
+		// Unknown enum values are left in place so start() rejects them.
+		if ov.Mode == "" {
+			ov.Mode = string(isolation.WorkspaceOverlay)
+		}
+		switch isolation.WorkspaceMode(ov.Mode) {
+		case isolation.WorkspaceOverlay:
+			if ov.Persist == nil {
+				persist := true
+				ov.Persist = &persist
+			}
+		default:
+			// persist is not applicable to rw/ro binds.
+			ov.Persist = nil
+		}
 	}
 	if opts.EnvPassthroughMode == "" {
 		// The pre-normalization behavior of start() was: on empty mode,

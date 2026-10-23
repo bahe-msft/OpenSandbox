@@ -439,25 +439,6 @@ func unsetExecdConfigEnv() []string {
 	return argv
 }
 
-// execdConfigEnvBlacklist enumerates execd's own configuration env vars.
-// They are always stripped so execd's credentials never leak into the sandbox.
-var execdConfigEnvBlacklist = []string{
-	"EXECD_ACCESS_TOKEN",
-	"JUPYTER_HOST",
-	"JUPYTER_TOKEN",
-	"EXECD_ISOLATION_CONFIG",
-	"EXECD_ENVS",
-}
-
-func unsetExecdConfigEnv() []string {
-	argv := make([]string, 0, 2*len(execdConfigEnvBlacklist))
-	for _, key := range execdConfigEnvBlacklist {
-		argv = append(argv, "--unsetenv", key)
-	}
-	return argv
-}
-
-// unsetBlacklistedEnv returns --unsetenv args for all env vars matching strictEnvBlacklist.
 func unsetBlacklistedEnv() []string {
 	var argv []string
 	for _, pattern := range strictEnvBlacklist {

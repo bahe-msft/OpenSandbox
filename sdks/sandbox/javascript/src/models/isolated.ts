@@ -59,6 +59,7 @@ export interface IsolatedSessionInfo {
   // Creation-parameter fields echoed by execd (may be absent on older builds).
   profile?: "strict" | "balanced";
   workspace?: IsolatedWorkspaceSpec;
+  overlays?: IsolatedOverlaySpec[];
   extra_writable?: string[];
   binds?: BindMount[];
   share_net?: boolean;
@@ -80,6 +81,7 @@ export interface IsolatedSessionState {
   // (e.g. serverless workers) that only persist a session ID.
   profile?: "strict" | "balanced";
   workspace?: IsolatedWorkspaceSpec;
+  overlays?: IsolatedOverlaySpec[];
   extra_writable?: string[];
   binds?: BindMount[];
   share_net?: boolean;

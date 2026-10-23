@@ -212,34 +212,6 @@ export default defineConfig({
           items: [
             { text: "Overview", link: "/guides/" },
             { text: "Credential Vault", link: "/guides/credential-vault" },
-            { text: "Secure Container", link: "/guides/secure-container" },
-            { text: "Multi-Tenancy", link: "/guides/multi-tenancy" },
-            { text: "Isolation Sessions", link: "/guides/isolation-sessions" },
-            { text: "Pause & Resume", link: "/guides/pause-resume" },
-            { text: "Windows Sandbox", link: "/guides/windows-sandbox" },
-            { text: "SDK Telemetry", link: "/guides/sdk-telemetry" },
-          ],
-        },
-      ],
-
-      "/sdks/": [
-        {
-          text: "Sandbox SDKs",
-          collapsed: false,
-          items: [
-            { text: "Overview", link: "/sdks/" },
-            { text: "Python", link: "/sdks/python" },
-            { text: "JavaScript", link: "/sdks/javascript" },
-            { text: "Kotlin", link: "/sdks/kotlin" },
-            { text: "Go", link: "/sdks/go" },
-            { text: "C#", link: "/sdks/csharp" },
-          ],
-        },
-        {
-          text: "Code Interpreter SDKs",
-          collapsed: false,
-          items: [
-            { text: "Python", link: "/sdks/code-interpreter/python" },
             {
               text: "Chained Upstream Proxy",
               link: "/guides/egress-upstream-proxy",

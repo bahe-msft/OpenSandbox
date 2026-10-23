@@ -106,6 +106,8 @@ from opensandbox_server.api.metrics import router as metrics_router  # noqa: E40
 from opensandbox_server.api.pool import router as pool_router  # noqa: E402
 from opensandbox_server.api.lifecycle import router, sandbox_service, snapshot_service  # noqa: E402
 from opensandbox_server.api.proxy import router as proxy_router  # noqa: E402
+from opensandbox_server.api.network_policy import router as policy_router  # noqa: E402
+from opensandbox_server.api.templates import router as templates_router  # noqa: E402
 from opensandbox_server.integrations.otel import setup_otel_metrics, shutdown_otel_metrics  # noqa: E402
 from opensandbox_server.integrations.renew_intent.proxy_renew import ProxyRenewCoordinator  # noqa: E402
 from opensandbox_server.middleware.auth import AuthMiddleware  # noqa: E402
@@ -205,6 +207,16 @@ async def lifespan(app: FastAPI):
         app.state.renew_intent_consumer,
     )
 
+    if app_config.automation.idle_pause.enabled:
+        # Namespace list is re-resolved by the sweeper every sweep.
+        app.state.idle_pause_sweeper = await start_idle_pause_sweeper(
+            app_config,
+            sandbox_service,
+            namespace_resolver=_idle_pause_namespaces,
+        )
+    else:
+        app.state.idle_pause_sweeper = None
+
     setup_otel_metrics(app_config.otel)
 
     yield
@@ -216,6 +228,7 @@ async def lifespan(app: FastAPI):
     if consumer is not None:
         await consumer.stop()
     shutdown_otel_metrics()
+    sandbox_service.close()
     snapshot_service.close()
     close_snapshot_repository()
     from opensandbox_server.api.templates import close_template_service  # noqa: E402
@@ -270,6 +283,7 @@ app.include_router(policy_router)
 app.include_router(router, prefix="/v1")
 app.include_router(devops_router, prefix="/v1")
 app.include_router(pool_router, prefix="/v1")
+app.include_router(templates_router, prefix="/v1")
 app.include_router(metrics_router, prefix="/v1")
 app.include_router(proxy_router, prefix="/v1")
 app.include_router(policy_router, prefix="/v1")

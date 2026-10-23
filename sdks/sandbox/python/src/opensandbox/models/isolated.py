@@ -170,7 +170,11 @@ class IsolatedSessionInfo(BaseModel):
     )
     workspace: IsolatedWorkspaceSpec | None = Field(
         default=None,
-        description="Workspace bind configuration used at session creation.",
+        description="Workspace bind configuration used at session creation (single-overlay sessions only).",
+    )
+    overlays: list[IsolatedOverlaySpec] | None = Field(
+        default=None,
+        description="Effective overlay mounts of the session.",
     )
     extra_writable: list[str] | None = Field(
         default=None,
@@ -235,7 +239,11 @@ class IsolatedSessionState(BaseModel):
     )
     workspace: IsolatedWorkspaceSpec | None = Field(
         default=None,
-        description="Workspace bind configuration used at session creation.",
+        description="Workspace bind configuration used at session creation (single-overlay sessions only).",
+    )
+    overlays: list[IsolatedOverlaySpec] | None = Field(
+        default=None,
+        description="Effective overlay mounts of the session.",
     )
     extra_writable: list[str] | None = Field(
         default=None,

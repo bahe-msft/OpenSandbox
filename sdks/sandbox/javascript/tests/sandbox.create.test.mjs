@@ -572,6 +572,78 @@ test("Sandbox.create metrics failure does not change create error", async () => 
   );
 });
 
+test("Sandbox.create readiness timeout omits network configuration hints", async () => {
+  const { adapterFactory } = createAdapterFactory();
+  adapterFactory.createExecdStack = () => ({
+    commands: {},
+    files: {},
+    health: {
+      async ping() {
+        throw new Error("connect ECONNREFUSED");
+      },
+    },
+    metrics: {},
+  });
+
+  const connectionConfig = new ConnectionConfig({
+    domain: "http://127.0.0.1:8080",
+    useServerProxy: false,
+    disableMetrics: true,
+  });
+
+  await assert.rejects(
+    Sandbox.create({
+      adapterFactory,
+      connectionConfig,
+      image: "python:3.12",
+      readyTimeoutSeconds: 0.2,
+      healthCheckPollingInterval: 50,
+    }),
+    (err) => {
+      const message = String(err && err.message);
+      assert.match(message, /Sandbox health check timed out after/);
+      assert.match(message, /domain=http:\/\/127\.0\.0\.1:8080, useServerProxy=false/);
+      assert.match(message, /Last health check error: connect ECONNREFUSED/);
+      assert.doesNotMatch(message, /consider enabling useServerProxy=true/i);
+      assert.doesNotMatch(message, /Docker bridge|remote-network|\[docker\]\.host_ip/i);
+      return true;
+    }
+  );
+});
+
+test("Sandbox.create readiness timeout does not overshoot by a polling interval", async () => {
+  const { adapterFactory } = createAdapterFactory();
+  adapterFactory.createExecdStack = () => ({
+    commands: {},
+    files: {},
+    health: {
+      async ping() {
+        return false;
+      },
+    },
+    metrics: {},
+  });
+
+  const connectionConfig = new ConnectionConfig({
+    domain: "http://127.0.0.1:8080",
+    disableMetrics: true,
+  });
+
+  const started = Date.now();
+  await assert.rejects(
+    Sandbox.create({
+      adapterFactory,
+      connectionConfig,
+      image: "python:3.12",
+      readyTimeoutSeconds: 0.02,
+      healthCheckPollingInterval: 2000,
+    }),
+    /Sandbox health check timed out after 0\.02s/
+  );
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 500, `expected timeout in ~20ms, took ${elapsed}ms`);
+});
+
 test("Sandbox.create metrics synchronous throw does not change create error", async () => {
   // Regression test: previously, payload/URL/headers construction and
   // `connectionConfig.fetch(...)` ran outside any try/catch in the reporter.
@@ -625,4 +697,124 @@ test("Sandbox.create metrics synchronous throw does not change create error", as
       return true;
     }
   );
+});
+
+test("Sandbox.create forwards lifecycle.idlePolicy", async () => {
+  const { adapterFactory, recordedRequests } = createAdapterFactory();
+  const idlePolicy = {
+    idleTimeoutSeconds: 300,
+    onIdle: "pause",
+    wakeOnAccess: true,
+    activeProbe: { port: 8080, path: "/active" },
+  };
+
+  await Sandbox.create({
+    adapterFactory,
+    connectionConfig: { domain: "http://127.0.0.1:8080" },
+    image: "python:3.12",
+    lifecycle: { idlePolicy },
+    skipHealthCheck: true,
+  });
+
+  assert.equal(recordedRequests.length, 1);
+  assert.deepEqual(recordedRequests[0].lifecycle, { idlePolicy });
+});
+
+test("Sandbox.create rejects an invalid idle policy before allocating transport resources", async () => {
+  // Observe allocation order directly: withTransportIfMissing must never run.
+  const guardedConfig = new ConnectionConfig({ domain: "http://127.0.0.1:8080" });
+  guardedConfig.withTransportIfMissing = () => {
+    throw new Error("transport must not be allocated for an invalid idle policy");
+  };
+  await assert.rejects(
+    Sandbox.create({
+      adapterFactory: {
+        createLifecycleStack() {
+          throw new Error("lifecycle stack must not be built for an invalid idle policy");
+        },
+      },
+      connectionConfig: guardedConfig,
+      image: "python:3.12",
+      lifecycle: { idlePolicy: { idleTimeoutSeconds: 29, onIdle: "pause" } },
+      skipHealthCheck: true,
+    }),
+    /idleTimeoutSeconds must be an integer/
+  );
+
+  for (const [idlePolicy, message] of [
+    [{ idleTimeoutSeconds: 29, onIdle: "pause" }, /idleTimeoutSeconds must be an integer between 30 and 86400/],
+    [{ idleTimeoutSeconds: 86401, onIdle: "pause" }, /idleTimeoutSeconds must be an integer between 30 and 86400/],
+    [{ idleTimeoutSeconds: 300.5, onIdle: "pause" }, /idleTimeoutSeconds must be an integer between 30 and 86400/],
+    [{ idleTimeoutSeconds: 300 }, /onIdle is required when idleTimeoutSeconds is set/],
+    [{ onIdle: "pause" }, /onIdle must be omitted when idleTimeoutSeconds is omitted/],
+    [{ idleTimeoutSeconds: 300, onIdle: "terminate" }, /onIdle must be "pause"/],
+    [{ wakeOnAccess: false, activeProbe: { port: 8080, path: "/active" } }, /activeProbe requires idleTimeoutSeconds/],
+    [{ idleTimeoutSeconds: 300, onIdle: "pause", activeProbe: { port: 0, path: "/active" } }, /port must be an integer between 1 and 65535/],
+    [{ idleTimeoutSeconds: 300, onIdle: "pause", activeProbe: { port: 8080, path: "active" } }, /path must be an absolute HTTP path/],
+    [{ idleTimeoutSeconds: 300, onIdle: "pause", activeProbe: { port: 8080, path: "/a b" } }, /path must not contain whitespace/],
+    [{ idleTimeoutSeconds: 300, onIdle: "pause", activeProbe: { port: 8080, path: "/active", timeoutSeconds: 11 } }, /timeoutSeconds must be an integer between 1 and 10/],
+  ]) {
+    await assert.rejects(
+      Sandbox.create({
+        adapterFactory: {
+          createLifecycleStack() {
+            throw new Error("transport must not be allocated for an invalid idle policy");
+          },
+        },
+        connectionConfig: { domain: "http://127.0.0.1:8080" },
+        image: "python:3.12",
+        lifecycle: { idlePolicy },
+        skipHealthCheck: true,
+      }),
+      message
+    );
+  }
+});
+
+test("Sandbox.create accepts idle policy boundaries and wake-only shapes", async () => {
+  const { adapterFactory, recordedRequests } = createAdapterFactory();
+
+  const policies = [
+    // Valid timeout boundaries.
+    { idleTimeoutSeconds: 30, onIdle: "pause" },
+    { idleTimeoutSeconds: 86400, onIdle: "pause" },
+    // Wake-only shapes: never auto-paused, wakes on access.
+    {},
+    { wakeOnAccess: false },
+    // Probe boundaries.
+    {
+      idleTimeoutSeconds: 300,
+      onIdle: "pause",
+      activeProbe: { port: 1, path: "/active" },
+    },
+    {
+      idleTimeoutSeconds: 300,
+      onIdle: "pause",
+      activeProbe: { port: 65535, path: "/active", timeoutSeconds: 1 },
+    },
+    {
+      idleTimeoutSeconds: 300,
+      onIdle: "pause",
+      activeProbe: { port: 8080, path: "/active", timeoutSeconds: 10 },
+    },
+  ];
+
+  for (const idlePolicy of policies) {
+    await Sandbox.create({
+      adapterFactory,
+      connectionConfig: { domain: "http://127.0.0.1:8080" },
+      image: "python:3.12",
+      lifecycle: { idlePolicy },
+      skipHealthCheck: true,
+    });
+  }
+
+  assert.equal(recordedRequests.length, policies.length);
+  for (let i = 0; i < policies.length; i++) {
+    assert.deepEqual(
+      recordedRequests[i].lifecycle,
+      { idlePolicy: policies[i] },
+      `policy #${i} should be forwarded as-is`
+    );
+  }
 });

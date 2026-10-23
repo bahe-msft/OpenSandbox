@@ -592,10 +592,6 @@ class SandboxSync:
         logger.info(
             f"Creating sandbox with startup source: {startup_source} (timeout: {timeout_log})"
         )
-        factory = AdapterFactorySync(config)
-        sandbox_id: str | None = None
-        sandbox_service: SandboxesSync | None = None
-        create_started = time.monotonic()
 
         return cls._launch(
             config=config,
@@ -801,7 +797,7 @@ class SandboxSync:
             )
 
             return sandbox
-        except Exception as e:
+        except BaseException as e:
             report_sandbox_create_metric(
                 config,
                 sandbox_id=sandbox_id,

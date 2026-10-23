@@ -126,11 +126,16 @@ func classifyIsolatedCreateError(err error) (int, model.ErrorCode) {
 	if errors.Is(err, runtime.ErrUidModeUnavailable) {
 		return http.StatusServiceUnavailable, model.ErrorCodeNotSupported
 	}
+	if errors.Is(err, runtime.ErrSessionNamespaceUnavailable) ||
+		errors.Is(err, runtime.ErrIsolatedRunnerClosed) {
+		return http.StatusServiceUnavailable, model.ErrorCodeServiceUnavailable
+	}
 	if strings.Contains(err.Error(), "not in allowlist") ||
 		strings.Contains(err.Error(), "not allowed") ||
 		strings.Contains(err.Error(), "unknown isolation profile") ||
 		strings.Contains(err.Error(), "must be an existing path") ||
 		strings.Contains(err.Error(), "must be an absolute path") ||
+		strings.Contains(err.Error(), "duplicate overlay path") ||
 		strings.Contains(err.Error(), "source is required") {
 		return http.StatusBadRequest, model.ErrorCodeRuntimeError
 	}
@@ -168,10 +173,22 @@ func (c *IsolatedSessionController) Get() {
 		Gid:           state.Gid,
 		UidMode:       state.UidMode,
 	}
-	if state.WorkspacePath != "" {
-		resp.Workspace = &model.WorkspaceSpec{
-			Path: state.WorkspacePath,
-			Mode: state.WorkspaceMode,
+	if len(state.Overlays) > 0 {
+		resp.Overlays = make([]model.OverlaySpec, 0, len(state.Overlays))
+		for _, ov := range state.Overlays {
+			spec := model.OverlaySpec{Path: ov.Path, Mode: ov.Mode}
+			if ov.Persist != nil {
+				persist := *ov.Persist
+				spec.Persist = &persist
+			}
+			resp.Overlays = append(resp.Overlays, spec)
+		}
+		// The legacy workspace echo applies to single-overlay sessions only.
+		if len(state.Overlays) == 1 {
+			resp.Workspace = &model.WorkspaceSpec{
+				Path: state.Overlays[0].Path,
+				Mode: state.Overlays[0].Mode,
+			}
 		}
 	}
 	if len(state.Binds) > 0 {
@@ -479,6 +496,8 @@ func (c *IsolatedSessionController) Capabilities() {
 		UsernsAvailable:  caps.UsernsAvailable,
 		CommitSupported:  caps.CommitSupported,
 		DiffSupported:    caps.DiffSupported,
+		Hardening:        hardening,
+		RuntimeInit:      runtimeInit,
 	}
 	// Probe results indicate overlay capability, not diff/commit implementation.
 	// Diff and commit are Phase 2; do not advertise them as supported.

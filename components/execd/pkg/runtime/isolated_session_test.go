@@ -216,6 +216,31 @@ func TestSetprivIdentitySwitchRequired(t *testing.T) {
 	}
 }
 
+func TestIsolatedSession_FallsBackToSh(t *testing.T) {
+	useShOnlyPath(t)
+
+	runner := newTestRunner(t)
+	id, err := runner.CreateIsolatedSession(&IsolatedSessionOptions{
+		WorkspacePath: filepath.Join(t.TempDir(), "workspace"),
+		WorkspaceMode: "rw",
+	})
+	if err != nil {
+		t.Fatalf("CreateIsolatedSession: %v", err)
+	}
+	defer runner.DeleteIsolatedSession(id)
+
+	var lines []string
+	err = runner.RunInIsolatedSession(context.Background(), id, "printf 'fallback_isolated\\n'", nil, func(line string) {
+		lines = append(lines, line)
+	})
+	if err != nil {
+		t.Fatalf("RunInIsolatedSession: %v", err)
+	}
+	if len(lines) != 1 || lines[0] != "fallback_isolated" {
+		t.Fatalf("output = %v, want [fallback_isolated]", lines)
+	}
+}
+
 func TestCreateIsolatedSession_HappyPath(t *testing.T) {
 	runner := newTestRunner(t)
 
@@ -333,11 +358,17 @@ func TestGetIsolatedSession_ReturnsCreationParams(t *testing.T) {
 	if state.Profile != "balanced" {
 		t.Errorf("Profile = %q, want balanced", state.Profile)
 	}
-	if state.WorkspacePath == "" {
-		t.Error("WorkspacePath is empty")
+	if len(state.Overlays) != 1 {
+		t.Fatalf("Overlays len = %d, want 1", len(state.Overlays))
 	}
-	if state.WorkspaceMode != "overlay" {
-		t.Errorf("WorkspaceMode = %q, want overlay", state.WorkspaceMode)
+	if state.Overlays[0].Path == "" {
+		t.Error("Overlays[0].Path is empty")
+	}
+	if state.Overlays[0].Mode != "overlay" {
+		t.Errorf("Overlays[0].Mode = %q, want overlay", state.Overlays[0].Mode)
+	}
+	if state.Overlays[0].Persist == nil || !*state.Overlays[0].Persist {
+		t.Error("Overlays[0].Persist not defaulted to true")
 	}
 	if len(state.ExtraWritable) != 1 {
 		t.Errorf("ExtraWritable len = %d, want 1", len(state.ExtraWritable))
@@ -380,10 +411,8 @@ func TestGetIsolatedSession_ReturnsCreationParams(t *testing.T) {
 func TestGetIsolatedSession_EchoesEffectiveDefaults(t *testing.T) {
 	runner := newTestRunner(t)
 
-	// Bare-minimum create request: only workspace path is required.
 	opts := &IsolatedSessionOptions{
 		WorkspacePath: filepath.Join(t.TempDir(), "ws"),
-		// Profile / WorkspaceMode / EnvPassthroughMode / UidMode all omitted.
 	}
 
 	id, err := runner.CreateIsolatedSession(opts)
@@ -397,12 +426,11 @@ func TestGetIsolatedSession_EchoesEffectiveDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Each of these must be the effective value, not "".
 	if state.Profile != "strict" {
 		t.Errorf("Profile = %q, want strict (execd default)", state.Profile)
 	}
-	if state.WorkspaceMode != "overlay" {
-		t.Errorf("WorkspaceMode = %q, want overlay (execd default)", state.WorkspaceMode)
+	if len(state.Overlays) != 1 || state.Overlays[0].Mode != "overlay" {
+		t.Errorf("Overlays = %+v, want a single overlay (execd default mode)", state.Overlays)
 	}
 	if state.EnvPassthroughMode != "deny" {
 		t.Errorf("EnvPassthroughMode = %q, want deny (execd default)", state.EnvPassthroughMode)
@@ -426,9 +454,7 @@ func TestNormalize_EnvPassthroughEmptyModeDropsKeys(t *testing.T) {
 	runner := newTestRunner(t)
 
 	opts := &IsolatedSessionOptions{
-		WorkspacePath: filepath.Join(t.TempDir(), "ws"),
-		// mode omitted, but caller supplied keys — must be dropped
-		// so the built-in secret blacklist is not silently bypassed.
+		WorkspacePath:      filepath.Join(t.TempDir(), "ws"),
 		EnvPassthroughMode: "",
 		EnvPassthroughKeys: []string{"USER_TOKEN", "AWS_SECRET_ACCESS_KEY"},
 	}
@@ -451,7 +477,6 @@ func TestNormalize_EnvPassthroughEmptyModeDropsKeys(t *testing.T) {
 		t.Errorf("EnvPassthroughKeys should be dropped when mode was omitted, got %v", state.EnvPassthroughKeys)
 	}
 
-	// Caller-supplied keys are preserved when mode is explicit.
 	opts2 := &IsolatedSessionOptions{
 		WorkspacePath:      filepath.Join(t.TempDir(), "ws2"),
 		EnvPassthroughMode: "deny",

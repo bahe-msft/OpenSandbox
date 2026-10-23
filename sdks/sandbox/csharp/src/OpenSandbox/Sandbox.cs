@@ -193,37 +193,10 @@ public sealed class Sandbox : IAsyncDisposable
         options.Lifecycle?.IdlePolicy?.Validate();
         ValidateHostPaths(options.Volumes);
         var startupSource = options.Image ?? options.SnapshotId;
-        var createStopwatch = Stopwatch.StartNew();
-        var httpClientProvider = new HttpClientProvider(connectionConfig, loggerFactory);
 
-        ISandboxes sandboxes;
-        logger.LogInformation(
-            "Creating sandbox (startupSource={StartupSource}, useServerProxy={UseServerProxy})",
-            startupSource,
-            connectionConfig.UseServerProxy);
-        try
+        if (options.NetworkPolicy?.Egress is { Count: > 0 })
         {
-            var lifecycleStack = adapterFactory.CreateLifecycleStack(new CreateLifecycleStackOptions
-            {
-                ConnectionConfig = connectionConfig,
-                LifecycleBaseUrl = lifecycleBaseUrl,
-                HttpClientProvider = httpClientProvider,
-                LoggerFactory = loggerFactory
-            });
-            sandboxes = lifecycleStack.Sandboxes;
-        }
-        catch
-        {
-            logger.LogError("Failed to initialize lifecycle adapters while creating sandbox");
-            LifecycleMetricsReporter.ReportSandboxCreate(
-                connectionConfig,
-                sandboxId: null,
-                image: startupSource,
-                createDurationMs: createStopwatch.ElapsedMilliseconds,
-                success: false,
-                loggerFactory);
-            httpClientProvider.Dispose();
-            throw;
+            NetworkPolicyCodec.ValidateRules(options.NetworkPolicy.Egress, nameof(options.NetworkPolicy.Egress));
         }
 
         var request = new CreateSandboxRequest

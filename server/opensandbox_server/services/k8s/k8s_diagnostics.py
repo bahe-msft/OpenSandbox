@@ -147,7 +147,7 @@ class K8sDiagnosticsMixin:
         label_selector = f"{SANDBOX_ID_LABEL}={sandbox_id}"
         try:
             pods = self.k8s_client.list_pods(
-                namespace=self._resolve_namespace(),
+                namespace=namespace,
                 label_selector=label_selector,
             )
             if not pods:
@@ -332,11 +332,23 @@ class K8sDiagnosticsMixin:
         pod_name = pod.metadata.name
         core_v1 = self.k8s_client.get_core_v1_api()
 
-        events_resp = core_v1.list_namespaced_event(
-            namespace=pod.metadata.namespace,
-            field_selector=f"involvedObject.name={pod_name}",
-            limit=limit,
-        )
+        events: list[Any] = []
+        continuation: str | None = None
+        try:
+            while len(events) < limit:
+                if continuation is None:
+                    events_resp = core_v1.list_namespaced_event(
+                        namespace=pod.metadata.namespace,
+                        field_selector=f"involvedObject.name={pod_name}",
+                        limit=limit,
+                    )
+                else:
+                    events_resp = core_v1.list_namespaced_event(
+                        namespace=pod.metadata.namespace,
+                        field_selector=f"involvedObject.name={pod_name}",
+                        limit=limit,
+                        _continue=continuation,
+                    )
 
                 events.extend(events_resp.items or [])
                 metadata = getattr(events_resp, "metadata", None)

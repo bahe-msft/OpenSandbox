@@ -228,10 +228,11 @@ type SessionState struct {
 	LastRunAt            time.Time `json:"last_run_at"`
 	IdleRemainingSeconds *int      `json:"idle_remaining_seconds,omitempty"`
 
-	// Creation-parameter echoes. All optional; a session_id-only client
-	// must tolerate any of these being absent.
+	// Creation-parameter echoes, all optional. Workspace is echoed only
+	// for single-overlay sessions; Overlays always carries the full list.
 	Profile            string              `json:"profile,omitempty"`
 	Workspace          *WorkspaceSpec      `json:"workspace,omitempty"`
+	Overlays           []OverlaySpec       `json:"overlays,omitempty"`
 	ExtraWritable      []string            `json:"extra_writable,omitempty"`
 	Binds              []BindMount         `json:"binds,omitempty"`
 	ShareNet           *bool               `json:"share_net,omitempty"`
@@ -257,12 +258,14 @@ type ListIsolatedSessionsResponse struct {
 // Capabilities
 
 type CapabilitiesResponse struct {
-	Available        bool   `json:"available"`
-	Isolator         string `json:"isolator,omitempty"`
-	Version          string `json:"version,omitempty"`
-	Message          string `json:"message,omitempty"`
-	SetprivAvailable bool   `json:"setpriv_available"`
-	UsernsAvailable  bool   `json:"userns_available"`
-	CommitSupported  bool   `json:"commit_supported"`
-	DiffSupported    bool   `json:"diff_supported"`
+	Available        bool               `json:"available"`
+	Isolator         string             `json:"isolator,omitempty"`
+	Version          string             `json:"version,omitempty"`
+	Message          string             `json:"message,omitempty"`
+	SetprivAvailable bool               `json:"setpriv_available"`
+	UsernsAvailable  bool               `json:"userns_available"`
+	CommitSupported  bool               `json:"commit_supported"`
+	DiffSupported    bool               `json:"diff_supported"`
+	Hardening        *HardeningStatus   `json:"hardening,omitempty"`
+	RuntimeInit      *RuntimeInitStatus `json:"runtimeInit,omitempty"`
 }

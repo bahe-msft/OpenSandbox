@@ -164,8 +164,7 @@ type IsolatedSessionState struct {
 	// Creation-parameter echoes. Never populated on Windows (isolation
 	// is unavailable) but kept to match the non-Windows struct layout.
 	Profile            string
-	WorkspacePath      string
-	WorkspaceMode      string
+	Overlays           []IsolatedOverlayOptions
 	ExtraWritable      []string
 	Binds              []isolation.BindMount
 	ShareNet           *bool

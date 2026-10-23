@@ -85,7 +85,7 @@ func TestIsolationAttachRoundtrip(t *testing.T) {
 	ctx, sb := createIsolatedTestSandbox(t)
 
 	created, err := sb.IsolationCreate(ctx, opensandbox.CreateIsolatedSessionRequest{
-		Workspace: opensandbox.IsolatedWorkspaceSpec{Path: "/tmp", Mode: "rw"},
+		Workspace: &opensandbox.IsolatedWorkspaceSpec{Path: "/tmp", Mode: "rw"},
 	})
 	require.NoError(t, err)
 	sessionID := created.SessionID()

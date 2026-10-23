@@ -51,6 +51,7 @@ import com.alibaba.opensandbox.sandbox.domain.services.Metrics
 import com.alibaba.opensandbox.sandbox.domain.services.Sandboxes
 import com.alibaba.opensandbox.sandbox.infrastructure.factory.AdapterFactory
 import com.alibaba.opensandbox.sandbox.internal.LifecycleMetricsReporter
+import com.alibaba.opensandbox.sandbox.internal.isCausedByInterruption
 import org.slf4j.LoggerFactory
 import java.time.Duration
 import java.time.OffsetDateTime
@@ -463,6 +464,7 @@ class Sandbox internal constructor(
                     initializeSandbox(
                         operationName = "create sandbox with startup source $startupSource (timeout: $timeoutLabel)",
                         connectionConfig = connectionConfig,
+                        initializationConnectionConfig = initializationConnectionConfig,
                         healthCheck = healthCheck,
                         timeout = readyTimeout,
                         healthCheckPollingInterval = healthCheckPollingInterval,
@@ -484,6 +486,7 @@ class Sandbox internal constructor(
                                 secureAccess = secureAccess,
                                 snapshotId = snapshotId,
                                 resourceRequests = resourceRequests,
+                                lifecycle = lifecycle,
                             )
                         createdSandboxId = response.id
                         InitializationResult.NewSandbox(response.id)
@@ -501,6 +504,89 @@ class Sandbox internal constructor(
                     connectionConfig = connectionConfig,
                     sandboxId = createdSandboxId,
                     image = startupSource,
+                    createDurationMs = elapsedMillis(started),
+                    success = false,
+                )
+                throw e
+            }
+        }
+
+        private fun elapsedMillis(startNanos: Long): Long {
+            val elapsed = (System.nanoTime() - startNanos) / 1_000_000L
+            return if (elapsed < 0L) 0L else elapsed
+        }
+
+        /**
+         * Creates a sandbox instance from a fsb golden-image template.
+         *
+         * Template mode fixes the workload shape on the server: only metadata,
+         * network policy and extensions may accompany the template id, and the
+         * timeout is required.
+         *
+         * @param templateId Unique identifier of a `Succeeded` template owned by the requester
+         * @param timeout Sandbox lifetime. Required in template mode.
+         * @param readyTimeout Timeout for waiting for sandbox readiness
+         * @param metadata Metadata for the sandbox
+         * @param networkPolicy Optional outbound network policy (egress)
+         * @param extensions Optional extension parameters for server-side customized behaviors
+         * @param connectionConfig Connection configuration
+         * @param healthCheck Custom health check function (optional)
+         * @param healthCheckPollingInterval Polling interval for readiness/health check
+         * @param skipHealthCheck When true, do NOT wait for sandbox readiness
+         * @return Fully configured and ready Sandbox instance
+         * @throws SandboxException if sandbox creation or initialization fails
+         */
+        private fun createFromTemplate(
+            templateId: String,
+            timeout: Duration,
+            readyTimeout: Duration,
+            metadata: Map<String, String>,
+            networkPolicy: NetworkPolicy?,
+            extensions: Map<String, String>,
+            idlePolicy: IdlePolicy?,
+            connectionConfig: ConnectionConfig,
+            healthCheck: ((Sandbox) -> Boolean)?,
+            healthCheckPollingInterval: Duration,
+            skipHealthCheck: Boolean,
+        ): Sandbox {
+            val started = System.nanoTime()
+            var createdSandboxId: String? = null
+            try {
+                val sandbox =
+                    initializeSandbox(
+                        operationName = "create sandbox from template $templateId (timeout: ${timeout.seconds}s)",
+                        connectionConfig = connectionConfig,
+                        healthCheck = healthCheck,
+                        timeout = readyTimeout,
+                        healthCheckPollingInterval = healthCheckPollingInterval,
+                        skipHealthCheck = skipHealthCheck,
+                        origin = SandboxOrigin.TEMPLATE,
+                    ) { sandboxService ->
+                        val response =
+                            sandboxService.createSandboxFromTemplate(
+                                templateId = templateId,
+                                timeout = timeout,
+                                metadata = metadata,
+                                networkPolicy = networkPolicy,
+                                extensions = extensions,
+                                idlePolicy = idlePolicy,
+                            )
+                        createdSandboxId = response.id
+                        InitializationResult.NewSandbox(response.id)
+                    }
+                LifecycleMetricsReporter.reportSandboxCreate(
+                    connectionConfig = connectionConfig,
+                    sandboxId = sandbox.id,
+                    image = "template:$templateId",
+                    createDurationMs = elapsedMillis(started),
+                    success = true,
+                )
+                return sandbox
+            } catch (e: Throwable) {
+                LifecycleMetricsReporter.reportSandboxCreate(
+                    connectionConfig = connectionConfig,
+                    sandboxId = createdSandboxId,
+                    image = "template:$templateId",
                     createDurationMs = elapsedMillis(started),
                     success = false,
                 )
