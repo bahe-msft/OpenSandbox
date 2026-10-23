@@ -7,9 +7,7 @@ description: OpenSandbox MCP Server exposes sandbox operations as MCP tools for 
 
 ## Overview
 
-OpenSandbox MCP Server exposes the OpenSandbox Python SDK as MCP tools for
-Claude Code, Cursor, and other MCP-capable clients. It provides focused
-sandbox lifecycle management, command execution, and text file operations.
+OpenSandbox MCP Server exposes the OpenSandbox Python SDK as MCP tools for Claude Code, Cursor, and other MCP-capable clients. It provides focused sandbox lifecycle management, command execution, and text file operations.
 
 ## Installation & Startup
 

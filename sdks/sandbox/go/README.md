@@ -139,8 +139,7 @@ _ = mgr.DeleteSnapshot(ctx, snap.ID)
 
 ### Run code in an isolated session
 
-Isolated sessions run multi-step code in a hardened, resource-bounded
-environment with bind mounts — reachable through `Sandbox.IsolationCreate`:
+Isolated sessions run multi-step code in a hardened, resource-bounded environment with bind mounts — reachable through `Sandbox.IsolationCreate`:
 
 ```go
 shareNet := true
@@ -200,10 +199,7 @@ updated, err := egress.PatchPolicy(ctx, []opensandbox.NetworkRule{
 
 ### Use Credential Vault
 
-Credential Vault injects outbound credentials from the egress sidecar while
-keeping real secrets out of sandbox environment variables, commands, files, and
-logs. Create the sandbox with `CredentialProxy` enabled, then write credentials
-and bindings through the sandbox helpers or `EgressClient`.
+Credential Vault injects outbound credentials from the egress sidecar while keeping real secrets out of sandbox environment variables, commands, files, and logs. Create the sandbox with `CredentialProxy` enabled, then write credentials and bindings through the sandbox helpers or `EgressClient`.
 
 ```go
 sandbox, err := opensandbox.CreateSandbox(ctx, config, opensandbox.SandboxCreateOptions{
@@ -248,8 +244,134 @@ _, err = sandbox.CreateCredentialVault(ctx, opensandbox.CredentialVaultCreateReq
 })
 ```
 
-See [Credential Vault](../../../docs/guides/credential-vault.md) for auth types,
-binding guidance, and Git/curl examples.
+See [Credential Vault](../../../docs/guides/credential-vault.md) for auth types, binding guidance, and Git/curl examples.
+
+### Work with files
+
+File helpers live on `Sandbox` (they wrap the `ExecdClient` file operations with the sandbox's own access token):
+
+```go
+// The examples below need a live handle; the quick start above left `sbx`
+// as a *SandboxInfo, which has no file methods.
+sbx, err := opensandbox.CreateSandbox(ctx, config, opensandbox.SandboxCreateOptions{
+    Image: "python:3.11",
+})
+
+// Upload (single or multipart-batch). Metadata.Path is the destination and
+// is required — FileName alone is just the multipart filename.
+err = sbx.UploadFile(ctx, bytes.NewReader(data), opensandbox.UploadFileOptions{
+    FileName: "app.py",
+    Metadata: opensandbox.FileMetadata{Path: "/workspace/app.py"},
+})
+err = sbx.UploadFiles(ctx, []opensandbox.UploadFileEntry{
+    {File: f1, Options: opensandbox.UploadFileOptions{
+        FileName: "a.txt", Metadata: opensandbox.FileMetadata{Path: "/workspace/a.txt"},
+    }},
+    {File: f2, Options: opensandbox.UploadFileOptions{
+        FileName: "b.txt", Metadata: opensandbox.FileMetadata{Path: "/workspace/b.txt"},
+    }},
+})
+
+// Download: full file, byte-range, or line-based. Each call returns its
+// own reader — close each one (a single shared defer would leak the first two).
+full, err := sbx.DownloadFile(ctx, "/var/log/app.log", "") // full
+defer full.Close()
+partial, err := sbx.DownloadFile(ctx, "/var/log/app.log", "bytes=0-1023") // partial
+defer partial.Close()
+lines, err := sbx.DownloadFile(ctx, "/var/log/app.log", "",
+    opensandbox.DownloadFileOptions{Offset: 10, Limit: 50}) // lines 10-59
+defer lines.Close()
+
+// List, inspect, search
+entries, err := sbx.ListDirectory(ctx, "/workspace")
+deep, err := sbx.ListDirectoryWithDepth(ctx, "/workspace", 3) // 0 returns empty
+hits, err := sbx.SearchFiles(ctx, "/workspace", "*.json")
+info, err := sbx.GetFileInfo(ctx, "/workspace/app.py")
+
+// Directories, moves, permissions
+// mode is octal digits packed into a decimal int: pass 755, or
+// opensandbox.OctalMode(0o755) when starting from a Go FileMode.
+err = sbx.CreateDirectory(ctx, "/workspace/out", 755)
+err = sbx.MoveFiles(ctx, opensandbox.MoveRequest{...})
+err = sbx.SetPermissions(ctx, opensandbox.PermissionsRequest{...})
+err = sbx.DeleteFiles(ctx, []string{"/workspace/tmp.log"})
+err = sbx.DeleteDirectory(ctx, "/workspace/out")
+
+// Text replacement across files
+replaceReq := opensandbox.ReplaceRequest{
+    "/workspace/config.yaml": {Old: "debug: true", New: "debug: false"},
+}
+err = sbx.ReplaceInFiles(ctx, replaceReq)
+detailed, err := sbx.ReplaceInFilesDetailed(ctx, replaceReq) // per-file ReplacedCount
+```
+
+### Mount volumes into a sandbox
+
+`Volumes` supports `host`, `pvc`, and `ossfs` backends. Each volume must specify exactly one backend:
+
+```go
+sandbox, err := opensandbox.CreateSandbox(ctx, config, opensandbox.SandboxCreateOptions{
+    Image: "ubuntu",
+    Volumes: []opensandbox.Volume{
+        {
+            Name:     "oss-data",
+            OSSFS: &opensandbox.OSSFS{
+                Bucket:          "bucket-a",
+                Endpoint:        "oss-cn-hangzhou.aliyuncs.com",
+                AccessKeyID:     os.Getenv("OSS_ACCESS_KEY_ID"),
+                AccessKeySecret: os.Getenv("OSS_ACCESS_KEY_SECRET"),
+            },
+            MountPath: "/mnt/oss",
+        },
+    },
+})
+```
+
+### Build reusable base images with templates
+
+`SandboxManager` builds golden images ("templates") from an OCI image and publishes them to an S3-compatible target; sandboxes then boot from a `TemplateID` instead of a plain image:
+
+```go
+mgr := opensandbox.NewSandboxManager(config)
+
+tpl, err := mgr.CreateTemplate(ctx, opensandbox.CreateTemplateRequest{
+    Image:   "python:3.11",
+    Publish: "s3://bucket/templates/py311",
+    ResourceLimits: map[string]string{
+        "cpu": "1", "memory": "512Mi", "disk": "2Gi",
+    },
+})
+// Poll GetTemplate until the build finishes. Status is a TemplateStatus
+// struct — compare its Phase field, not a string (bound the loop in real
+// code; a failed build never reaches Succeeded):
+for tpl.Status.Phase != opensandbox.TemplatePhaseSucceeded {
+    time.Sleep(10 * time.Second)
+    tpl, err = mgr.GetTemplate(ctx, tpl.TemplateID)
+}
+
+// Boot from the template: template-based creation requires an explicit
+// timeout — the server rejects creation without one.
+sandbox, err := opensandbox.CreateSandboxFromTemplate(ctx, config, tpl.TemplateID,
+    opensandbox.SandboxFromTemplateOptions{TimeoutSeconds: 3600})
+
+list, err := mgr.ListTemplates(ctx, opensandbox.ListTemplatesOptions{})
+err = mgr.DeleteTemplate(ctx, tpl.TemplateID)
+```
+
+### Wait for readiness with a custom health check
+
+`WaitUntilReady` polls until the sandbox is ready — by default the execd `/ping`; a custom `HealthCheck` replaces that (the JS SDK's custom health check equivalent):
+
+```go
+err := sbx.WaitUntilReady(ctx, opensandbox.ReadyOptions{
+    Timeout:         60 * time.Second,
+    PollingInterval: 2 * time.Second,
+    HealthCheck: func(ctx context.Context, sb *opensandbox.Sandbox) (bool, error) {
+        out, err := sb.RunCommand(ctx, "curl -fsS http://localhost:8080/healthz", nil)
+        return err == nil && out.ExitCode != nil && *out.ExitCode == 0, nil
+    },
+})
+```
 
 ### Work with files
 
@@ -386,12 +508,7 @@ err := sbx.WaitUntilReady(ctx, opensandbox.ReadyOptions{
 
 ### Release idle pool sandboxes
 
-`ReleaseAllIdle(ctx)` preserves the original fire-and-forget behavior: it drains
-idle IDs and returns after scheduling best-effort kills. Call
-`ReleaseAllIdleParallel(ctx, maxWorkers)` on `*DefaultSandboxPool` to bound kill
-concurrency and wait until every drained ID has received a kill attempt.
-`maxWorkers` must be positive. The parallel method is intentionally not part of
-the `SandboxPool` interface, so existing interface implementors remain compatible.
+`ReleaseAllIdle(ctx)` preserves the original fire-and-forget behavior: it drains idle IDs and returns after scheduling best-effort kills. Call `ReleaseAllIdleParallel(ctx, maxWorkers)` on `*DefaultSandboxPool` to bound kill concurrency and wait until every drained ID has received a kill attempt. `maxWorkers` must be positive. The parallel method is intentionally not part of the `SandboxPool` interface, so existing interface implementors remain compatible.
 
 ## API Reference
 
@@ -610,9 +727,7 @@ client := opensandbox.NewExecdClient(url, token,
 )
 ```
 
-SDK-created HTTP clients enforce NIST 2030 minimum TLS certificate strength by default
-(RSA >= 2048, EC >= 224, DSA P >= 2048/Q >= 224, hash >= 224). If you must interoperate
-with legacy endpoints, set `AllowWeakServerCertKeyLengths: true` in `TransportConfig`.
+SDK-created HTTP clients enforce NIST 2030 minimum TLS certificate strength by default (RSA >= 2048, EC >= 224, DSA P >= 2048/Q >= 224, hash >= 224). If you must interoperate with legacy endpoints, set `AllowWeakServerCertKeyLengths: true` in `TransportConfig`.
 
 ## Error Handling
 

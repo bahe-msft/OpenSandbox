@@ -359,9 +359,7 @@ usage. This is separate from [SDK creation telemetry](/sdks/observability#creati
 
 ### Check egress policy
 
-Runtime egress reads and patches go directly to the sandbox egress sidecar.
-The SDK first resolves the sandbox endpoint on port `18080`, then calls the
-sidecar `/policy` API.
+Runtime egress reads and patches go directly to the sandbox egress sidecar. The SDK first resolves the sandbox endpoint on port `18080`, then calls the sidecar `/policy` API.
 
 ```go
 policy, err := sandbox.GetEgressPolicy(ctx)
@@ -378,11 +376,7 @@ if err != nil {
 }
 ```
 
-Template-backed sandboxes have no sandbox-side egress sidecar: the SDK detects
-them via the server's `OPEN-SANDBOX-ORIGIN` response header (see
-[Fsb Template Management](#fsb-template-management)) and routes the same
-`GetEgressPolicy` / `PatchEgressRules` / `DeleteEgressRules` calls through the
-lifecycle control plane (`/sandboxes/{sandboxId}/networkpolicy`) instead.
+Template-backed sandboxes have no sandbox-side egress sidecar: the SDK detects them via the server's `OPEN-SANDBOX-ORIGIN` response header (see [Fsb Template Management](#fsb-template-management)) and routes the same `GetEgressPolicy` / `PatchEgressRules` / `DeleteEgressRules` calls through the lifecycle control plane (`/sandboxes/{sandboxId}/networkpolicy`) instead.
 
 Patch uses merge semantics:
 - Incoming rules take priority over existing rules with the same `target`.
@@ -390,10 +384,7 @@ Patch uses merge semantics:
 
 ### Use Credential Vault
 
-Credential Vault injects outbound credentials from the egress sidecar while
-keeping real secrets out of sandbox environment variables, commands, files, and
-logs. Create the sandbox with `CredentialProxy` enabled, then write credentials
-and bindings through the sandbox helpers or `EgressClient`.
+Credential Vault injects outbound credentials from the egress sidecar while keeping real secrets out of sandbox environment variables, commands, files, and logs. Create the sandbox with `CredentialProxy` enabled, then write credentials and bindings through the sandbox helpers or `EgressClient`.
 
 ```go
 config := opensandbox.ConnectionConfig{
@@ -445,13 +436,10 @@ _, err = sandbox.CreateCredentialVault(ctx, opensandbox.CredentialVaultCreateReq
 })
 ```
 
-See [Credential Vault](/guides/credential-vault) for auth types, binding
-guidance, and Git/curl examples.
+See [Credential Vault](/guides/credential-vault) for auth types, binding guidance, and Git/curl examples.
 
 ::: warning
-Credential Vault is unavailable for template-backed sandboxes: they have no
-sandbox-side egress sidecar. `sandbox.CredentialVault(ctx)` returns an error
-for them.
+Credential Vault is unavailable for template-backed sandboxes: they have no sandbox-side egress sidecar. `sandbox.CredentialVault(ctx)` returns an error for them.
 :::
 
 ### Client Pool
@@ -607,10 +595,7 @@ fmt.Println(listed)
 
 ### Creating a Sandbox from a Template
 
-Use `CreateSandboxFromTemplate` to create a sandbox from a `Succeeded`
-template. Template mode fixes the workload shape on the server: only
-`Metadata`, `NetworkPolicy` and `Extensions` may accompany the template ID,
-and `TimeoutSeconds` is required.
+Use `CreateSandboxFromTemplate` to create a sandbox from a `Succeeded` template. Template mode fixes the workload shape on the server: only `Metadata`, `NetworkPolicy` and `Extensions` may accompany the template ID, and `TimeoutSeconds` is required.
 
 ```go
 sandbox, err := opensandbox.CreateSandboxFromTemplate(ctx, config, "tpl-abc",

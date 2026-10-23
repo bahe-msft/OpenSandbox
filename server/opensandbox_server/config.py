@@ -812,6 +812,26 @@ class KubernetesRuntimeConfig(BaseModel):
             "credentials referenced by server-created SandboxTemplates."
         ),
     )
+    template_mitm_ca_secret: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Secret holding the pinned cluster MITM CA certificate "
+            "(OSEP-0022). When set, server-created SandboxTemplates bake "
+            "spec.egressMitmCertificate from it (certificate entry only, "
+            "never the private key); unset keeps templates CA-free. The "
+            "Secret must exist in each template's namespace (ops-runbook "
+            "distribution); a missed copy fails the build observably."
+        ),
+    )
+    template_mitm_ca_secret_key: str = Field(
+        default="ca.crt",
+        min_length=1,
+        description=(
+            "Secret entry holding the CA certificate when "
+            "kubernetes.template_mitm_ca_secret is set."
+        ),
+    )
     workload_provider: Optional[str] = Field(
         default=None,
         description="Workload provider type. If not specified, uses the first registered provider.",
@@ -1206,6 +1226,15 @@ class EgressConfig(BaseModel):
         names = [provider.name for provider in self.credential_providers]
         if len(names) != len(set(names)):
             raise ValueError("credential provider names must be unique")
+        return self
+
+    @model_validator(mode="after")
+    def validate_upstream_proxy_requires_dns_nft(self) -> EgressConfig:
+        # The egress sidecar refuses the upstream proxy unless
+        # OPENSANDBOX_EGRESS_MODE=dns+nft; fail at config load instead of
+        # crash-looping every sidecar.
+        if self.upstream_proxy is not None and self.mode != EGRESS_MODE_DNS_NFT:
+            raise ValueError('egress.upstream_proxy requires egress.mode = "dns+nft"')
         return self
 
     @model_validator(mode="after")

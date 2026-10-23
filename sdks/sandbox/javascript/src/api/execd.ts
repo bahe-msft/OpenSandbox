@@ -1,11 +1,11 @@
 // Copyright 2026 The OpenSandbox Authors
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -186,6 +186,10 @@ export interface paths {
          * @description Executes a shell command in an existing bash session and streams the output in real-time via SSE
          *     (Server-Sent Events). The session must have been created by create_session. Supports
          *     optional working directory override and timeout (milliseconds).
+         *     The run streams a single merged `stdout` event stream (session stderr is merged into it).
+         *     Stdout event text preserves the original line endings (`\n`, `\r`, or `\r\n`). Concatenate
+         *     text from the stdout events to recover the run's output; blank lines appear as events
+         *     containing only the line ending, and the final event may be an unterminated fragment.
          */
         post: operations["runInSession"];
         delete?: never;
@@ -1421,6 +1425,11 @@ export interface components {
              */
             execution_count?: number;
             /**
+             * @description Successful foreground POST /command process exit status (0), present only on its execution_complete event after the process has exited. Omitted for background startup acknowledgements, code execution, and other events. Absence does not imply success; older servers omit this field. Non-zero command exits use error.exit_code instead.
+             * @example 0
+             */
+            exit_code?: number;
+            /**
              * Format: int64
              * @description Execution duration in milliseconds
              * @example 150
@@ -1449,7 +1458,7 @@ export interface components {
                  */
                 ename?: string;
                 /**
-                 * @description Error value/message
+                 * @description Error value/message. For `CommandExecError` this is the stringified exit status when the command ran and exited non-zero, and a free-form message when the process could not be started; use `exit_code` to tell the two apart.
                  * @example name 'undefined_var' is not defined
                  */
                 evalue?: string;
@@ -1462,6 +1471,11 @@ export interface components {
                  *     ]
                  */
                 traceback?: string[];
+                /**
+                 * @description Exit status of a command that ran and finished with a non-zero status (-1 when it was terminated by a signal). Present only on `CommandExecError` events emitted after the process ran; omitted when the process failed to start and for non-command errors.
+                 * @example 3
+                 */
+                exit_code?: number;
             };
         };
         /** @description File metadata including path and permissions */
@@ -1641,7 +1655,7 @@ export interface components {
             /** @description Independent overlay mounts inside one namespace. Each entry gets its own copy-on-write upper (or a direct/ro bind for rw/ro modes). bubblewrap applies mounts shallow-first, so a nested overlay (for example `/workspace` on top of a `/` root overlay) shadows its ancestors within its own subtree. Paths must be absolute, unique, and clean (no trailing slash, `.` or `..` segments); at most 16 mounts per session (including the legacy `workspace`). */
             overlays?: components["schemas"]["IsolatedOverlaySpec"][];
             extra_writable?: string[];
-            /** @description Additional host paths bind-mounted into the namespace with an explicit source-to-destination mapping. Unlike extra_writable (which mounts source==destination read-write), each entry may map a distinct destination path and be mounted read-only. The source path of every entry must fall within the configured writable allowlist. */
+            /** @description Additional host paths bind-mounted into the namespace with an explicit source-to-destination mapping. Unlike extra_writable (which mounts source==destination read-write), each entry may map a distinct destination path and be mounted read-only. The source path of every entry must fall within the configured writable allowlist. The session files API also serves paths under each dest from the host source directory: reads and writes are live in both directions, symlinked entries are followed like the namespace view, and writes are rejected for readonly binds. Destinations must be unique across entries and must not be a strict ancestor of another mount destination (binds, overlays, extra_writable) or fall under /run, /dev, or /proc; such overlapping configurations are rejected at session creation. */
             binds?: components["schemas"]["BindMount"][];
             share_net?: boolean;
             env_passthrough?: components["schemas"]["EnvPassthroughSpec"];

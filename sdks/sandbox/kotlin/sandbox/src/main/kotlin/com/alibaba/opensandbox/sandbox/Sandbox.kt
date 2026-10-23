@@ -18,11 +18,11 @@ package com.alibaba.opensandbox.sandbox
 
 import com.alibaba.opensandbox.sandbox.config.ConnectionConfig
 import com.alibaba.opensandbox.sandbox.domain.exceptions.InvalidArgumentException
-import com.alibaba.opensandbox.sandbox.domain.exceptions.SandboxError
 import com.alibaba.opensandbox.sandbox.domain.exceptions.SandboxException
 import com.alibaba.opensandbox.sandbox.domain.exceptions.SandboxInternalException
 import com.alibaba.opensandbox.sandbox.domain.exceptions.SandboxReadyTimeoutException
 import com.alibaba.opensandbox.sandbox.domain.models.diagnostics.DiagnosticContent
+import com.alibaba.opensandbox.sandbox.domain.models.diagnostics.DiagnosticContext
 import com.alibaba.opensandbox.sandbox.domain.models.execd.DEFAULT_EGRESS_PORT
 import com.alibaba.opensandbox.sandbox.domain.models.execd.DEFAULT_EXECD_PORT
 import com.alibaba.opensandbox.sandbox.domain.models.sandboxes.CredentialProxyConfig
@@ -160,27 +160,15 @@ class Sandbox internal constructor(
     /**
      * Provides access to sandbox-scoped Credential Vault operations.
      *
-     * Credential Vault writes go directly to the sandbox egress sidecar and
+     * Direct sidecar sandboxes write straight to the sandbox egress sidecar and
      * preserve endpoint routing/auth headers resolved for this sandbox.
-     *
-     * @throws SandboxException if this sandbox is template-backed: template-backed
-     * sandboxes have no sandbox-side egress sidecar
+     * Template-backed sandboxes route through the lifecycle control plane
+     * (OSEP-0022): the server relays vault revisions to the egress-held vault
+     * over the FastPath handler relay, so the ack is synchronous and values
+     * never appear on any read. A 412 patch failure means another writer won
+     * the revision — re-read and retry with the fresh `expectedRevision`.
      */
-    fun credentialVault(): CredentialVault {
-        if (origin == SandboxOrigin.TEMPLATE) {
-            throw SandboxException(
-                message =
-                    "Credential Vault is not available for template-backed sandboxes: " +
-                        "they have no sandbox-side egress sidecar.",
-                error =
-                    SandboxError(
-                        SandboxError.UNEXPECTED_RESPONSE,
-                        "Credential Vault is not available for template-backed sandboxes",
-                    ),
-            )
-        }
-        return credentialVaultService
-    }
+    fun credentialVault(): CredentialVault = credentialVaultService
 
     /**
      * Provides access to sandbox diagnostic log and event descriptors.
@@ -594,6 +582,11 @@ class Sandbox internal constructor(
             }
         }
 
+        private fun elapsedMillis(startNanos: Long): Long {
+            val elapsed = (System.nanoTime() - startNanos) / 1_000_000L
+            return if (elapsed < 0L) 0L else elapsed
+        }
+
         /**
          * Connects to an existing sandbox instance by ID.
          *
@@ -707,6 +700,11 @@ class Sandbox internal constructor(
      */
     fun getMetrics(): SandboxMetrics {
         return metricsService.getMetrics(id)
+    }
+
+    /** Gets the sandbox's runtime backend and diagnostic identifiers. */
+    fun getDiagnosticContext(): DiagnosticContext {
+        return diagnosticsService.getContext(id)
     }
 
     /**

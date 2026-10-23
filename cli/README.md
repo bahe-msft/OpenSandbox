@@ -266,9 +266,7 @@ osb sandbox metrics <sandbox-id> --watch -o raw
 
 ### Pause a sandbox
 
-Pause is asynchronous. `Pause request accepted` confirms that the server accepted
-the request, not that the sandbox has reached the `Paused` state. Poll the sandbox
-until the transition finishes:
+Pause is asynchronous. `Pause request accepted` confirms that the server accepted the request, not that the sandbox has reached the `Paused` state. Poll the sandbox until the transition finishes:
 
 ```bash
 osb sandbox pause <sandbox-id>
@@ -322,6 +320,17 @@ osb command session run <sandbox-id> <session-id> -o raw -- sh -c 'echo $FOO'
 osb command session delete <sandbox-id> <session-id> -o json
 ```
 
+### Open an interactive terminal
+
+`osb terminal` attaches your current terminal to a real PTY inside the sandbox (colors, `stty`, and resize all behave like a local shell). Exit the remote shell (or press Ctrl-D) to leave; the remote exit code becomes the command's exit code.
+
+```bash
+osb terminal <sandbox-id>
+osb terminal <sandbox-id> -w /workspace
+```
+
+Requires an interactive TTY, and is supported on Unix, macOS, and Linux. If the connection drops while the shell is still running, the session is kept server-side and its id is printed so it can be inspected or removed via the execd API; a clean exit tears the session down.
+
 ### Work with files
 
 ```bash
@@ -333,10 +342,7 @@ osb file replace <sandbox-id> /workspace/app.py --old old --new new -o json
 osb file chmod <sandbox-id> /workspace/script.sh --mode 755 -o json
 ```
 
-Downloads replace regular files only on success; a failed or interrupted
-download preserves any existing regular file. Existing devices and named pipes
-receive data directly. Stdout aliases (such as `/dev/stdout`) stream only the file
-bytes, without a success message. See the [CLI guide](../docs/cli/index.md#work-with-files).
+Downloads replace regular files only on success; a failed or interrupted download preserves any existing regular file. Existing devices and named pipes receive data directly. Stdout aliases (such as `/dev/stdout`) stream only the file bytes, without a success message. See the [CLI guide](../docs/cli/index.md#work-with-files).
 
 ### Manage runtime egress policy
 
@@ -360,9 +366,7 @@ osb command run <sandbox-id> -o raw -- curl -I https://pypi.org
 
 ### Manage Credential Vault
 
-Credential Vault operations call the sandbox egress sidecar through the Python SDK.
-Create the sandbox with `--credential-proxy` and an explicit network policy before
-writing vault state.
+Credential Vault operations call the sandbox egress sidecar through the Python SDK. Create the sandbox with `--credential-proxy` and an explicit network policy before writing vault state.
 
 ```bash
 osb credential-vault create <sandbox-id> --file vault.yaml -o json
@@ -373,14 +377,14 @@ osb credential-vault binding list <sandbox-id> -o json
 osb credential-vault delete <sandbox-id> -o json
 ```
 
-Use `--file -` to read a JSON/YAML payload from stdin. Do not pass plaintext
-credential values as command-line flags; keep them in the payload stream or file.
+Use `--file -` to read a JSON/YAML payload from stdin. Do not pass plaintext credential values as command-line flags; keep them in the payload stream or file.
 
 ### Collect diagnostics
 
-Use the stable diagnostics commands for API-backed log and event descriptors.
+Use context to identify the runtime backend, then collect log and event descriptors.
 
 ```bash
+osb diagnostics context <sandbox-id> -o json
 osb diagnostics events <sandbox-id> --scope runtime -o raw
 osb diagnostics events <sandbox-id> --scope all -o raw
 osb diagnostics logs <sandbox-id> --scope container -o raw
@@ -389,7 +393,9 @@ osb diagnostics events <sandbox-id> --scope runtime -o json
 osb diagnostics logs <sandbox-id> --scope container -o yaml
 ```
 
-`--scope` is required for stable diagnostics. The built-in server supports
+`context` returns backend routing information without connecting to execd and
+supports table, JSON, and YAML output. `--scope` is required for logs/events.
+The built-in server supports
 `container` and `all` for logs, and `runtime` and `all` for events. It returns
 `DIAGNOSTICS_SCOPE_UNSUPPORTED` for unavailable scopes, including lifecycle events.
 Best-effort scopes may include a `warnings` field when the backend can only
@@ -399,8 +405,7 @@ temporary URL. Structured CLI output follows the SDK/Python field style, for
 example `content_url`, `content_length`, and `expires_at`. Older server builds
 may still return `DIAGNOSTICS_NOT_IMPLEMENTED` for scoped diagnostics.
 
-Legacy DevOps diagnostics remain experimental. Prefer `osb diagnostics logs/events`
-for stable API-backed log and event collection.
+Legacy DevOps diagnostics remain experimental. Prefer `osb diagnostics logs/events` for stable API-backed log and event collection.
 
 ```bash
 osb devops inspect <sandbox-id> -o raw
@@ -434,6 +439,7 @@ The main command groups are:
 - `osb template`: golden-image template builds
 - `osb snapshot`: snapshot management
 - `osb command`: command execution and persistent sessions
+- `osb terminal`: interactive PTY terminal into a sandbox
 - `osb file`: file and directory operations
 - `osb egress`: runtime egress policy
 - `osb diagnostics`: stable diagnostics logs and events

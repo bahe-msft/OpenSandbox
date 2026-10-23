@@ -358,6 +358,19 @@ Optional OTLP metrics export for Server HTTP requests and SDK-reported create la
 
 ---
 
+## `[otel]`
+
+Optional OpenTelemetry metrics export for SDK-reported sandbox creation latency (`POST /v1/metrics/events`). Off by default; the ingestion endpoint still accepts events and records them as noop.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable OTLP metrics export. |
+| `endpoint` | string \| omitted | `null` | OTLP HTTP metrics endpoint; when omitted, uses `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`. |
+| `service_name` | string | `"opensandbox-server"` | `service.name` resource attribute. |
+| `export_interval_millis` | integer | `60000` | Export interval (≥ 1000). |
+
+---
+
 ## Environment variables (outside TOML)
 
 | Variable | Where used | Description |

@@ -301,8 +301,7 @@ RunCommandRequest request = RunCommandRequest.builder()
 sandbox.commands().run(request);
 ```
 
-To execute a native program without shell parsing, pass an argument list. On Linux,
-this example prints literal `$HOME` and keeps `hello world` as one argument:
+To execute a native program without shell parsing, pass an argument list. On Linux, this example prints literal `$HOME` and keeps `hello world` as one argument:
 
 ```java
 sandbox.commands().run(RunCommandRequest.builder()
@@ -565,29 +564,17 @@ ConnectionConfig sharedConfig = ConnectionConfig.builder()
 
 ### 2. Automatic retries
 
-The SDK retries transient failures automatically. `ConnectionConfig` installs a
-`RetryInterceptor` (`com.alibaba.opensandbox.sandbox.transport.RetryPolicy`) on the
-SDK's non-streaming HTTP clients.
+The SDK retries transient failures automatically. `ConnectionConfig` installs a `RetryInterceptor` (`com.alibaba.opensandbox.sandbox.transport.RetryPolicy`) on the SDK's non-streaming HTTP clients.
 
 Default behavior:
 
-- **Enabled by default.** Idempotent methods (`GET/HEAD/PUT/DELETE/OPTIONS`) are
-  retried on `429`, `502`, `503`, and on pre-send transport failures (DNS, TCP
-  connect, TLS handshake).
-- **`POST`/`PATCH` are never retried on a status code by default**, since the
-  request may already have been applied server-side. Pre-send transport failures
-  (before any byte is written) are still retried for these methods.
-- Up to `3` retries with decorrelated-jitter exponential backoff, honoring a server
-  `Retry-After` header (capped at 60s).
-- **SSE / streaming requests bypass all automatic retry** because their bodies
-  are not safely replayable. The SSE client also disables OkHttp's built-in
-  connection recovery to prevent a streaming command POST from being replayed.
+- **Enabled by default.** Idempotent methods (`GET/HEAD/PUT/DELETE/OPTIONS`) are retried on `429`, `502`, `503`, and on pre-send transport failures (DNS, TCP connect, TLS handshake).
+- **`POST`/`PATCH` are never retried on a status code by default**, since the request may already have been applied server-side. Pre-send transport failures (before any byte is written) are still retried for these methods.
+- Up to `3` retries with decorrelated-jitter exponential backoff, honoring a server `Retry-After` header (capped at 60s).
+- **SSE / streaming requests bypass all automatic retry** because their bodies are not safely replayable. The SSE client also disables OkHttp's built-in connection recovery to prevent a streaming command POST from being replayed.
 
 ::: warning Behavior change
-SDK-policy retries are on by default. This can increase the number of HTTP attempts
-and tail latency compared to earlier SDK versions. To disable the new SDK-policy
-retries, use `RetryPolicy.disabled()`; non-streaming requests then fall back to
-OkHttp's pre-existing built-in connection recovery.
+SDK-policy retries are on by default. This can increase the number of HTTP attempts and tail latency compared to earlier SDK versions. To disable the new SDK-policy retries, use `RetryPolicy.disabled()`; non-streaming requests then fall back to OkHttp's pre-existing built-in connection recovery.
 :::
 
 ```java
@@ -677,14 +664,9 @@ Sandbox sandbox = Sandbox.builder()
 
 ### 4. Runtime Egress Policy Updates
 
-Runtime egress reads and patches go directly to the sandbox egress sidecar.
-The SDK first resolves the sandbox endpoint on port `18080`, then calls the sidecar `/policy` API.
+Runtime egress reads and patches go directly to the sandbox egress sidecar. The SDK first resolves the sandbox endpoint on port `18080`, then calls the sidecar `/policy` API.
 
-Template-backed sandboxes have no sandbox-side egress sidecar: the SDK detects
-them via the server's `OPEN-SANDBOX-ORIGIN` response header (see
-[Fsb Template Management](#fsb-template-management)) and routes the same
-`getEgressPolicy` / `patchEgressRules` / `deleteEgressRules` calls through the
-lifecycle control plane (`/sandboxes/{sandboxId}/networkpolicy`) instead.
+Template-backed sandboxes have no sandbox-side egress sidecar: the SDK detects them via the server's `OPEN-SANDBOX-ORIGIN` response header (see [Fsb Template Management](#fsb-template-management)) and routes the same `getEgressPolicy` / `patchEgressRules` / `deleteEgressRules` calls through the lifecycle control plane (`/sandboxes/{sandboxId}/networkpolicy`) instead.
 
 Patch uses merge semantics:
 - Incoming rules take priority over existing rules with the same `target`.
@@ -705,10 +687,7 @@ sandbox.patchEgressRules(
 
 ### 5. Credential Vault
 
-Credential Vault injects outbound credentials from the egress sidecar while
-keeping real secrets out of sandbox environment variables, commands, files, and
-logs. Create the sandbox with `credentialProxyEnabled(true)`, then write
-credentials and bindings through `sandbox.credentialVault()`.
+Credential Vault injects outbound credentials from the egress sidecar while keeping real secrets out of sandbox environment variables, commands, files, and logs. Create the sandbox with `credentialProxyEnabled(true)`, then write credentials and bindings through `sandbox.credentialVault()`.
 
 ```java
 import com.alibaba.opensandbox.sandbox.domain.models.sandboxes.Credential;
@@ -766,12 +745,10 @@ sandbox.credentialVault().create(
 );
 ```
 
-See [Credential Vault](/guides/credential-vault) for auth types, binding
-guidance, and Git/curl examples.
+See [Credential Vault](/guides/credential-vault) for auth types, binding guidance, and Git/curl examples.
 
 ::: warning
-Credential Vault is unavailable for template-backed sandboxes: they have no
-sandbox-side egress sidecar. `sandbox.credentialVault()` throws for them.
+Credential Vault is unavailable for template-backed sandboxes: they have no sandbox-side egress sidecar. `sandbox.credentialVault()` throws for them.
 :::
 
 ## Fsb Template Management
@@ -829,10 +806,7 @@ manager.listTemplates(
 
 ### Creating a Sandbox from a Template
 
-Use `Sandbox.fromTemplate()` to create a sandbox from a `Succeeded` template.
-Template mode fixes the workload shape on the server: only `metadata`,
-`networkPolicy` and `extensions` may accompany the template id, and `timeout`
-is required.
+Use `Sandbox.fromTemplate()` to create a sandbox from a `Succeeded` template. Template mode fixes the workload shape on the server: only `metadata`, `networkPolicy` and `extensions` may accompany the template id, and `timeout` is required.
 
 ```java
 import java.time.Duration;
@@ -856,8 +830,4 @@ Sandbox sandbox = Sandbox.fromTemplate()
     .create();
 ```
 
-The created sandbox reports `SandboxOrigin.TEMPLATE` from `sandbox.getOrigin()`.
-Template-backed sandboxes have no egress sidecar, so the SDK routes their
-egress policy through the lifecycle control plane automatically — including
-`Sandbox.connector()` and `Sandbox.resumer()` re-attach flows, which detect
-the origin from the server's `OPEN-SANDBOX-ORIGIN` response header.
+The created sandbox reports `SandboxOrigin.TEMPLATE` from `sandbox.getOrigin()`. Template-backed sandboxes have no egress sidecar, so the SDK routes their egress policy through the lifecycle control plane automatically — including `Sandbox.connector()` and `Sandbox.resumer()` re-attach flows, which detect the origin from the server's `OPEN-SANDBOX-ORIGIN` response header.

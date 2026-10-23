@@ -53,7 +53,8 @@ public sealed class DefaultAdapterFactory : IAdapterFactory
 
         return new LifecycleStack
         {
-            Sandboxes = sandboxes
+            Sandboxes = sandboxes,
+            Diagnostics = new DiagnosticsAdapter(clientWrapper)
         };
     }
 
@@ -137,7 +138,8 @@ public sealed class DefaultAdapterFactory : IAdapterFactory
 
         return new NetworkPolicyStack
         {
-            Egress = new NetworkPolicyAdapter(clientWrapper, options.SandboxId)
+            Egress = networkPolicyAdapter,
+            CredentialVault = networkPolicyAdapter
         };
     }
 

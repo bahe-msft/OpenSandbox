@@ -39,6 +39,7 @@ class TestRootCLI:
             "template",
             "snapshot",
             "command",
+            "terminal",
             "file",
             "egress",
             "credential-vault",

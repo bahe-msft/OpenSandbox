@@ -29,7 +29,6 @@ from opensandbox_server.integrations.renew_intent.logutil import (
     RENEW_EVENT_FAILED,
     RENEW_EVENT_SUCCEEDED,
     RENEW_SOURCE_REDIS_QUEUE,
-    RENEW_SOURCE_SERVER_PROXY,
     renew_bundle,
 )
 from opensandbox_server.tenants.context import reset_resolved_sandbox_ns, set_observed_namespace

@@ -48,58 +48,6 @@ from opensandbox.services.egress import Egress
 logger = logging.getLogger(__name__)
 
 
-def _dump_credentials(
-    items: list[Credential | dict[str, object]],
-) -> list[dict[str, object]]:
-    return [
-        Credential.model_validate(item).model_dump(by_alias=True, exclude_none=True)
-        for item in items
-    ]
-
-
-def _dump_bindings(
-    items: list[CredentialBinding | dict[str, object]],
-) -> list[dict[str, object]]:
-    return [
-        CredentialBinding.model_validate(item).model_dump(
-            by_alias=True, exclude_none=True
-        )
-        for item in items
-    ]
-
-
-def _dump_credential_mutations(
-    mutations: CredentialMutationSet | dict[str, object] | None,
-) -> dict[str, object] | None:
-    if mutations is None:
-        return None
-    parsed = CredentialMutationSet.model_validate(mutations)
-    out: dict[str, object] = {}
-    if parsed.add is not None:
-        out["add"] = _dump_credentials(parsed.add)
-    if parsed.replace is not None:
-        out["replace"] = _dump_credentials(parsed.replace)
-    if parsed.delete is not None:
-        out["delete"] = list(parsed.delete)
-    return out
-
-
-def _dump_binding_mutations(
-    mutations: CredentialBindingMutationSet | dict[str, object] | None,
-) -> dict[str, object] | None:
-    if mutations is None:
-        return None
-    parsed = CredentialBindingMutationSet.model_validate(mutations)
-    out: dict[str, object] = {}
-    if parsed.add is not None:
-        out["add"] = _dump_bindings(parsed.add)
-    if parsed.replace is not None:
-        out["replace"] = _dump_bindings(parsed.replace)
-    if parsed.delete is not None:
-        out["delete"] = list(parsed.delete)
-    return out
-
-
 class EgressAdapter(Egress):
     """Direct egress sidecar adapter using the generated egress client."""
 
@@ -153,8 +101,8 @@ class EgressAdapter(Egress):
     ) -> CredentialVaultState:
         try:
             body = {
-                "credentials": _dump_credentials(credentials),
-                "bindings": _dump_bindings(bindings),
+                "credentials": dump_credentials(credentials),
+                "bindings": dump_bindings(bindings),
             }
             payload = await self._request_json(
                 "POST",
@@ -196,10 +144,10 @@ class EgressAdapter(Egress):
             body: dict[str, object] = {}
             if expected_revision is not None:
                 body["expectedRevision"] = expected_revision
-            credential_mutations = _dump_credential_mutations(credentials)
+            credential_mutations = dump_credential_mutation_set(credentials)
             if credential_mutations is not None:
                 body["credentials"] = credential_mutations
-            binding_mutations = _dump_binding_mutations(bindings)
+            binding_mutations = dump_binding_mutation_set(bindings)
             if binding_mutations is not None:
                 body["bindings"] = binding_mutations
             payload = await self._request_json(

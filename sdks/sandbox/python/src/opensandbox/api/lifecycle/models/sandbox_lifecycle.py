@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from ..models.idle_policy import IdlePolicy
     from ..models.lifecycle_hook import LifecycleHook
     from ..models.periodic_lifecycle_hook import PeriodicLifecycleHook
+    from ..models.renewal_policy import RenewalPolicy
 
 
 T = TypeVar("T", bound="SandboxLifecycle")
@@ -104,6 +105,7 @@ class SandboxLifecycle:
         from ..models.idle_policy import IdlePolicy
         from ..models.lifecycle_hook import LifecycleHook
         from ..models.periodic_lifecycle_hook import PeriodicLifecycleHook
+        from ..models.renewal_policy import RenewalPolicy
 
         d = dict(src_dict)
         _pre_start = d.pop("preStart", UNSET)

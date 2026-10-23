@@ -141,6 +141,9 @@ IMG_FASTLET="${IMAGE_FASTLET:-opensandbox/fsb-fastlet:dev}"
 IMG_FASTLET_PROXY="${IMAGE_FASTLET_PROXY:-opensandbox/fsb-fastlet-proxy:dev}"
 IMG_JANITOR="${IMAGE_JANITOR:-opensandbox/fsb-janitor:dev}"
 IMG_BUILDER="${IMAGE_BUILDER:-opensandbox/fsb-sandboxtemplate-builder:dev}"
+# Shared build base for the builder image (built by build-fast-sandbox.sh
+# during build_images; rebuilt here only if missing).
+IMG_OCI_TOOLS="${IMAGE_OCI_TOOLS:-opensandbox/oci-tools:dev}"
 IMG_RUNTIME="${IMAGE_RUNTIME:-opensandbox/fsb-firecracker-runtime:dev}"
 IMG_EGRESS="${EGRESS_IMAGE:-docker.io/opensandbox/egress:latest}"
 
@@ -202,7 +205,8 @@ ACTION=""
 log() { printf '\033[1;34m[fast-sandbox-env]\033[0m %s\n' "$*" | tee -a "$WORK/run.log" >&2; }
 die() { printf '\033[1;31m[fast-sandbox-env] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 pass() { printf '\033[1;32m[fast-sandbox-env] PASS\033[0m %s\n' "$*" | tee -a "$WORK/run.log" >&2; }
-fail() { printf '\033[1;31m[fast-sandbox-env] FAIL\033[0m %s\n' "$*" >&2; exit 1; }
+# fail dumps before exiting: an explicit `exit` does not fire the ERR trap.
+fail() { printf '\033[1;31m[fast-sandbox-env] FAIL\033[0m %s\n' "$*" >&2; failure_dump "${STAGE_CUR_LABEL:-$ACTION}" || true; exit 1; }
 highlight() { printf '\033[1;36m%s\033[0m\n' "$*"; }
 
 now_ms() { date +%s%N; }   # GNU date (Linux); the script targets a Linux KVM host
@@ -211,12 +215,14 @@ ms2s() { awk -v ms="$1" 'BEGIN { printf "%.1f", ms / 1000 }'; }
 declare -a STAGE_ORDER=()
 declare -a STAGE_MS_LIST=()
 STAGE_CUR=""
+STAGE_CUR_LABEL=""
 STAGE_START_NS=0
 STAGE_N=0
 
 stage_begin() {
 	STAGE_N=$((STAGE_N + 1))
 	STAGE_CUR="$1"
+	STAGE_CUR_LABEL="$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_')"
 	STAGE_START_NS="$(now_ms)"
 	printf '\n\033[1;36m==> [%d] %s\033[0m\n' "$STAGE_N" "$1"
 }
@@ -323,13 +329,43 @@ failure_dump() {
 		kubectl logs -n "$NS" deploy/fast-sandbox-controller --tail=80 2>&1 || true
 		echo "--- firecracker-runtime logs (tail) ---"
 		kubectl logs -n "$NS" daemonset/firecracker-runtime --all-containers --tail=80 2>&1 || true
-		echo "--- fastlet logs (tail) ---"
-		kubectl logs -n "$RESOURCE_NS" -l app=sandbox-fastlet --tail=80 2>&1 || true
+		# --all-containers: the label selector alone logs only the first
+		# container and drops egress. Deep tail: failure loops flood the
+		# window and bury the pre-incident history.
+		echo "--- fastlet pod logs, every container (deep tail) ---"
+		kubectl logs -n "$RESOURCE_NS" -l app=sandbox-fastlet \
+			--all-containers --prefix --timestamps --tail=15000 2>&1 || true
+		echo "--- fastlet pod logs, previous container instances (crashes) ---"
+		for pod in $(kubectl -n "$RESOURCE_NS" get pods -l app=sandbox-fastlet -o name 2>/dev/null); do
+			for container in $(kubectl -n "$RESOURCE_NS" get "$pod" -o jsonpath='{.spec.containers[*].name}' 2>/dev/null); do
+				prev="$(kubectl -n "$RESOURCE_NS" logs "$pod" -c "$container" --previous --timestamps --tail=200 2>&1 || true)"
+				case "$prev" in *"no previous container"*) continue ;; esac
+				echo "### ${pod##*/} container=$container (previous)"
+				printf '%s\n' "$prev"
+			done
+		done
 		echo "--- builder pods + logs (tail) ---"
 		kubectl get pods -n "$RESOURCE_NS" -l sandbox.fast.io/sandboxtemplate --show-labels 2>&1 || true
 		kubectl logs -n "$RESOURCE_NS" -l sandbox.fast.io/sandboxtemplate --tail=80 2>&1 || true
 		echo "--- SandboxTemplates (status carries the build failure reason) ---"
 		kubectl get sandboxtemplates -n "$RESOURCE_NS" -o yaml 2>&1 || true
+		# Sandbox CR states: a pause/snapshot/resume failure shows up as a
+		# stuck or failed status condition here, with the phase the poll
+		# never reached.
+		echo "--- Sandbox CRs (status only) ---"
+		kubectl get sandboxes -n "$RESOURCE_NS" -o json 2>/dev/null \
+			| jq -c '.items[] | {name: .metadata.name, phase: .status.phase, conditions: .status.conditions, infra: .status.infraComponents}' 2>&1 || true
+		# A mount-namespace mismatch (driver staging path invisible to
+		# egress) shows up as ENOENT on the egress side only.
+		for pod in $(kubectl -n "$RESOURCE_NS" get pods -l app=sandbox-fastlet -o name 2>/dev/null); do
+			echo "### ${pod##*/}: snapshot staging visibility"
+			echo "-- fastlet view:"
+			kubectl -n "$RESOURCE_NS" exec "$pod" -c fastlet -- \
+				ls -la /var/lib/fast-sandbox/firecracker/snapshots 2>&1 | tail -8 || true
+			echo "-- egress view:"
+			kubectl -n "$RESOURCE_NS" exec "$pod" -c egress -- \
+				ls -la /var/lib/fast-sandbox/firecracker/snapshots 2>&1 | tail -8 || true
+		done
 		echo "--- recent events ($RESOURCE_NS) ---"
 		kubectl get events -n "$RESOURCE_NS" --sort-by=.lastTimestamp 2>&1 | tail -30 || true
 		echo "--- OpenSandbox pods ($OSB_NS) ---"
@@ -470,7 +506,7 @@ preflight() {
 		if (( avail_kb < min_free_kb )); then
 			die "$target has $((avail_kb / 1024 / 1024))G free; at least 20G is required (built images, XFS StateRoot, RustFS artifacts). Free space (docker system prune / old kind clusters) or point WORK / RUSTFS_DATA / XFS_LOOP_FILE at a bigger volume"
 		fi
-		log "disk headroom: $target has $((avail_kb / 1024 / 1024 / 1024))G free"
+		log "disk headroom: $target has $((avail_kb / 1024 / 1024))G free"
 	done
 	# Fail fast on busy host ports instead of a cryptic docker/kind bind error.
 	local port
@@ -1052,8 +1088,16 @@ template_failed() {
 
 template_up() {
 	log "building the sandboxtemplate-builder image"
+	if ! docker image inspect "$IMG_OCI_TOOLS" >/dev/null 2>&1; then
+		log "building shared oci build base ($IMG_OCI_TOOLS)"
+		# shellcheck disable=SC2086
+		docker build ${DOCKER_BUILD_FLAGS:-} --quiet -t "$IMG_OCI_TOOLS" \
+			-f "$FSB_DIR/build/Dockerfile.oci-tools" "$FSB_DIR" >/dev/null \
+			|| die "oci-tools image build failed"
+	fi
 	# shellcheck disable=SC2086
-	docker build ${DOCKER_BUILD_FLAGS:-} --quiet -t "$IMG_BUILDER" \
+	docker build ${DOCKER_BUILD_FLAGS:-} --quiet \
+		--build-arg OCI_TOOLS_IMAGE="$IMG_OCI_TOOLS" -t "$IMG_BUILDER" \
 		-f "$FSB_DIR/build/Dockerfile.sandboxtemplate-builder" "$FSB_DIR" >/dev/null \
 		|| die "sandboxtemplate-builder image build failed"
 	kind load docker-image "$IMG_BUILDER" --name "$KIND_CLUSTER" >/dev/null
@@ -1459,10 +1503,9 @@ verify_one_sandbox() { # <label> <ping-budget-ms>
 	while :; do
 		route="$(osb_api sandbox endpoint "$VERIFY_ID" --port 44772 -o json 2>/dev/null \
 			| jq -r '.headers["OpenSandbox-Ingress-To"] // empty')"
-		if [[ -n "$route" ]]; then
-			code="$(curl -sS -m 5 -o /dev/null -w '%{http_code}' \
-				-H "OpenSandbox-Ingress-To: $route" "$GATEWAY_URL/ping" 2>/dev/null || true)"
-			[[ "$code" == "200" ]] && break
+		[[ -n "$route" ]] && break
+		if (( $(now_ms) / 1000000 >= deadline_ms )); then
+			fail "gateway route for $VERIFY_ID did not publish within ${budget}ms"
 		fi
 		if (( $(now_ms) >= deadline )); then
 			fail "execd /ping did not return 200 within ${budget}ms (last code=${code:-none}, route=${route:-none})"

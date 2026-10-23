@@ -55,22 +55,10 @@ helm install opensandbox-controller manifests/charts/controller \
   --namespace opensandbox-system --create-namespace
 ```
 
-See [HELM-DEPLOYMENT.md](HELM-DEPLOYMENT.md) for values, upgrades, and the
-ingress-gateway/node-agent setup.
+See [HELM-DEPLOYMENT.md](HELM-DEPLOYMENT.md) for values, upgrades, and the ingress-gateway/node-agent setup.
 
 ## Source of truth
 
-- CRD YAML is generated from `kubernetes/apis/sandbox/v1alpha1` by
-  controller-gen into `kubernetes/config/crd/bases`, then synced into
-  `charts/base/files/crds.yaml` by `make helm-gen-crds` (run automatically by
-  `make manifests` from `kubernetes/`). Do not edit `files/crds.yaml` by hand.
-- The fast-sandbox CRDs (`charts/base/files/fast-sandbox-crds.yaml`) and the
-  companion images are derived from the upstream source pinned in
-  [`third-party/fast-sandbox.commit`](third-party/fast-sandbox.commit)
-  (Git-LFS-pointer style: repo + commit). Bump the `commit` line, then run
-  `manifests/release/build-fast-sandbox.sh --sync-crds` (or `make helm-gen-fast-sandbox-crds`
-  from `manifests/` for the CRDs alone) so the derived files match the pin.
-  Do not edit `files/fast-sandbox-crds.yaml` by hand.
-- The umbrella chart's `Chart.lock` must stay in sync with its `Chart.yaml`
-  dependencies; run `helm dependency update charts/opensandbox` after changing
-  dependency versions.
+- CRD YAML is generated from `kubernetes/apis/sandbox/v1alpha1` by controller-gen into `kubernetes/config/crd/bases`, then synced into `charts/base/files/crds.yaml` by `make helm-gen-crds` (run automatically by `make manifests` from `kubernetes/`). Do not edit `files/crds.yaml` by hand.
+- The fast-sandbox CRDs (`charts/base/files/fast-sandbox-crds.yaml`) and the companion images are derived from the upstream source pinned in [`third-party/fast-sandbox.commit`](third-party/fast-sandbox.commit) (Git-LFS-pointer style: repo + commit). Bump the `commit` line, then run `manifests/release/build-fast-sandbox.sh --sync-crds` (or `make helm-gen-fast-sandbox-crds` from `manifests/` for the CRDs alone) so the derived files match the pin. Do not edit `files/fast-sandbox-crds.yaml` by hand.
+- The umbrella chart's `Chart.lock` must stay in sync with its `Chart.yaml` dependencies; run `helm dependency update charts/opensandbox` after changing dependency versions.
