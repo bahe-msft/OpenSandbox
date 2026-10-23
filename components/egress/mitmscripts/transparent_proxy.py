@@ -110,7 +110,7 @@ def requestheaders(flow):
             return
         for name in list(flow.request.headers):
             lower = name.lower()
-            if lower.startswith("x-turn-") or lower.startswith("x-aks-sandbox-"):
+            if lower.startswith("x-aks-sandbox-"):
                 del flow.request.headers[name]
             elif lower in ("authorization", "proxy-authorization", "api-key", "x-api-key", "cookie"):
                 del flow.request.headers[name]

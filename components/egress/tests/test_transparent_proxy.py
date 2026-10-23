@@ -16,14 +16,27 @@ class TransparentProxyTest(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.token = Path(directory.name) / "token"
         self.token.write_text("identity-one\n")
-        environment = patch.dict(os.environ, {
-            "OPENSANDBOX_EGRESS_TRANSPARENT_PROXY_GATEWAY": "http://gateway.system.svc.cluster.local",
-            "OPENSANDBOX_EGRESS_TRANSPARENT_PROXY_TOKEN_FILE": str(self.token),
-        })
+        environment = patch.dict(
+            os.environ,
+            {
+                "OPENSANDBOX_EGRESS_TRANSPARENT_PROXY_GATEWAY": "http://gateway.system.svc.cluster.local",
+                "OPENSANDBOX_EGRESS_TRANSPARENT_PROXY_TOKEN_FILE": str(self.token),
+            },
+        )
         environment.start()
         self.addCleanup(environment.stop)
-        response = types.SimpleNamespace(make=lambda status, body: types.SimpleNamespace(status_code=status, body=body))
-        modules = patch.dict(sys.modules, {"mitmproxy": types.SimpleNamespace(ctx=None, http=types.SimpleNamespace(Response=response))})
+        response = types.SimpleNamespace(
+            make=lambda status, body: types.SimpleNamespace(status_code=status, body=body)
+        )
+        modules = patch.dict(
+            sys.modules,
+            {
+                "mitmproxy": types.SimpleNamespace(
+                    ctx=None,
+                    http=types.SimpleNamespace(Response=response),
+                ),
+            },
+        )
         modules.start()
         self.addCleanup(modules.stop)
         path = Path(__file__).parents[1] / "mitmscripts" / "transparent_proxy.py"
@@ -37,12 +50,23 @@ class TransparentProxyTest(unittest.TestCase):
     def new_flow(self):
         value = types.SimpleNamespace(
             request=types.SimpleNamespace(
-                host="github.com", host_header="github.com", scheme="https", port=443,
-                path="/owner/repo.git/git-upload-pack", stream=False, content=b"git body",
-                is_http2=False, is_http3=False,
-                headers={"x-aks-sandbox-identity": "forged", "authorization": "caller"},
+                host="github.com",
+                host_header="github.com",
+                scheme="https",
+                port=443,
+                path="/owner/repo.git/git-upload-pack",
+                stream=False,
+                content=b"git body",
+                is_http2=False,
+                is_http3=False,
+                headers={
+                    "x-aks-sandbox-identity": "forged",
+                    "authorization": "caller",
+                },
             ),
-            client_conn=types.SimpleNamespace(sni="github.com"), response=None, error=None,
+            client_conn=types.SimpleNamespace(sni="github.com"),
+            response=None,
+            error=None,
         )
         value.kill = lambda: setattr(value, "error", "killed")
         return value
@@ -57,6 +81,29 @@ class TransparentProxyTest(unittest.TestCase):
         self.assertEqual(self.flow.request.path, "/owner/repo.git/git-upload-pack")
         self.assertEqual(self.flow.request.content, b"git body")
         self.assertEqual(self.flow.request.headers, {"x-aks-sandbox-identity": "identity-one"})
+
+    def test_application_context_is_preserved_but_identity_and_credentials_are_not(self):
+        application_headers = {
+            "x-client-context": "application-context",
+            "x-workflow-session": "application-session",
+            "x-request-id": "request-one",
+        }
+        self.flow.request.headers.update(application_headers)
+        self.flow.request.headers.update({
+            "x-aks-sandbox-context": "forged-context",
+            "proxy-authorization": "caller-proxy-credential",
+            "api-key": "caller-key",
+            "x-api-key": "caller-key",
+            "cookie": "caller-cookie",
+        })
+
+        self.addon.requestheaders(self.flow)
+
+        self.assertIsNone(self.flow.response)
+        self.assertEqual(
+            self.flow.request.headers,
+            {**application_headers, "x-aks-sandbox-identity": "identity-one"},
+        )
 
     def test_unknown_length_modern_http_body_gets_chunk_framing(self):
         for protocol in ("is_http2", "is_http3"):
