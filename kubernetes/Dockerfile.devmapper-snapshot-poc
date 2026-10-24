@@ -1,0 +1,35 @@
+# Copyright 2026 Alibaba Group Holding Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+FROM golang:1.25.12 AS builder
+WORKDIR /workspace
+COPY go.mod go.mod
+COPY go.sum go.sum
+RUN go mod download
+COPY cmd/devmapper-snapshot-poc/ cmd/devmapper-snapshot-poc/
+COPY pkg/imagecommitter/ pkg/imagecommitter/
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/image-committer ./cmd/devmapper-snapshot-poc
+
+FROM ghcr.io/oras-project/oras:v1.3.0 AS oras
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl dmsetup jq python3 thin-provisioning-tools \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=oras /bin/oras /usr/local/bin/oras
+COPY --from=builder /out/image-committer /usr/local/bin/image-committer
+COPY cmd/devmapper-snapshot-poc/block_artifact.py /usr/local/bin/block-artifact
+COPY cmd/devmapper-snapshot-poc/acr-oras-login.sh /usr/local/bin/acr-oras-login
+RUN chmod 0755 /usr/local/bin/block-artifact /usr/local/bin/acr-oras-login
+ENTRYPOINT ["/usr/local/bin/image-committer"]
