@@ -336,8 +336,7 @@ export interface paths {
          *
          *     ## Authentication
          *
-         *     API Key authentication is required via:
-         *     - `OPEN-SANDBOX-API-KEY: <api-key>` header
+         *     Use `OPEN-SANDBOX-API-KEY` in API-key mode or `Authorization: Bearer <credential>` in exec-checker mode.
          */
         post: {
             parameters: {
@@ -1585,7 +1584,7 @@ export interface components {
          *     `snapshotId`, `networkPolicy`, `platform`, `volumes`, and
          *     `credentialProxy.enabled` must not be provided together with `poolRef`.
          *
-         *     **Note**: API Key authentication is required via the `OPEN-SANDBOX-API-KEY` header.
+         *     **Note**: Use the configured management authentication scheme (API key or externally validated bearer credential).
          */
         CreateSandboxRequest: {
             /**

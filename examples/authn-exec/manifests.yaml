@@ -1,0 +1,282 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: osb-authn
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: server
+  namespace: osb-authn
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: client
+  namespace: osb-authn
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: denied
+  namespace: osb-authn
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: runtime-reader
+  namespace: osb-authn
+rules:
+- apiGroups:
+  - sandbox.opensandbox.io
+  resources:
+  - batchsandboxes
+  - pools
+  - sandboxsnapshots
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: runtime-reader
+  namespace: osb-authn
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: runtime-reader
+subjects:
+- kind: ServiceAccount
+  name: server
+  namespace: osb-authn
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: osb-authn-token-reviewer
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: osb-authn-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: osb-authn-token-reviewer
+subjects:
+- kind: ServiceAccount
+  name: server
+  namespace: osb-authn
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: server-config
+  namespace: osb-authn
+data:
+  config.toml: '[server]
+
+    port = 8080
+
+    authn_config = "/etc/opensandbox/authn.toml"
+
+    [runtime]
+
+    type = "kubernetes"
+
+    execd_image = "opensandbox/execd:v1.1.0"
+
+    [kubernetes]
+
+    namespace = "osb-authn"
+
+    [store]
+
+    path = "/data/osb.db"
+
+    '
+  authn.toml: '[exec]
+
+    command = ["/app/.venv/bin/python", "/opt/osb-authn/checker.py", "--config", "/etc/opensandbox/authn.toml"]
+
+    timeout_seconds = 3
+
+
+    [provider]
+
+    audience = "opensandbox"
+
+    allowed_service_accounts = ["system:serviceaccount:osb-authn:client"]
+
+    '
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opensandbox-server
+  namespace: osb-authn
+spec:
+  selector:
+    matchLabels:
+      app: osb-authn-server
+  template:
+    metadata:
+      labels:
+        app: osb-authn-server
+    spec:
+      serviceAccountName: server
+      containers:
+      - name: server
+        image: opensandbox-authn:dev
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 2
+          periodSeconds: 2
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: '1'
+            memory: 512Mi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/opensandbox/config.toml
+          subPath: config.toml
+          readOnly: true
+        - name: data
+          mountPath: /data
+        - name: config
+          mountPath: /etc/opensandbox/authn.toml
+          subPath: authn.toml
+          readOnly: true
+        - name: checker
+          mountPath: /opt/osb-authn
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: server-config
+      - name: data
+        emptyDir: {}
+      - name: checker
+        configMap:
+          name: authn-checker
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensandbox-server
+  namespace: osb-authn
+spec:
+  selector:
+    app: osb-authn-server
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client
+  namespace: osb-authn
+spec:
+  selector:
+    matchLabels:
+      app: osb-authn-client
+  template:
+    metadata:
+      labels:
+        app: osb-authn-client
+    spec:
+      serviceAccountName: client
+      automountServiceAccountToken: false
+      containers:
+      - name: client
+        image: opensandbox-authn:dev
+        imagePullPolicy: Never
+        command:
+        - python
+        - -c
+        - import time; time.sleep(3600)
+        volumeMounts:
+        - name: credentials
+          mountPath: /run/identity
+          readOnly: true
+        - name: client
+          mountPath: /poc
+          readOnly: true
+      volumes:
+      - name: credentials
+        projected:
+          sources:
+          - serviceAccountToken:
+              audience: opensandbox
+              expirationSeconds: 600
+              path: token
+          - serviceAccountToken:
+              audience: not-opensandbox
+              expirationSeconds: 600
+              path: wrong-audience
+      - name: client
+        configMap:
+          name: client-code
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: denied
+  namespace: osb-authn
+spec:
+  selector:
+    matchLabels:
+      app: osb-authn-denied
+  template:
+    metadata:
+      labels:
+        app: osb-authn-denied
+    spec:
+      serviceAccountName: denied
+      automountServiceAccountToken: false
+      containers:
+      - name: client
+        image: opensandbox-authn:dev
+        imagePullPolicy: Never
+        command:
+        - python
+        - -c
+        - import time; time.sleep(3600)
+        volumeMounts:
+        - name: credentials
+          mountPath: /run/identity
+          readOnly: true
+        - name: client
+          mountPath: /poc
+          readOnly: true
+      volumes:
+      - name: credentials
+        projected:
+          sources:
+          - serviceAccountToken:
+              audience: opensandbox
+              expirationSeconds: 600
+              path: token
+      - name: client
+        configMap:
+          name: client-code

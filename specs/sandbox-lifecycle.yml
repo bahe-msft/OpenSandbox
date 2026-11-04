@@ -23,7 +23,9 @@ info:
 
     ## Authentication
 
-    API Key authentication is required for all operations:
+    Management authentication uses the server's configured mode. With an
+    external authentication checker, send `Authorization: Bearer <credential>`;
+    the configured executable decides management access. Otherwise use API-key authentication:
 
     1. **HTTP Header**
        ```
@@ -41,6 +43,7 @@ servers:
     description: Local development
 security:
   - apiKeyAuth: []
+  - managementBearerAuth: []
 tags:
   - name: Sandboxes
     description: Provision and transition sandboxes through their lifecycle
@@ -667,8 +670,7 @@ paths:
 
         ## Authentication
 
-        API Key authentication is required via:
-        - `OPEN-SANDBOX-API-KEY: <api-key>` header
+        Use `OPEN-SANDBOX-API-KEY` in API-key mode or `Authorization: Bearer <credential>` in exec-checker mode.
       requestBody:
         required: true
         content:
@@ -1446,6 +1448,10 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 components:
   securitySchemes:
+    managementBearerAuth:
+      type: http
+      scheme: bearer
+      description: Management credential validated by the configured external executable; not an OSB-issued token. Static-key and exec modes are mutually exclusive.
     apiKeyAuth:
       type: apiKey
       in: header
@@ -2211,7 +2217,7 @@ components:
         `snapshotId`, `networkPolicy`, `platform`, `volumes`, and
         `credentialProxy.enabled` must not be provided together with `poolRef`.
 
-        **Note**: API Key authentication is required via the `OPEN-SANDBOX-API-KEY` header.
+        **Note**: Use the configured management authentication scheme (API key or externally validated bearer credential).
       properties:
         image:
           $ref: '#/components/schemas/ImageSpec'

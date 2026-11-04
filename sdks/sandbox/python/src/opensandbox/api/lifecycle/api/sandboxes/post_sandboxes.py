@@ -144,8 +144,8 @@ def sync_detailed(
 
     ## Authentication
 
-    API Key authentication is required via:
-    - `OPEN-SANDBOX-API-KEY: <api-key>` header
+    Use `OPEN-SANDBOX-API-KEY` in API-key mode or `Authorization: Bearer <credential>` in exec-checker
+    mode.
 
     Args:
         body (CreateSandboxRequest): Request to create a new sandbox from either a container
@@ -168,7 +168,8 @@ def sync_detailed(
             `snapshotId`, `networkPolicy`, `platform`, `volumes`, and
             `credentialProxy.enabled` must not be provided together with `poolRef`.
 
-            **Note**: API Key authentication is required via the `OPEN-SANDBOX-API-KEY` header.
+            **Note**: Use the configured management authentication scheme (API key or externally
+            validated bearer credential).
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -214,8 +215,8 @@ def sync(
 
     ## Authentication
 
-    API Key authentication is required via:
-    - `OPEN-SANDBOX-API-KEY: <api-key>` header
+    Use `OPEN-SANDBOX-API-KEY` in API-key mode or `Authorization: Bearer <credential>` in exec-checker
+    mode.
 
     Args:
         body (CreateSandboxRequest): Request to create a new sandbox from either a container
@@ -238,7 +239,8 @@ def sync(
             `snapshotId`, `networkPolicy`, `platform`, `volumes`, and
             `credentialProxy.enabled` must not be provided together with `poolRef`.
 
-            **Note**: API Key authentication is required via the `OPEN-SANDBOX-API-KEY` header.
+            **Note**: Use the configured management authentication scheme (API key or externally
+            validated bearer credential).
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -279,8 +281,8 @@ async def asyncio_detailed(
 
     ## Authentication
 
-    API Key authentication is required via:
-    - `OPEN-SANDBOX-API-KEY: <api-key>` header
+    Use `OPEN-SANDBOX-API-KEY` in API-key mode or `Authorization: Bearer <credential>` in exec-checker
+    mode.
 
     Args:
         body (CreateSandboxRequest): Request to create a new sandbox from either a container
@@ -303,7 +305,8 @@ async def asyncio_detailed(
             `snapshotId`, `networkPolicy`, `platform`, `volumes`, and
             `credentialProxy.enabled` must not be provided together with `poolRef`.
 
-            **Note**: API Key authentication is required via the `OPEN-SANDBOX-API-KEY` header.
+            **Note**: Use the configured management authentication scheme (API key or externally
+            validated bearer credential).
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -347,8 +350,8 @@ async def asyncio(
 
     ## Authentication
 
-    API Key authentication is required via:
-    - `OPEN-SANDBOX-API-KEY: <api-key>` header
+    Use `OPEN-SANDBOX-API-KEY` in API-key mode or `Authorization: Bearer <credential>` in exec-checker
+    mode.
 
     Args:
         body (CreateSandboxRequest): Request to create a new sandbox from either a container
@@ -371,7 +374,8 @@ async def asyncio(
             `snapshotId`, `networkPolicy`, `platform`, `volumes`, and
             `credentialProxy.enabled` must not be provided together with `poolRef`.
 
-            **Note**: API Key authentication is required via the `OPEN-SANDBOX-API-KEY` header.
+            **Note**: Use the configured management authentication scheme (API key or externally
+            validated bearer credential).
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

@@ -61,7 +61,7 @@ class CreateSandboxRequest:
     `snapshotId`, `networkPolicy`, `platform`, `volumes`, and
     `credentialProxy.enabled` must not be provided together with `poolRef`.
 
-    **Note**: API Key authentication is required via the `OPEN-SANDBOX-API-KEY` header.
+    **Note**: Use the configured management authentication scheme (API key or externally validated bearer credential).
 
         Attributes:
             image (ImageSpec | Unset): Container image specification for sandbox provisioning.

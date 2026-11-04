@@ -15,9 +15,8 @@
 """
 Authentication middleware for OpenSandbox Lifecycle API.
 
-Supports two modes:
-- Single-tenant: validates against server.api_key (legacy)
-- Multi-tenant: delegates to a TenantProvider for key→tenant resolution
+Supports an external management-authentication checker, a single server API
+key, or tenant-provider key resolution.
 """
 
 import logging
@@ -29,6 +28,9 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from opensandbox_server.config import AppConfig, get_config
+from opensandbox_server.services.authentication import (
+    AuthenticationDenied, AuthenticationUnavailable, ExecAuthenticator,
+)
 from opensandbox_server.tenants.context import set_current_tenant
 from opensandbox_server.tenants.provider import TenantProvider, TenantProviderUnavailable
 
@@ -39,10 +41,7 @@ SANDBOX_API_KEY_HEADER = "OPEN-SANDBOX-API-KEY"
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """
-    Middleware for API Key authentication.
-
-    Validates the OPEN-SANDBOX-API-KEY header for all requests except health check.
-    Returns 401 Unauthorized if authentication fails.
+    Validate management credentials using the configured authentication mode.
     """
 
     # Paths that don't require authentication
@@ -76,6 +75,34 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return self.tenant_provider is not None
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        if self.config.server.authn_config is not None:
+            if request.url.path in self.EXEMPT_PATHS or self._is_proxy_path(request.url.path):
+                return await call_next(request)
+            authorization = request.headers.getlist("authorization")
+            parts = authorization[0].split() if len(authorization) == 1 else []
+            if len(parts) != 2 or parts[0].lower() != "bearer" or len(parts[1]) > 16384:
+                return JSONResponse(
+                    status_code=401,
+                    content={"code": "MISSING_BEARER_TOKEN", "message": "Provide one Authorization: Bearer credential."},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            authenticator: ExecAuthenticator = request.app.state.authenticator
+            try:
+                await authenticator.authenticate(parts[1])
+            except AuthenticationDenied as exc:
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={"code": "AUTHENTICATION_DENIED", "message": "Management access denied."},
+                    headers={"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None,
+                )
+            except AuthenticationUnavailable:
+                return JSONResponse(
+                    status_code=503,
+                    content={"code": "AUTHENTICATION_UNAVAILABLE", "message": "Authentication checker is unavailable."},
+                )
+            set_current_tenant(None)
+            return await call_next(request)
+
         if any(request.url.path.startswith(path) for path in self.EXEMPT_PATHS):
             return await call_next(request)
 
