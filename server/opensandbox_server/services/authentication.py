@@ -19,6 +19,7 @@ import json
 import os
 from pathlib import Path
 import signal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -28,11 +29,21 @@ except ModuleNotFoundError:
     import tomli as tomllib
 
 
-class AuthenticationResult(BaseModel):
+AUTHN_VERSION = "v1"
+
+
+class ProtocolModel(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True, hide_input_in_errors=True)
 
+
+class AuthenticationRequest(ProtocolModel):
+    version: Literal["v1"]
+    token: str = Field(min_length=1, max_length=16384, repr=False)
+
+
+class AuthenticationResult(ProtocolModel):
+    version: Literal["v1"]
     allowed: bool
-    subject: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class ExecAuthConfig(BaseModel):
@@ -109,7 +120,11 @@ class ExecAuthenticator:
             )
             try:
                 assert process.stdin is not None and process.stdout is not None
-                process.stdin.write(json.dumps({"token": token}).encode() + b"\n")
+                request = AuthenticationRequest(
+                    version=AUTHN_VERSION,
+                    token=token,
+                )
+                process.stdin.write(request.model_dump_json().encode() + b"\n")
                 await process.stdin.drain()
                 process.stdin.close()
                 output = bytearray()

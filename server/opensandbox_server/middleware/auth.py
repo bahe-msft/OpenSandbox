@@ -88,7 +88,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 )
             authenticator: ExecAuthenticator = request.app.state.authenticator
             try:
-                result = await authenticator.authenticate(parts[1])
+                await authenticator.authenticate(parts[1])
             except AuthenticationDenied as exc:
                 return JSONResponse(
                     status_code=exc.status_code,
@@ -100,7 +100,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     status_code=503,
                     content={"code": "AUTHENTICATION_UNAVAILABLE", "message": "Authentication checker is unavailable."},
                 )
-            request.state.auth_subject = result.subject
             set_current_tenant(None)
             return await call_next(request)
 

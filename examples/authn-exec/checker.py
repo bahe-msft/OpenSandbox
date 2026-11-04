@@ -40,11 +40,11 @@ def check(token, provider):
     if status is None:
         raise ValueError("Missing TokenReview decision.")
     if status.authenticated is not True or audience not in (status.audiences or []):
-        return {"allowed": False}
+        return False
     user = status.user
     if user is None or user.username not in allowed:
-        return {"allowed": False}
-    return {"allowed": True, "subject": user.username}
+        return False
+    return True
 
 
 def main():
@@ -59,17 +59,19 @@ def main():
             raise ValueError("Oversized input")
         request = json.loads(raw)
         if (
-            set(request) != {"token"}
+            not isinstance(request, dict)
+            or set(request) != {"version", "token"}
+            or request["version"] != "v1"
             or not isinstance(request["token"], str)
             or not 1 <= len(request["token"]) <= 16384
         ):
-            raise ValueError("Invalid input")
+            raise ValueError("Unsupported authentication request")
         decision = check(request["token"], provider)
     except Exception:
         # Never echo credential-bearing Kubernetes errors or input data.
         print("Authentication check unavailable.", file=sys.stderr)
         return 1
-    print(json.dumps(decision))
+    print(json.dumps({"version": request["version"], "allowed": decision}))
     return 0
 
 

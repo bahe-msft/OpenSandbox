@@ -82,7 +82,7 @@ When `server.authn_config` is selected, clients send `Authorization: Bearer <cre
 | `exec.command` | string[] | Required | Fixed argv with an absolute executable path; no shell interpolation or user-supplied arguments. |
 | `exec.timeout_seconds` | number | `3` | OSB-enforced total deadline, including queue wait; greater than zero and at most 30 seconds. |
 
-Other TOML sections belong to the checker and are not interpreted by OSB. Up to eight checks execute concurrently. Decisions are not cached. Exit zero with `allowed: false` returns `401`; nonzero exit, timeout, malformed result, or stdout larger than 4 KiB returns `503` with no fallback. Credentials travel only on stdin and stderr is discarded. The optional returned subject is exposed as `request.state.auth_subject`. Setup, protocol, platform constraints, and Kind example: [Management authentication checker](../docs/guides/authentication-exec.md).
+Other TOML sections belong to the checker and are not interpreted by OSB. Up to eight checks execute concurrently. Decisions are not cached. Exit zero with `allowed: false` returns `401`; nonzero exit, timeout, malformed result, or stdout larger than 4 KiB returns `503` with no fallback. Credentials travel only on stdin and stderr is discarded. The stdin request (`token`) and stdout response (`allowed`) both require `version: "v1"`; missing or unsupported response versions fail closed. Setup, protocol, platform constraints, and Kind example: [Management authentication checker](../docs/guides/authentication-exec.md).
 
 ---
 

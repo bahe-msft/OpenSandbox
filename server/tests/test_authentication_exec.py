@@ -18,6 +18,7 @@ from opensandbox_server import config as config_module
 from opensandbox_server.config import AppConfig, RuntimeConfig, ServerConfig
 from opensandbox_server.middleware.auth import AuthMiddleware
 from opensandbox_server.services.authentication import (
+    AUTHN_VERSION,
     AuthenticationDenied,
     AuthenticationResult,
     AuthenticationUnavailable,
@@ -28,7 +29,12 @@ from opensandbox_server.services.authentication import (
 
 def checker(tmp_path, code, timeout: float = 1):
     path = tmp_path / "checker.py"
-    path.write_text(code)
+    prelude = f"""import json
+VERSION = {AUTHN_VERSION!r}
+def output(allowed):
+    print(json.dumps({{"version": VERSION, "allowed": allowed}}))
+"""
+    path.write_text(prelude + code)
     return ExecAuthenticator(
         ExecAuthConfig(command=[sys.executable, str(path)], timeout_seconds=timeout)
     )
@@ -41,39 +47,56 @@ async def test_credentials_use_stdin_and_decision_is_consumed(tmp_path):
         """
 import json, sys
 assert len(sys.argv) == 1
-assert json.load(sys.stdin) == {"token": "test-credential"}
-print(json.dumps({"allowed": True, "subject": "workload-one"}))
+assert json.load(sys.stdin) == {"version": VERSION, "token": "test-credential"}
+output(True)
 """,
     )
     result = await auth.authenticate("test-credential")
-    assert result.allowed and result.subject == "workload-one"
+    assert result.allowed
+    assert result.version == AUTHN_VERSION
 
 
 @pytest.mark.asyncio
-async def test_subject_optional_and_false_is_denied(tmp_path):
-    result = await checker(tmp_path, "print('{\"allowed\":true}')").authenticate("test-credential")
-    assert result.subject is None
+async def test_false_is_denied(tmp_path):
     with pytest.raises(AuthenticationDenied):
-        await checker(tmp_path, "print('{\"allowed\":false}')").authenticate("test-credential")
+        await checker(tmp_path, "output(False)").authenticate("test-credential")
 
 
 @pytest.mark.parametrize(
     "code",
     [
         'print("not JSON")',
-        'print(\'{"allowed":"true"}\')',
-        "print('{\"allowed\":1}')",
-        'print(\'{"allowed":true,"unknown":1}\')',
-        'print(\'{"allowed":false,"allowed":true}\')',
+        'output("true")',
+        "output(1)",
+        'print(json.dumps({"version": VERSION, "allowed": True, "subject": "unused"}))',
+        'print(\'{"version":"v1","allowed":false,"allowed":true}\')',
+        'print(\'{"version":"v2","version":"v1","allowed":true}\')',
         'print("x" * 100000)',
         "import sys; sys.exit(1)",
-        "print('{\"allowed\":true}'); import sys; sys.exit(2)",
+        "output(True); import sys; sys.exit(2)",
     ],
 )
 @pytest.mark.asyncio
 async def test_bad_output_or_exit_fails_closed(tmp_path, code):
     with pytest.raises(AuthenticationUnavailable):
         await checker(tmp_path, code).authenticate("sensitive-test-value")
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"allowed": True},
+        {"version": "v2", "allowed": True},
+        {"version": None, "allowed": True},
+        {"version": 1, "allowed": True},
+        {"version": True, "allowed": True},
+        {"version": "v1"},
+    ],
+)
+@pytest.mark.asyncio
+async def test_missing_or_invalid_response_version_or_decision_fails_closed(tmp_path, response):
+    with pytest.raises(AuthenticationUnavailable):
+        await checker(tmp_path, f"print({json.dumps(response)!r})").authenticate("test-credential")
 
 
 @pytest.mark.asyncio
@@ -97,7 +120,7 @@ async def test_missing_executable_fails_closed():
 
 @pytest.mark.asyncio
 async def test_queue_wait_counts_towards_deadline(tmp_path, monkeypatch):
-    auth = checker(tmp_path, "print('{\"allowed\":true}')", timeout=0.01)
+    auth = checker(tmp_path, "output(True)", timeout=0.01)
     spawn = AsyncMock()
     monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
     for _ in range(auth.MAX_CONCURRENCY):
@@ -174,7 +197,7 @@ def app_and_authenticator():
     app = FastAPI()
     auth = MagicMock()
     auth.authenticate = AsyncMock(
-        return_value=AuthenticationResult(allowed=True, subject="workload-one")
+        return_value=AuthenticationResult(version=AUTHN_VERSION, allowed=True)
     )
     app.state.authenticator = auth
     config = AppConfig(
@@ -193,7 +216,8 @@ def app_and_authenticator():
     @app.get("/v1/secured")
     @app.get("/health/private")
     def secured(request: Request):
-        return {"subject": request.state.auth_subject}
+        assert not hasattr(request.state, "auth_subject")
+        return {"ok": True}
 
     return app, auth
 
@@ -202,7 +226,7 @@ def test_management_calls_use_checker(app_and_authenticator):
     app, auth = app_and_authenticator
     for path in ("/secured", "/v1/secured", "/health/private"):
         response = TestClient(app).get(path, headers={"Authorization": "Bearer test-credential"})
-        assert response.status_code == 200 and response.json() == {"subject": "workload-one"}
+        assert response.status_code == 200 and response.json() == {"ok": True}
     assert auth.authenticate.await_count == 3
 
 

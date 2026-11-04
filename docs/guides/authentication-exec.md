@@ -38,14 +38,14 @@ timeout_seconds = 3
 
 OSB reads only `[exec]`; other sections belong to the independently packaged checker. The executable path must be absolute. Arguments come only from trusted operator configuration. OSB launches the argv directly without shell interpolation. The configuration and executable must not be writable by sandbox workloads or untrusted users. OSB loads `[exec]` at startup, so launcher changes require a server restart. The checker controls how it reloads its own settings.
 
-`timeout_seconds` is the total deadline, including waiting for an available execution slot. It defaults to 3 seconds and must be greater than zero and at most 30 seconds. OSB enforces this deadline outside the checker. A checker that hangs cannot disable it. Up to eight checks execute concurrently. Each decision launches a fresh process; results are not cached.
+`timeout_seconds` is the total deadline, including waiting for an available execution slot. It defaults to 3 seconds and must be greater than zero and at most 30 seconds. OSB applies the timeout outside the checker. Checkers must not daemonize or detach descendants: a detached process retaining stdout can delay cleanup beyond the configured timeout. Up to eight checks execute concurrently. Each decision launches a fresh process; results are not cached.
 
 ## Checker protocol
 
 In exec mode, clients send `Authorization: Bearer <credential>`. OSB writes one JSON document to the checker's stdin and closes it:
 
 ```json
-{"token": "<incoming bearer credential>"}
+{"version": "v1", "token": "<incoming bearer credential>"}
 ```
 
 The checker must determine whether the credential permits **OSB management access**, not merely whether it authenticates a user somewhere else. For OIDC, validate issuer, audience, signature, expiry, and applicable IAM permissions in the checker.
@@ -53,18 +53,18 @@ The checker must determine whether the credential permits **OSB management acces
 On exit code `0`, stdout must contain a single JSON decision:
 
 ```json
-{"allowed": true, "subject": "optional-verified-id"}
+{"version": "v1", "allowed": true}
 ```
 
-`allowed` must be a JSON boolean. `subject` is optional, at most 256 characters, and is available as `request.state.auth_subject`; it does not select a namespace or resource policy. Unknown or duplicate result fields are rejected. The result schema is https://github.com/opensandbox-group/OpenSandbox/blob/main/specs/authentication-exec.schema.json.
+Both messages require `version: "v1"`. The checker must reject unsupported request versions and return the same version in its response. OSB rejects missing or unsupported response versions. `allowed` must be a JSON boolean. Unknown or duplicate result fields are rejected. The request and response schemas are https://github.com/opensandbox-group/OpenSandbox/blob/main/specs/authentication-exec.schema.json.
 
 | Checker outcome | OSB behavior |
 |-----------------|--------------|
 | Exit `0`, `allowed: true` | Continue to the existing management handler |
 | Exit `0`, `allowed: false` | `401` with a Bearer challenge |
-| Nonzero exit, timeout, malformed result, or stdout larger than 4 KiB | `503`, fail closed |
+| Nonzero exit, timeout, malformed result (including missing or unsupported version), or stdout larger than 4 KiB | `503`, fail closed |
 
-Credentials are sent only on stdin, never through argv or a credential environment variable. Stderr is discarded; stdout and exception details are not copied into errors or logs. On POSIX, the checker has a dedicated process group that OSB terminates on completion, cancellation, or timeout, including descendants. On Windows, OSB terminates the direct process; checkers must not daemonize or leave descendants running.
+Credentials are sent only on stdin, never through argv or a credential environment variable. Stderr is discarded; stdout and exception details are not copied into errors or logs. On POSIX, the checker has a dedicated process group that OSB terminates on completion, cancellation, or timeout, including descendants that remain in that group. On Windows, OSB terminates the direct process; checkers must not daemonize or leave descendants running.
 
 ## Existing access paths
 
