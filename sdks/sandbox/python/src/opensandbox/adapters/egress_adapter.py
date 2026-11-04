@@ -23,6 +23,12 @@ from urllib.parse import quote
 import httpx
 
 from opensandbox._httpx import build_async_redirect_client_options
+from opensandbox.adapters.converter.credential_payload import (
+    dump_binding_mutation_set,
+    dump_bindings,
+    dump_credential_mutation_set,
+    dump_credentials,
+)
 from opensandbox.adapters.converter.exception_converter import ExceptionConverter
 from opensandbox.adapters.converter.response_handler import (
     handle_api_error,

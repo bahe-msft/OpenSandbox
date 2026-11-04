@@ -535,6 +535,35 @@ test("Sandbox.create reports create metrics after ready", async () => {
   assert.match(ua, /^OpenSandbox-JS-SDK\//);
 });
 
+for (const headerName of ["open-sandbox-api-key", "Open-Sandbox-Api-Key"]) {
+  test(`Sandbox.create metrics preserves explicit ${headerName}`, async (t) => {
+    const { adapterFactory } = createAdapterFactory();
+    const config = new ConnectionConfig({
+      domain: "http://127.0.0.1:8080",
+      apiKey: "fallback-key",
+      headers: { [headerName]: "explicit-key" },
+    }).withTransportIfMissing();
+    t.after(() => config.closeTransport());
+    const requests = [];
+    Object.defineProperty(config, "fetch", {
+      get: () => async (url, init) => {
+        requests.push(new Request(url, init));
+        return new Response(null);
+      },
+    });
+    const sandbox = await Sandbox.create({
+      adapterFactory,
+      connectionConfig: config,
+      image: "python:3.12",
+      skipHealthCheck: true,
+    });
+    t.after(() => sandbox.close());
+    assert.equal(requests.length, 1);
+    assert.match(requests[0].url, /\/metrics\/events$/);
+    assert.equal(requests[0].headers.get("open-sandbox-api-key"), "explicit-key");
+  });
+}
+
 test("Sandbox.create metrics failure does not change create error", async () => {
   const { adapterFactory } = createAdapterFactory();
   adapterFactory.createExecdStack = () => ({
@@ -718,6 +747,59 @@ test("Sandbox.create forwards lifecycle.idlePolicy", async () => {
 
   assert.equal(recordedRequests.length, 1);
   assert.deepEqual(recordedRequests[0].lifecycle, { idlePolicy });
+});
+
+test("Sandbox.create forwards lifecycle.renewalPolicy", async () => {
+  const { adapterFactory, recordedRequests } = createAdapterFactory();
+  const renewalPolicy = { extendSeconds: 3600 };
+
+  await Sandbox.create({
+    adapterFactory,
+    connectionConfig: { domain: "http://127.0.0.1:8080" },
+    image: "python:3.12",
+    lifecycle: { renewalPolicy },
+    skipHealthCheck: true,
+  });
+
+  assert.equal(recordedRequests.length, 1);
+  assert.deepEqual(recordedRequests[0].lifecycle, { renewalPolicy });
+});
+
+test("Sandbox.create rejects an invalid renewal policy before allocating transport resources", async () => {
+  // withTransportIfMissing must never run (same guard as the idlePolicy test).
+  const guardedConfig = new ConnectionConfig({ domain: "http://127.0.0.1:8080" });
+  guardedConfig.withTransportIfMissing = () => {
+    throw new Error("transport must not be allocated for an invalid renewal policy");
+  };
+  for (const extendSeconds of [299, 86401, 3600.5, "3600"]) {
+    await assert.rejects(
+      Sandbox.create({
+        adapterFactory: {
+          createLifecycleStack() {
+            throw new Error("lifecycle stack must not be built for an invalid renewal policy");
+          },
+        },
+        connectionConfig: guardedConfig,
+        image: "python:3.12",
+        lifecycle: { renewalPolicy: { extendSeconds } },
+        skipHealthCheck: true,
+      }),
+      /extendSeconds must be an integer between 300 and 86400/
+    );
+  }
+
+  const { adapterFactory, recordedRequests } = createAdapterFactory();
+  for (const extendSeconds of [300, 86400]) {
+    await Sandbox.create({
+      adapterFactory,
+      connectionConfig: { domain: "http://127.0.0.1:8080" },
+      image: "python:3.12",
+      lifecycle: { renewalPolicy: { extendSeconds } },
+      skipHealthCheck: true,
+    });
+  }
+  assert.deepEqual(recordedRequests[0].lifecycle, { renewalPolicy: { extendSeconds: 300 } });
+  assert.deepEqual(recordedRequests[1].lifecycle, { renewalPolicy: { extendSeconds: 86400 } });
 });
 
 test("Sandbox.create rejects an invalid idle policy before allocating transport resources", async () => {

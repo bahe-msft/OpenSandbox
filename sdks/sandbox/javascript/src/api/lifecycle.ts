@@ -1,11 +1,11 @@
 // Copyright 2026 The OpenSandbox Authors
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -30,19 +30,21 @@ export interface paths {
         };
         /**
          * Read sandbox network policy
-         * @description For Fsb, reads persisted egress Action Binding intent in the tenant's
-         *     Sandbox CR, not live enforcement state. An absent binding defaults to
-         *     deny-first when an egress handler is configured; this is not proof of
-         *     enforcement on a pool without that handler. Other backends proxy the
-         *     sandbox-side egress service. Requires lifecycle API authentication.
+         * @description Fsb reads the egress-held policy record — the response reflects
+         *     exactly what the egress enforces, not the create-time binding input.
+         *     Other backends proxy the sandbox-side egress service. Requires
+         *     lifecycle API authentication.
          */
         get: operations["getSandboxNetworkPolicy"];
         /**
          * Replace the complete sandbox network policy
          * @description Replaces defaultAction and all rules, rather than merging them. Fsb
-         *     commits the egress binding through FastPath, preserving unrelated bindings
-         *     with UID/generation conflict protection. Success does not imply handler
-         *     convergence. Other backends proxy the sandbox-side egress service.
+         *     relays the replacement to the egress-held policy record through the
+         *     FastPath handler relay — the ack means the egress applied it (and, with
+         *     policy persistence, that it is durable). The create-time binding input
+         *     is the bootstrap only; runtime changes never rewrite it, and a paused
+         *     (sealed) sandbox rejects mutations until resume. Other backends proxy
+         *     the sandbox-side egress service.
          */
         put: operations["replaceSandboxNetworkPolicy"];
         post?: never;
@@ -63,9 +65,10 @@ export interface paths {
          *     take priority over existing rules with the same target and replace
          *     them in place; within one patch payload, the first rule for a target
          *     wins; existing rules for other targets and the current defaultAction
-         *     are preserved. Fsb commits the merged binding through FastPath with
-         *     UID/generation conflict protection. Other backends proxy the
-         *     sandbox-side egress service.
+         *     are preserved. Fsb composes the merge server-side (relay GET → merge
+         *     → relay PUT carrying the read revision) — a concurrent writer wins
+         *     and the stale merge is a 409. Other backends proxy the sandbox-side
+         *     egress service.
          */
         patch: operations["patchSandboxNetworkPolicy"];
         trace?: never;
@@ -970,7 +973,13 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    /** @description Whether to return a server-proxied URL. Cannot be combined with `expires`. */
+                    /**
+                     * @deprecated
+                     * @description Deprecated: the server-proxied data path is in maintenance mode and only
+                     *     receives security fixes and bug fixes; data-plane traffic should be served by
+                     *     the ingress gateway. When true, returns a server-proxied URL. Cannot be
+                     *     combined with `expires`.
+                     */
                     use_server_proxy?: boolean;
                     /**
                      * @description Optional. When set, the server **issues a signed** access route (OSEP-0011). The value
@@ -1422,9 +1431,9 @@ export interface components {
          *     fields without changing the semantics of existing fields.
          *
          *     `preStart` and `periodic` are hooks executed inside the sandbox by
-         *     execd. `idlePolicy` is control-plane policy (OSEP-0024): it tells the
-         *     server how to treat the sandbox's state machine and never reaches the
-         *     guest.
+         *     execd. `idlePolicy` (OSEP-0024) and `renewalPolicy` (OSEP-0009) are
+         *     control-plane policies: they tell the server how to treat the
+         *     sandbox's state machine and never reach the guest.
          */
         SandboxLifecycle: {
             /**
@@ -1446,6 +1455,35 @@ export interface components {
              *     the sandbox is never auto-paused and never auto-woken.
              */
             idlePolicy?: components["schemas"]["IdlePolicy"];
+            /**
+             * @description Renew-on-access behavior (OSEP-0009): each ingress-observed or
+             *     proxied access extends the sandbox expiration. Control-plane
+             *     state and never reaches the guest. Supported by the docker and
+             *     Kubernetes (pod) backends; the fast-sandbox backend rejects the
+             *     field. Supersedes the deprecated
+             *     `extensions["access.renew.extend.seconds"]` creation key, which
+             *     remains supported throughout 1.x and is removed in 2.0.
+             */
+            renewalPolicy?: components["schemas"]["RenewalPolicy"];
+        };
+        /**
+         * @description Renew-on-access behavior declared by the sandbox (OSEP-0009). The
+         *     policy is desired control-plane state: when the ingress gateway or
+         *     the server proxy observes traffic for the sandbox, the server extends
+         *     the sandbox expiration without client involvement. The policy never
+         *     reaches the guest.
+         *
+         *     Setting the policy has no effect unless the server operator enabled
+         *     the renew-intent integration (`[renew_intent]`). A missing policy
+         *     means the sandbox never auto-renews.
+         */
+        RenewalPolicy: {
+            /**
+             * @description Extension window X in seconds for each access-driven renewal:
+             *     the expiration is moved to `max(now + X, current expiresAt)`.
+             *     Must be between 300 (5 minutes) and 86400 (24 hours) inclusive.
+             */
+            extendSeconds: number;
         };
         /**
          * @description Idle behavior declared by the sandbox (OSEP-0024). The policy is
@@ -1566,8 +1604,12 @@ export interface components {
              *     Mutually exclusive with `image` and `snapshotId`; in template mode
              *     the workload shape is fixed by the template's golden image, so
              *     `entrypoint`, `env`, `resourceLimits`, `resourceRequests`,
-             *     `volumes`, `platform`, `credentialProxy`, `secureAccess` and
+             *     `volumes`, `platform`, `secureAccess` and
              *     lifecycle hooks are rejected (400), and `timeout` is required.
+             *     `credentialProxy` is accepted and ignored: the vault is not
+             *     carried at create time — it is configured after creation through
+             *     the server-routed Credential Vault API
+             *     (`/sandboxes/{sandboxId}/credential-vault`).
              *     `lifecycle.idlePolicy` is allowed: it is control-plane state,
              *     not workload shape.
              *     The template must belong to the requester's tenant and be
@@ -1643,6 +1685,13 @@ export interface components {
              *     lifecycle hook transport reject hooks. `lifecycle.idlePolicy` is
              *     not a hook and may accompany `extensions.poolRef`; it is honored
              *     only by the fast-sandbox backend and rejected by others.
+             *     `lifecycle.renewalPolicy` is likewise not a hook: it may
+             *     accompany `extensions.poolRef` and is honored by the docker and
+             *     Kubernetes (pod) backends, while the fast-sandbox backend rejects
+             *     it. Setting both `lifecycle.renewalPolicy` and the deprecated
+             *     `extensions["access.renew.extend.seconds"]` is accepted only when
+             *     their parsed values match; conflicting values are rejected with
+             *     HTTP 400.
              */
             lifecycle?: components["schemas"]["SandboxLifecycle"];
             /**
@@ -1676,6 +1725,11 @@ export interface components {
              * @description Optional outbound network policy for the sandbox.
              *     Shape matches the sidecar `/policy` endpoint. If omitted or empty,
              *     the sidecar starts in allow-all mode until updated.
+             *     For Fsb, an omitted policy still registers an egress binding,
+             *     seeded with a no-op default-allow record (the sandbox behaves
+             *     like a policy-less one until changed): runtime changes go
+             *     through the networkpolicy endpoints (handler relay), which
+             *     require that registration.
              *     Not supported together with `extensions.poolRef`; pooled pods are
              *     pre-created, so the server rejects this combination instead of
              *     silently ignoring the requested policy.
@@ -1885,6 +1939,199 @@ export interface components {
             ports?: number[];
         };
         /**
+         * @description Initial Credential Vault revision. Inline credential values are
+         *     write-only. The vault requires a network policy; `defaultAction:
+         *     deny` is strongly recommended.
+         */
+        CredentialVaultCreateRequest: {
+            credentials: components["schemas"]["Credential"][];
+            bindings: components["schemas"]["CredentialBinding"][];
+        };
+        /**
+         * @description One atomic mutation set. Applied per set as delete → replace → add;
+         *     every mentioned name must resolve exactly once (add requires the
+         *     name to be absent, replace and delete require it to exist).
+         */
+        CredentialVaultMutationRequest: {
+            /** @description Optional optimistic concurrency guard; mismatch fails with 412. */
+            expectedRevision?: number;
+            credentials?: components["schemas"]["CredentialMutationSet"];
+            bindings?: components["schemas"]["CredentialBindingMutationSet"];
+        };
+        CredentialMutationSet: {
+            add?: components["schemas"]["Credential"][];
+            replace?: components["schemas"]["Credential"][];
+            delete?: string[];
+        };
+        CredentialBindingMutationSet: {
+            add?: components["schemas"]["CredentialBinding"][];
+            replace?: components["schemas"]["CredentialBinding"][];
+            delete?: string[];
+        };
+        /** @description Sanitized Credential Vault state — credential values never appear. */
+        CredentialVaultState: {
+            revision: number;
+            credentials: components["schemas"]["CredentialMetadata"][];
+            bindings: components["schemas"]["CredentialBindingMetadata"][];
+        };
+        CredentialListResponse: {
+            revision: number;
+            credentials: components["schemas"]["CredentialMetadata"][];
+        };
+        CredentialBindingListResponse: {
+            revision: number;
+            bindings: components["schemas"]["CredentialBindingMetadata"][];
+        };
+        CredentialMetadata: {
+            name: string;
+            /** @description Credential source kind (`inline` or `exchange`). */
+            sourceType: string;
+            /**
+             * @description Revision that last touched this record. Fsb stamps records with
+             *     the read revision (the relay surface does not carry per-record
+             *     revisions); other backends track per-record revisions.
+             */
+            revision: number;
+        };
+        CredentialBindingMetadata: {
+            name: string;
+            /** @description See CredentialMetadata.revision for the Fsb caveat. */
+            revision: number;
+            match?: components["schemas"]["CredentialMatch"];
+            auth?: components["schemas"]["CredentialAuthMetadata"];
+        };
+        /** @description Sanitized auth shape — `type` (plus `name` for `apiKey`) for static kinds; `credential` only for the typeless exchange form. */
+        CredentialAuthMetadata: {
+            type?: string;
+            name?: string;
+            credential?: string;
+        };
+        Credential: {
+            name: string;
+            source: components["schemas"]["CredentialSource"];
+        };
+        /**
+         * @description Where the credential material comes from. Exactly one kind, selected
+         *     by `type`:
+         *
+         *     - `inline`: the secret value travels in this request via `value`.
+         *       Inline values are write-only and never appear in reads.
+         *     - `plugin`: `value` selects a trusted egress exec credential provider
+         *       by basename; callers cannot supply executable paths or arguments.
+         *     - `exchange`: no local material. Egress resolves header sets per
+         *       request from a header-resolver service addressed by `endpoint`.
+         *       Supported endpoint forms are `unix:///absolute/path` (HTTP over a
+         *       Unix domain socket) and `https://host[:port]` (TLS); anything else
+         *       is rejected with 400.
+         *
+         *     Fields of the other kind must be absent; for example `value` together
+         *     with `type: exchange` is rejected with 400.
+         */
+        CredentialSource: {
+            /** @enum {string} */
+            type: "inline" | "plugin" | "exchange";
+            /**
+             * @description Inline secret material for `inline`, or the trusted provider basename
+             *     for `plugin`. Required for those kinds and absent for `exchange`.
+             */
+            value?: string;
+            /**
+             * @description Header-resolver endpoint. Required when `type` is `exchange`; must
+             *     be absent otherwise.
+             */
+            endpoint?: string;
+        };
+        CredentialBinding: {
+            name: string;
+            match: components["schemas"]["CredentialMatch"];
+            auth: components["schemas"]["CredentialAuth"];
+        };
+        CredentialMatch: {
+            /**
+             * @default [
+             *       "https"
+             *     ]
+             */
+            schemes: ("https" | "http")[];
+            /**
+             * @deprecated
+             * @description Deprecated. Port is derived from scheme (https→443, http→80). Values other than 80 or 443 are rejected with a validation error. Standard values (80/443) are accepted but ignored.
+             */
+            ports?: number[];
+            hosts: string[];
+            /**
+             * @default [
+             *       "GET",
+             *       "POST",
+             *       "PUT",
+             *       "PATCH",
+             *       "DELETE"
+             *     ]
+             */
+            methods: string[];
+            /**
+             * @default [
+             *       "/*"
+             *     ]
+             */
+            paths: string[];
+        };
+        /**
+         * @description How a binding injects credential material. Exactly one auth kind:
+         *
+         *     - `bearer`: `type: bearer` plus `credential`.
+         *     - `basic`: `type: basic` plus `credential`.
+         *     - `apiKey`: `type: apiKey` plus `name` and `credential`.
+         *     - `customHeaders`: `type: customHeaders` plus `headers`.
+         *     - `passthrough`: `type: passthrough`, no credential reference.
+         *     - typeless exchange: `type` omitted with only `credential` set. The
+         *       referenced credential must be exchange-sourced; egress resolves the
+         *       header set per request from the credential's endpoint.
+         *
+         *     Static kinds must reference inline-sourced credentials, and the
+         *     typeless form must reference an exchange-sourced credential and must
+         *     not set `name`, `headers`, or `substitutions`. The five static kinds
+         *     accept optional `substitutions`. Violations are rejected with 400.
+         */
+        CredentialAuth: {
+            /**
+             * @description Static auth kind. Omit entirely for the typeless exchange form.
+             * @enum {string}
+             */
+            type?: "bearer" | "basic" | "apiKey" | "customHeaders" | "passthrough";
+            /**
+             * @description Name of the sandbox-local credential whose value is injected. For
+             *     `bearer` the value becomes the bearer token; for `basic` it
+             *     contains pre-encoded base64(username:password). Required for
+             *     `bearer`, `basic`, `apiKey`, and the typeless exchange form; must
+             *     be absent otherwise.
+             */
+            credential?: string;
+            /** @description Request header name. Required for `apiKey`; must be absent otherwise. */
+            name?: string;
+            /** @description Static header set. Required for `customHeaders`; must be absent otherwise. */
+            headers?: components["schemas"]["CustomHeaderEntry"][];
+            /**
+             * @description Optional placeholder replacement set. Accepted for the five static
+             *     kinds; must be absent for the typeless exchange form.
+             */
+            substitutions?: components["schemas"]["CredentialSubstitution"][];
+        };
+        CustomHeaderEntry: {
+            name: string;
+            /** @description Credential name whose value is injected. */
+            credential: string;
+        };
+        /** @description Literal case-sensitive placeholder replacement for selected request surfaces. Replacement is opt-in and scoped per binding. */
+        CredentialSubstitution: {
+            /** @description Name of the sandbox-local credential used as the replacement value. */
+            credential: string;
+            /** @description Literal placeholder to replace. */
+            placeholder: string;
+            /** @description Request surfaces where the placeholder may be replaced. */
+            in: ("path" | "query" | "header" | "body")[];
+        };
+        /**
          * @description Storage mount definition for a sandbox. Each volume entry contains:
          *     - A unique name identifier
          *     - Exactly one backend struct (host, pvc, ossfs, etc.) with backend-specific fields
@@ -2066,8 +2313,10 @@ export interface components {
             };
             readiness?: components["schemas"]["FsbTemplateReadiness"];
             /**
-             * @description S3-compatible publish target for the built artifacts,
-             *     e.g. `s3://bucket/publish`.
+             * @description Publish destination: `s3://bucket/publish` for native artifacts or
+             *     `oci://registry/repository` for overlaybd artifacts. OCI targets
+             *     must not contain a tag or digest; the builder generates unique
+             *     tags per build. Registry credentials are configured on the server.
              */
             publish: string;
             /**
@@ -2085,8 +2334,8 @@ export interface components {
              */
             phase: "Pending" | "Building" | "Succeeded" | "Failed";
             /**
-             * @description S3 manifest reference of the published artifacts; present when
-             *     Succeeded.
+             * @description Published S3 manifest reference or immutable OCI reference
+             *     (`oci://registry/repository@sha256:...`); present when Succeeded.
              */
             manifestRef?: string;
             /** @description Failure reason when phase is Failed. */
@@ -2113,7 +2362,7 @@ export interface components {
                 [key: string]: string;
             };
             readiness?: components["schemas"]["FsbTemplateReadiness"];
-            /** @description S3-compatible publish target. */
+            /** @description S3-compatible or repository-only OCI publish target. */
             publish: string;
             /**
              * @description Snapshot storage encoding.
@@ -2271,6 +2520,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             500: components["responses"]["InternalServerError"];
             /** @description Policy state is temporarily unavailable. */
             503: {

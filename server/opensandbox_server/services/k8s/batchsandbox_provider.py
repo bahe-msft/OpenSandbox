@@ -19,7 +19,7 @@ BatchSandbox-based workload provider implementation.
 import logging
 import json
 import shlex
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Dict, List, Any, Optional
 
 from opensandbox_server.config import (

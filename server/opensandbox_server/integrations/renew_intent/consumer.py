@@ -291,12 +291,6 @@ class RenewIntentConsumer:
 
         st = self._ensure_mru_mem(work.sandbox_id)
         async with st.lock:
-            if self._redis is not None:
-                await self._controller.renew_after_gates(
-                    work.sandbox_id, source=work.source, namespace=work.namespace
-                )
-                return
-
             now = time.monotonic()
             if (
                 st.last_success_monotonic is not None

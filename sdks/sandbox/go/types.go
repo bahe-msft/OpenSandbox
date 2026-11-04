@@ -186,6 +186,12 @@ const (
 	ProbeTimeoutMinSeconds = 1
 	// ProbeTimeoutMaxSeconds is the largest accepted activity probe timeout.
 	ProbeTimeoutMaxSeconds = 10
+	// RenewExtendMinSeconds is the smallest accepted renew-on-access
+	// extension window (OSEP-0009).
+	RenewExtendMinSeconds = 300
+	// RenewExtendMaxSeconds is the largest accepted renew-on-access
+	// extension window (OSEP-0009).
+	RenewExtendMaxSeconds = 86400
 )
 
 // ActivityProbe is an application-declared activity probe (OSEP-0024).
@@ -297,6 +303,31 @@ func (p *IdlePolicy) Validate() error {
 	return nil
 }
 
+// RenewalPolicy declares the renew-on-access behavior of a sandbox
+// (OSEP-0009): observed access moves the expiration to
+// max(now + ExtendSeconds, current). Control-plane policy; supersedes the
+// deprecated extensions["access.renew.extend.seconds"] key.
+type RenewalPolicy struct {
+	// ExtendSeconds is the extension window X in seconds (300-86400) for
+	// each access-driven renewal.
+	ExtendSeconds int `json:"extendSeconds"`
+}
+
+// Validate checks the renewal policy against the server's create-time rules
+// so invalid policies fail fast client-side.
+func (p *RenewalPolicy) Validate() error {
+	if p == nil {
+		return nil
+	}
+	if p.ExtendSeconds < RenewExtendMinSeconds || p.ExtendSeconds > RenewExtendMaxSeconds {
+		return &InvalidArgumentError{
+			Field:   "ExtendSeconds",
+			Message: fmt.Sprintf("must be an integer between %d and %d, got %d", RenewExtendMinSeconds, RenewExtendMaxSeconds, p.ExtendSeconds),
+		}
+	}
+	return nil
+}
+
 // SandboxLifecycle contains optional lifecycle configuration applied during
 // sandbox creation.
 type SandboxLifecycle struct {
@@ -306,6 +337,10 @@ type SandboxLifecycle struct {
 	// Supported only by the fast-sandbox backend; other backends reject the
 	// field. Control-plane policy: it never reaches the guest.
 	IdlePolicy *IdlePolicy `json:"idlePolicy,omitempty"`
+	// RenewalPolicy is the renew-on-access behavior (OSEP-0009).
+	// Control-plane policy; supersedes the deprecated
+	// extensions["access.renew.extend.seconds"] key.
+	RenewalPolicy *RenewalPolicy `json:"renewalPolicy,omitempty"`
 }
 
 // CreateSandboxRequest is the request body for creating a new sandbox.
@@ -517,7 +552,7 @@ type TemplateReadiness struct {
 // TemplateStatus is the build status of a fsb template.
 type TemplateStatus struct {
 	Phase TemplatePhase `json:"phase"`
-	// ManifestRef is the S3 manifest reference of the published artifacts;
+	// ManifestRef is the published S3 manifest reference or immutable OCI reference;
 	// present when the phase is Succeeded.
 	ManifestRef string `json:"manifestRef,omitempty"`
 	// Message is the failure reason when the phase is Failed.
@@ -534,8 +569,8 @@ type TemplateStatus struct {
 type CreateTemplateRequest struct {
 	// Image is the source OCI image reference the golden image is built from.
 	Image string `json:"image"`
-	// Publish is the S3-compatible publish target for the built artifacts,
-	// e.g. "s3://bucket/publish".
+	// Publish is s3://bucket/publish (native) or oci://registry/repository
+	// (overlaybd, without a tag or digest).
 	Publish string `json:"publish"`
 	// ResourceLimits is the guest machine sizing, e.g.
 	// {"cpu": "1", "memory": "512Mi", "disk": "2Gi"}. Server defaults when
@@ -620,28 +655,37 @@ const (
 	CredentialSourceInline CredentialSourceType = "inline"
 	// CredentialSourcePlugin selects a trusted egress exec credential provider.
 	CredentialSourcePlugin CredentialSourceType = "plugin"
+	// CredentialSourceExchange resolves headers per request from a resolver endpoint; no local material.
+	CredentialSourceExchange CredentialSourceType = "exchange"
 )
 
-// InlineCredentialSource is the credential source wire shape. Value contains
-// inline material for type inline or a trusted provider name for type plugin;
-// it is never returned by Vault state endpoints.
-type InlineCredentialSource struct {
-	Type  CredentialSourceType `json:"type"`
-	Value string               `json:"value"`
+// CredentialSource is a Credential Vault credential source: inline material
+// (Value) or a resolver endpoint (Endpoint), never both.
+type CredentialSource struct {
+	Type     CredentialSourceType `json:"type,omitempty"`
+	Value    string               `json:"value,omitempty"`
+	Endpoint string               `json:"endpoint,omitempty"`
 }
 
-// PluginCredentialSource returns a source selecting a trusted provider by name.
+// InlineCredentialSource is an alias of CredentialSource for inline-only callers.
+type InlineCredentialSource = CredentialSource
+
+// PluginCredentialSource selects a trusted provider by name.
 func PluginCredentialSource(name string) InlineCredentialSource {
 	return InlineCredentialSource{Type: CredentialSourcePlugin, Value: name}
 }
 
-// MarshalJSON defaults an omitted source type to inline so existing callers can
-// continue using InlineCredentialSource{Value: secret}.
-func (s InlineCredentialSource) MarshalJSON() ([]byte, error) {
-	type inlineCredentialSource InlineCredentialSource
-	source := inlineCredentialSource(s)
+// MarshalJSON defaults the type for the zero-value forms: Value only →
+// inline, Endpoint only → exchange.
+func (s CredentialSource) MarshalJSON() ([]byte, error) {
+	type credentialSource CredentialSource
+	source := credentialSource(s)
 	if source.Type == "" {
-		source.Type = CredentialSourceInline
+		if source.Endpoint != "" && source.Value == "" {
+			source.Type = CredentialSourceExchange
+		} else {
+			source.Type = CredentialSourceInline
+		}
 	}
 	return json.Marshal(source)
 }
@@ -649,8 +693,8 @@ func (s InlineCredentialSource) MarshalJSON() ([]byte, error) {
 // Credential is a sandbox-local Credential Vault credential create/update
 // model.
 type Credential struct {
-	Name   string                 `json:"name"`
-	Source InlineCredentialSource `json:"source"`
+	Name   string           `json:"name"`
+	Source CredentialSource `json:"source"`
 }
 
 // CredentialScheme is a request scheme matched by a Credential Vault binding.
@@ -707,10 +751,10 @@ const (
 	CredentialAuthPassthrough   CredentialAuthType = "passthrough"
 )
 
-// CredentialAuth configures how a binding injects credential material into
-// matching outbound requests.
+// CredentialAuth configures how a binding injects credential material.
+// Static kinds set Type; the typeless exchange form sets only Credential.
 type CredentialAuth struct {
-	Type          CredentialAuthType       `json:"type"`
+	Type          CredentialAuthType       `json:"type,omitempty"`
 	Credential    string                   `json:"credential,omitempty"`
 	Name          string                   `json:"name,omitempty"`
 	Headers       []CustomHeaderEntry      `json:"headers,omitempty"`
@@ -757,18 +801,33 @@ type CredentialVaultPatchRequest struct {
 }
 
 // CredentialMetadata is sanitized credential metadata returned by Credential
-// Vault. It intentionally does not include source values.
+// Vault. It intentionally does not include source values; SourceType is
+// `inline` or `exchange`.
 type CredentialMetadata struct {
 	Name       string `json:"name"`
 	SourceType string `json:"sourceType"`
 	Revision   int    `json:"revision"`
 }
 
-// CredentialAuthMetadata is sanitized auth metadata returned by Credential
-// Vault. It intentionally does not include credential references or values.
+// CredentialAuthMetadata is sanitized auth metadata. Static kinds carry
+// Type (Name for apiKey); the typeless form carries only Credential.
 type CredentialAuthMetadata struct {
-	Type string `json:"type"`
-	Name string `json:"name,omitempty"`
+	Type       string `json:"type,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Credential string `json:"credential,omitempty"`
+}
+
+// MarshalJSON enforces the sanitized shape symmetrically: credential only
+// when typeless, name only when typed.
+func (m CredentialAuthMetadata) MarshalJSON() ([]byte, error) {
+	type credentialAuthMetadata CredentialAuthMetadata
+	out := credentialAuthMetadata(m)
+	if out.Type != "" {
+		out.Credential = ""
+	} else {
+		out.Name = ""
+	}
+	return json.Marshal(out)
 }
 
 // CredentialBindingMetadata is sanitized binding metadata returned by

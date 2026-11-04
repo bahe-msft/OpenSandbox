@@ -24,10 +24,4 @@ The writable qcow2 path must be declared with `capture: rootfs` in the QEMU laun
 
 ## Documentation
 
-See the
-[design proposal](../../../../docs/proposals/20260814-qemu-vmstate-snapshot.md)
-for the artifact model, pause/resume sequence, compatibility boundaries, and
-design decisions. See the
-[operations guide](../../../../../docs/guides/qemu-vmstate-snapshots.md)
-for workload image preparation, the annotation and launch-manifest contract,
-Helm deployment, Kind setup, and command-by-command validation.
+See the [design proposal](../../../../docs/proposals/20260814-qemu-vmstate-snapshot.md) for the artifact model, pause/resume sequence, compatibility boundaries, and design decisions. See the [operations guide](../../../../../docs/guides/qemu-vmstate-snapshots.md) for workload image preparation, the annotation and launch-manifest contract, Helm deployment, Kind setup, and command-by-command validation.

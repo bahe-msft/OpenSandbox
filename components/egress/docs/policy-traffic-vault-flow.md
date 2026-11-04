@@ -22,28 +22,13 @@ stateDiagram-v2
     denying --> absent: REMOVE_BINDING
 ```
 
-Recovery after egress restart: `ApplyReset` wipes the table, the Handler
-serves a new `instanceId`, the Fastlet detects it and replays the latest
-`SET_BINDING` followed by the already-reached Hooks (every live subject
-re-enters `denying` through the same registration path), and the egress-held
-vault state is recovered from the egress-local vault file at registration
-(no server re-push).
+Recovery after egress restart: `ApplyReset` wipes the table, the Handler serves a new `instanceId`, the Fastlet detects it and replays the latest `SET_BINDING` followed by the already-reached Hooks (every live subject re-enters `denying` through the same registration path), and the egress-held vault state is recovered from the egress-local vault file at registration (no server re-push).
 
 ## 2. Control plane: policy and credential delivery
 
-The egress listener binds the Pod netns loopback only. It serves the action
-endpoints (Fastlet) and `/healthz` — there is no sandbox-reachable control
-surface and no proxy-route surface (the earlier fastlet-proxy channel was
-superseded: identity validation moved from a proxy-injected header into the
-FastPath control plane).
+The egress listener binds the Pod netns loopback only. It serves the action endpoints (Fastlet) and `/healthz` — there is no sandbox-reachable control surface and no proxy-route surface (the earlier fastlet-proxy channel was superseded: identity validation moved from a proxy-injected header into the FastPath control plane).
 
-Two concerns, two carriers: policy rides `SET_BINDING` (the CRD binding is
-the complete desired value; updates arrive as new bindings). The credential
-vault is egress-held and rides the FastPath handler-relay
-(`InvokeHandlerAction`): the server pushes complete vault revisions to the
-relay-only vault surface (`/vault/{sandboxUid}`) and gets a synchronous,
-egress-validated ack. Vault state lives in egress memory plus an
-egress-local per-subject file (OSEP-0022).
+Two concerns, two carriers: policy rides `SET_BINDING` (the CRD binding is the complete desired value; updates arrive as new bindings). The credential vault is egress-held and rides the FastPath handler-relay (`InvokeHandlerAction`): the server pushes complete vault revisions to the relay-only vault surface (`/vault/{sandboxUid}`) and gets a synchronous, egress-validated ack. Vault state lives in egress memory plus an egress-local per-subject file (OSEP-0022).
 
 ```mermaid
 sequenceDiagram
@@ -107,20 +92,7 @@ flowchart LR
 
 ## 4. Credential vault
 
-Vault revisions are pushed over the FastPath handler-relay and held
-**egress-side** per subject (memory plus an egress-local file, OSEP-0022 —
-no Secret volume, nothing in the CRD).
-The shared mitmdump instance selects the subject's vault by the client's
-source IP (transparent REDIRECT/DNAT preserves it). It keeps an immutable
-snapshot per subject and conditionally checks the private Unix-socket endpoint
-for every new flow with its opaque `ETag`. An unchanged tag returns `304`
-without rendering or transferring credential material; a changed tag returns
-`200`, the full snapshot, its public revision, and a replacement `ETag`. The
-tag changes even when delete-then-create resets the public revision to `1`, so
-recreation cannot accidentally validate a pre-delete snapshot. Consequently, the
-first flow after a successful create, patch, or delete acknowledgement observes
-that mutation without a timer or cache-expiry sleep. See
-[fast-sandbox-mitm-data-plane](../../../docs/components/egress-fast-sandbox-mitm-data-plane.md).
+Vault revisions are pushed over the FastPath handler-relay and held **egress-side** per subject (memory plus an egress-local file, OSEP-0022 — no Secret volume, nothing in the CRD). The shared mitmdump instance selects the subject's vault by the client's source IP (transparent REDIRECT/DNAT preserves it). It keeps an immutable snapshot per subject and conditionally checks the private Unix-socket endpoint for every new flow with its opaque `ETag`. An unchanged tag returns `304` without rendering or transferring credential material; a changed tag returns `200`, the full snapshot, its public revision, and a replacement `ETag`. The tag changes even when delete-then-create resets the public revision to `1`, so recreation cannot accidentally validate a pre-delete snapshot. Consequently, the first flow after a successful create, patch, or delete acknowledgement observes that mutation without a timer or cache-expiry sleep. See [fast-sandbox-mitm-data-plane](../../../docs/components/egress-fast-sandbox-mitm-data-plane.md).
 
 `404` has one explicit meaning for the addon: there is no active vault for the selected subject, so any older cached snapshot is removed and the flow remains ordinary non-credentialed egress. Transport timeout/refusal, `5xx`, malformed JSON/schema, an invalid `ETag`, or a non-advancing tag after a conditional request are lookup failures, not "no vault". Those failures discard the unconfirmed cached plaintext snapshot and fail closed for **all intercepted traffic**, including hosts that would not match any credential binding. The addon returns a local `503` when the request body is safely buffered, or kills a streamed/unknown-length flow before it can reach upstream. Operators should therefore treat the private credential-proxy socket as a hard availability dependency whenever transparent interception is enabled.
 

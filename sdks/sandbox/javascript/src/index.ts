@@ -67,6 +67,8 @@ export type {
   Host,
   ActivityProbe,
   IdlePolicy,
+  RenewalPolicy,
+  ExchangeCredentialSource,
   InlineCredentialSource,
   PluginCredentialSource,
   LifecycleHook,
@@ -114,12 +116,15 @@ export type { SandboxFilter, SandboxManagerOptions } from "./manager.js";
 export type { ExecdHealth } from "./services/execdHealth.js";
 export type { ExecdMetrics } from "./services/execdMetrics.js";
 export type {
+  ByteRange,
   FileEntryType,
   FileInfo,
   FileMetadata,
   Permission,
   RenameFileItem,
   ReplaceFileContentItem,
+  ReadBytesResponse,
+  ReadBytesStream,
   SearchFilesResponse,
   FilesInfoResponse,
 } from "./models/filesystem.js";

@@ -96,7 +96,7 @@ opensandbox-controller:
       imageCommitterPodTemplate:
         metadata:
           labels:
-            azure.workload.identity/use: "true"
+            identity.example/use: "true"
         spec:
           serviceAccountName: snapshot-committer
           containers:

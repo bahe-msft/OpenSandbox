@@ -75,13 +75,6 @@ def test_supports_synchronous_create_is_false_for_docker() -> None:
     assert runtime.supports_synchronous_create() is False
 
 
-def test_supports_synchronous_create_is_false_for_docker() -> None:
-    runtime = DockerSnapshotRuntime(SimpleNamespace())
-
-    assert runtime.supports_create_snapshot() is True
-    assert runtime.supports_synchronous_create() is False
-
-
 def test_create_snapshot_commits_container_and_marks_ready() -> None:
     commits: list[tuple[str, str]] = []
 

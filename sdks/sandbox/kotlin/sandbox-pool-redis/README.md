@@ -67,6 +67,4 @@ try {
 - Primary-lock heartbeat is independent from warmup execution and runs at an internal interval no greater than `primaryLockTtl / 3`. A slow warmup therefore does not block lock renewal. Configure the TTL with enough margin for Redis latency, process pauses, and scheduling jitter.
 - Redis outages are surfaced as `PoolStateStoreUnavailableException`; the pool does not silently bypass shared state.
 
-If production deployments need stronger protection against accidental mixed pool definitions,
-an optional pool definition version or fingerprint check that fails fast when nodes sharing the
-same Redis namespace disagree would be a natural extension.
+If production deployments need stronger protection against accidental mixed pool definitions, an optional pool definition version or fingerprint check that fails fast when nodes sharing the same Redis namespace disagree would be a natural extension.

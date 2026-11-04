@@ -1,10 +1,6 @@
 # OpenSandbox Manifests
 
-This directory contains the Helm chart sources for OpenSandbox. Charts here are
-versioned sources: releases are umbrella releases (one `release-X.Y.Z` tag for
-the whole platform; see `docs/community/release-automation.md`), and charts are
-installed from a checkout of that tag. If you want to change how
-OpenSandbox is deployed, this is the right place.
+This directory contains the Helm chart sources for OpenSandbox. Charts here are versioned sources: releases are umbrella releases (one `release-X.Y.Z` tag for the whole platform; see `docs/community/release-automation.md`), and charts are installed from a checkout of that tag. If you want to change how OpenSandbox is deployed, this is the right place.
 
 For the full deployment guide, see [HELM-DEPLOYMENT.md](HELM-DEPLOYMENT.md).
 

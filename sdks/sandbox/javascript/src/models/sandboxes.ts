@@ -92,15 +92,24 @@ export interface CredentialProxyConfig extends Record<string, unknown> {
 
 export interface InlineCredentialSource extends Record<string, unknown> {
   /**
-   * Credential source type. Defaults to "inline" when omitted. "plugin"
-   * selects a trusted egress credential provider named by value.
+   * Credential source type. Defaults to "inline" when omitted.
    */
   type?: "inline" | "plugin";
   /**
-   * Inline credential material, or the trusted provider name for plugin
-   * sources. It is never present in Credential Vault state responses.
+   * Write-only inline credential value. This field is accepted in create/patch
+   * requests and is never present in Credential Vault state responses.
    */
   value: string;
+  endpoint?: never;
+}
+
+export interface ExchangeCredentialSource extends Record<string, unknown> {
+  type: "exchange";
+  /**
+   * Header-resolver endpoint (`unix:///path` or `https://host[:port]`).
+   */
+  endpoint: string;
+  value?: never;
 }
 
 /** Source selecting a trusted exec credential provider. */
@@ -112,9 +121,9 @@ export interface Credential extends Record<string, unknown> {
    */
   name: string;
   /**
-   * Write-only credential source.
+   * Write-only credential source (inline material or exchange endpoint).
    */
-  source: InlineCredentialSource;
+  source: InlineCredentialSource | ExchangeCredentialSource;
 }
 
 export type CredentialMatchScheme = "https" | "http";
@@ -197,7 +206,17 @@ export type CredentialAuth =
     } & CredentialAuthSubstitutions)
   | ({
       type: "passthrough";
-    } & CredentialAuthSubstitutions);
+    } & CredentialAuthSubstitutions)
+  /**
+   * Typeless exchange form: only a credential reference (exchange-sourced).
+   * Static-only fields are `never` so they stay compile errors here.
+   */
+  | ({ credential: string } & {
+      type?: never;
+      name?: never;
+      headers?: never;
+      substitutions?: never;
+    });
 
 export interface CredentialBinding extends Record<string, unknown> {
   /**
@@ -217,18 +236,25 @@ export interface CredentialBinding extends Record<string, unknown> {
 export interface CredentialMetadata {
   name: string;
   /**
-   * Source type only; plaintext source material is not returned.
+   * Source type only (`inline` or `exchange`); never source material.
    */
   sourceType: string;
   revision: number;
 }
 
 export interface CredentialAuthMetadata {
-  type: string;
+  /**
+   * Static auth kind; omitted for the typeless exchange form.
+   */
+  type?: string;
   /**
    * Public auth parameter name, such as an API key header name.
    */
   name?: string;
+  /**
+   * Exchange-sourced credential reference, typeless form only.
+   */
+  credential?: string;
 }
 
 export interface CredentialBindingMetadata {
@@ -542,6 +568,18 @@ export interface IdlePolicy extends Record<string, unknown> {
   activeProbe?: ActivityProbe;
 }
 
+/**
+ * Renew-on-access behavior (OSEP-0009): observed access moves the expiration
+ * to `max(now + extendSeconds, current)`. Control-plane policy; supersedes the
+ * deprecated `extensions["access.renew.extend.seconds"]` key.
+ */
+export interface RenewalPolicy extends Record<string, unknown> {
+  /**
+   * Extension window X in seconds (300-86400) for each access-driven renewal.
+   */
+  extendSeconds: number;
+}
+
 /** Extensible container for sandbox lifecycle configuration. */
 export interface SandboxLifecycle extends Record<string, unknown> {
   /**
@@ -560,6 +598,11 @@ export interface SandboxLifecycle extends Record<string, unknown> {
    * policy: it never reaches the guest.
    */
   idlePolicy?: IdlePolicy;
+  /**
+   * Renew-on-access behavior (OSEP-0009). Control-plane policy; supersedes
+   * the deprecated `extensions["access.renew.extend.seconds"]` key.
+   */
+  renewalPolicy?: RenewalPolicy;
 }
 
 export interface CreateSandboxRequest extends Record<string, unknown> {

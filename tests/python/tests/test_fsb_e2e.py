@@ -66,6 +66,8 @@ from opensandbox.sandbox import Sandbox
 logger = logging.getLogger(__name__)
 
 FSB_TEMPLATE_ID = os.getenv("OPENSANDBOX_TEST_FSB_TEMPLATE_ID", "")
+# Set per run by the env's sdk-e2e (native + overlaybd templates differ).
+FSB_TEMPLATE_ORIGIN = os.getenv("OPENSANDBOX_TEST_FSB_TEMPLATE_ORIGIN", "fast-sandbox-env")
 # alpine ships busybox wget: a real HTTPS request, so egress probes
 # exercise both gates of the fsb dns+nft chain (DNS resolution and
 # transport). Override with e.g. curlimages/curl if cert-verified curl
@@ -157,13 +159,7 @@ async def _state_is(manager: SandboxManager, sandbox_id: str, state: str) -> boo
 
 
 async def _http_reachable_on(sandbox: Sandbox, target: str) -> bool:
-    """HTTP-level enforcement probe: a real HTTPS GET must succeed.
-
-    curl rather than busybox wget: the fsb-sandbox-golden test image (the
-    default template source of the integration environment) ships curl
-    but no wget, so wget probes fail with "not found" regardless of the
-    egress data plane.
-    """
+    """HTTP-level probe: a real HTTPS GET from inside the guest must succeed."""
     result = await sandbox.commands.run(
         f"curl -fsS -m 8 -o /dev/null https://{target}"
     )
@@ -227,10 +223,10 @@ class TestFsbE2E:
         info = await manager.get_template(FSB_TEMPLATE_ID)
         assert info.status.phase == TemplatePhase.SUCCEEDED
         assert info.status.manifest_ref, "template manifestRef is empty"
-        assert info.metadata.get("origin") == "fast-sandbox-env"
+        assert info.metadata.get("origin") == FSB_TEMPLATE_ORIGIN
 
         paged = await manager.list_templates(
-            TemplateFilter(metadata={"origin": "fast-sandbox-env"})
+            TemplateFilter(metadata={"origin": FSB_TEMPLATE_ORIGIN})
         )
         assert FSB_TEMPLATE_ID in [t.template_id for t in paged.template_infos]
 
@@ -239,8 +235,8 @@ class TestFsbE2E:
         self, manager: SandboxManager, connection_config
     ) -> None:
         """Full template lifecycle via the SDK: async build -> Succeeded ->
-        listed under its metadata filter -> env visible inside a guest created
-        from the template -> deleted (404)."""
+        listed under its metadata filter -> a guest created from it sees the
+        baked env -> deleted (404)."""
         created = await manager.create_template(
             CreateTemplateRequest(
                 image=FSB_TEMPLATE_IMAGE,
@@ -270,12 +266,6 @@ class TestFsbE2E:
             assert info.env == FSB_TEMPLATE_ENV, (
                 f"template env not persisted: {info.env}"
             )
-            logger.info(
-                "template build Succeeded: manifestRef=%s image=%s env=%s",
-                info.status.manifest_ref,
-                info.image,
-                info.env,
-            )
 
             paged = await manager.list_templates(
                 TemplateFilter(metadata={"origin": "fast-sandbox-env-sdk"})
@@ -290,16 +280,6 @@ class TestFsbE2E:
                 ready_timeout=COLD_READY_TIMEOUT,
                 connection_config=connection_config,
             )
-
-            # Runtime env verification: the env is baked into the golden
-            # image at build time, so a sandbox created from this template
-            # must see it in the guest process environment.
-            sandbox = await Sandbox.create_from_template(
-                created.template_id,
-                timeout=timedelta(hours=1),
-                ready_timeout=COLD_READY_TIMEOUT,
-                connection_config=connection_config,
-            )
             try:
                 result = await sandbox.commands.run("echo $FSB_E2E_MARKER")
                 assert result.error is None
@@ -307,9 +287,6 @@ class TestFsbE2E:
                 assert marker == FSB_TEMPLATE_ENV["FSB_E2E_MARKER"], (
                     f"template env not visible in the guest: "
                     f"expected {FSB_TEMPLATE_ENV['FSB_E2E_MARKER']!r}, got {marker!r}"
-                )
-                logger.info(
-                    "template env visible in guest: FSB_E2E_MARKER=%s", marker
                 )
             finally:
                 await _kill_and_wait_gone(manager, sandbox.id)
@@ -454,67 +431,6 @@ class TestFsbE2E:
                 assert patch_exc.value.status_code == 400, (
                     "fsb PATCH with a port-scoped rule must be rejected with 400"
                 )
-        finally:
-            await _kill_and_wait_gone(manager, sandbox.id)
-
-    @pytest.mark.timeout(600)
-    async def test_02b_network_policy_rejects_port_scoped_rules(
-        self, manager: SandboxManager, connection_config
-    ) -> None:
-        """Fast-sandbox enforcement does not cover port-scoped rules yet, so
-        the server must fail closed with 400 on both the create-carried
-        policy and the PATCH route instead of silently installing rules the
-        fastlet nft path would ignore (a dropped deny rule fails open)."""
-        logger.info("TEST 2b: fsb networkPolicy rejects port-scoped rules")
-
-        # Create-carried policy: a rule that pairs ports with an IP target is
-        # rejected the same as a port-only rule.
-        with pytest.raises(SandboxApiException) as create_exc:
-            await Sandbox.create_from_template(
-                FSB_TEMPLATE_ID,
-                timeout=timedelta(hours=1),
-                ready_timeout=COLD_READY_TIMEOUT,
-                connection_config=connection_config,
-                metadata={"origin": "fsb-port-scope-reject"},
-                network_policy=NetworkPolicy(
-                    defaultAction="deny",
-                    egress=[NetworkRule(action="allow", target="1.1.1.1", ports=[443])],
-                ),
-            )
-        assert create_exc.value.status_code == 400, (
-            "fsb create with a port-scoped rule must be rejected with 400"
-        )
-
-        # A policy-only sandbox so the PATCH rejection can be asserted
-        # against a live fsb sandbox; killed in the finally block.
-        sandbox = await Sandbox.create_from_template(
-            FSB_TEMPLATE_ID,
-            timeout=timedelta(hours=1),
-            ready_timeout=COLD_READY_TIMEOUT,
-            connection_config=connection_config,
-            metadata={"origin": "fsb-port-scope-reject"},
-            network_policy=NetworkPolicy(
-                defaultAction="deny",
-                egress=[NetworkRule(action="allow", target="example.com")],
-            ),
-        )
-        try:
-            for rules in (
-                [NetworkRule(action="deny", ports=[25])],
-                [NetworkRule(action="allow", target="1.1.1.1", ports=[443])],
-            ):
-                with pytest.raises(SandboxApiException) as patch_exc:
-                    await sandbox.patch_egress_rules(rules)
-                assert patch_exc.value.status_code == 400, (
-                    "fsb PATCH with a port-scoped rule must be rejected with 400"
-                )
-
-            # The rejected PATCHes must not have mutated the policy.
-            policy = await _get_policy_tolerant(sandbox)
-            assert policy is not None
-            assert all(rule.ports is None for rule in policy.egress or [])
-            assert any(rule.target == "example.com" for rule in policy.egress or [])
-            logger.info("fsb port-scoped rejection verified (create + PATCH)")
         finally:
             await _kill_and_wait_gone(manager, sandbox.id)
 

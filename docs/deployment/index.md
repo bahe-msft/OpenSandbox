@@ -5,13 +5,9 @@ description: Deploy OpenSandbox on Kubernetes — CRDs, controller, lifecycle se
 
 # Kubernetes Deployment
 
-This guide covers deploying OpenSandbox on Kubernetes: the cluster foundation
-(CRDs), the controller, the lifecycle server, and the optional components
-(ingress gateway, node agent, fast-sandbox runtime).
+This guide covers deploying OpenSandbox on Kubernetes: the cluster foundation (CRDs), the controller, the lifecycle server, and the optional components (ingress gateway, node agent, fast-sandbox runtime).
 
-Charts are versioned sources in the [OpenSandbox repository](https://github.com/opensandbox-group/OpenSandbox/tree/main/manifests/charts).
-They are installed from a checkout of a `release-X.Y.Z` tag — standalone chart
-packages are not published.
+Charts are versioned sources in the [OpenSandbox repository](https://github.com/opensandbox-group/OpenSandbox/tree/main/manifests/charts). They are installed from a checkout of a `release-X.Y.Z` tag — standalone chart packages are not published.
 
 ## Prerequisites
 
@@ -252,17 +248,11 @@ helm install opensandbox-server manifests/charts/server \
   --values values-server.yaml
 ```
 
-Keep `server.gateway.gatewayRouteMode` in sync with `gateway.gatewayRouteMode`
-of the gateway chart. For signed, expiring sandbox routes, configure the
-shared secure-access key ring on both charts — see [secure-access keys](https://github.com/opensandbox-group/OpenSandbox/blob/main/manifests/HELM-DEPLOYMENT.md#secure-access-keys-osep-0011).
+Keep `server.gateway.gatewayRouteMode` in sync with `gateway.gatewayRouteMode` of the gateway chart. For signed, expiring sandbox routes, configure the shared secure-access key ring on both charts — see [secure-access keys](https://github.com/opensandbox-group/OpenSandbox/blob/main/manifests/HELM-DEPLOYMENT.md#secure-access-keys-osep-0011).
 
 ### Optional: fast-sandbox runtime
 
-The `fast-sandbox` chart adds the Firecracker (`sandbox.fast.io`) runtime.
-Install it **before the ingress gateway and the lifecycle server** (see [Deployment Order](#deployment-order)):
-the server's `[runtime]`/fsb configuration points at the FastPath gRPC endpoint
-this chart creates. It also requires `base` first, KVM-capable nodes, and
-companion images built from a pinned upstream commit — see the [fast-sandbox runtime deployment guide](https://github.com/opensandbox-group/OpenSandbox/blob/main/manifests/HELM-DEPLOYMENT.md#fast-sandbox-runtime-firecracker).
+The `fast-sandbox` chart adds the Firecracker (`sandbox.fast.io`) runtime. Install it **before the ingress gateway and the lifecycle server** (see [Deployment Order](#deployment-order)): the server's `[runtime]`/fsb configuration points at the FastPath gRPC endpoint this chart creates. It also requires `base` first, KVM-capable nodes, and companion images built from a pinned upstream commit — see the [fast-sandbox runtime deployment guide](https://github.com/opensandbox-group/OpenSandbox/blob/main/manifests/HELM-DEPLOYMENT.md#fast-sandbox-runtime-firecracker).
 
 ## Upgrade
 
@@ -286,8 +276,25 @@ helm upgrade opensandbox-server manifests/charts/server \
   --values values-server.yaml
 ```
 
-For the complete values reference and local development installation, see the
-[`opensandbox-server` chart README](https://github.com/opensandbox-group/OpenSandbox/tree/main/manifests/charts/server).
+For the complete values reference and local development installation, see the [`opensandbox-server` chart README](https://github.com/opensandbox-group/OpenSandbox/tree/main/manifests/charts/server).
+
+## Controller Cache Scoping (Large Clusters)
+
+The controller-manager watches Pods and Jobs through its informer cache. By default the cache is cluster-wide: on large shared clusters (hundreds of namespaces) the deserialized objects kept resident can exceed the controller's memory limit during startup cache sync, and the controller Pod gets OOM-killed before it reaches Ready.
+
+Scope the cache to the namespaces that hold your workloads with the `opensandbox-controller` chart value `controller.namespaces` (umbrella key: `opensandbox-controller.controller.namespaces`):
+
+```yaml
+controller:
+  namespaces:
+    - opensandbox
+```
+
+The equivalent controller flag is `--namespaces=ns-a,ns-b`; an empty value keeps the cluster-wide default.
+
+::: warning List every workload namespace
+The scope applies to all informers: Pools, BatchSandboxes, their Pods, and snapshot commit Jobs are only watched and reconciled inside the listed namespaces. Multi-tenant deployments whose BatchSandboxes spread across many namespaces should leave the value empty.
+:::
 
 ## Operator Metrics
 
@@ -377,10 +384,7 @@ See [Configuration](/getting-started/configuration) for the full reference.
 helm uninstall opensandbox -n opensandbox-system
 ```
 
-CRDs carry the `helm.sh/resource-policy: keep` annotation and are retained
-across uninstalls; the `opensandbox-dataplane` namespace (created by `base`
-for fast-sandbox) is kept as well. Delete them manually once their data is no
-longer needed:
+CRDs carry the `helm.sh/resource-policy: keep` annotation and are retained across uninstalls; the `opensandbox-dataplane` namespace (created by `base` for fast-sandbox) is kept as well. Delete them manually once their data is no longer needed:
 
 ```bash
 kubectl delete crd batchsandboxes.sandbox.opensandbox.io \

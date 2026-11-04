@@ -175,11 +175,8 @@ def _go_ascii_json_content(value: str) -> str:
 
 def _binding(value: Any, redactions: set[str]) -> tuple[str, set[str]]:
     allowed = {"name", "match", "headers"}
-    if (
-        type(value) is not dict
-        or not allowed <= set(value) <= allowed | {"substitutions", "dynamic"}
-        or "dynamic" in value
-        and value["dynamic"] is not True
+    if type(value) is not dict or not (
+        set(value) == allowed or set(value) == allowed | {"substitutions"}
     ):
         raise _Invalid
     name = value["name"]
@@ -216,8 +213,6 @@ def _binding(value: Any, redactions: set[str]) -> tuple[str, set[str]]:
 
     substitutions = value.get("substitutions", [])
     if type(substitutions) is not list:
-        raise _Invalid
-    if value.get("dynamic") and (headers or substitutions):
         raise _Invalid
     for substitution in substitutions:
         if type(substitution) is not dict or set(substitution) != {

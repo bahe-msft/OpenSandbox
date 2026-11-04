@@ -205,6 +205,36 @@ def test_kubernetes_pool_acquisition_timeout_defaults_and_validates():
         config_module.KubernetesRuntimeConfig(pool_acquisition_timeout_seconds=0)
 
 
+def test_kubernetes_template_publish_secrets_defaults():
+    """native templates fall back to the S3 secret; the OCI publish secret
+    for overlaybd templates is opt-in and defaults to unset."""
+    kubernetes_cfg = config_module.KubernetesRuntimeConfig()
+    assert kubernetes_cfg.template_s3_publish_secret == "sandbox-oss-credentials"
+    assert kubernetes_cfg.template_oci_publish_secret is None
+
+    configured = config_module.KubernetesRuntimeConfig(
+        template_oci_publish_secret="registry-credentials"
+    )
+    assert configured.template_oci_publish_secret == "registry-credentials"
+
+    with pytest.raises(ValueError):
+        config_module.KubernetesRuntimeConfig(template_oci_publish_secret="")
+
+
+def test_kubernetes_template_oci_publish_secret_from_toml():
+    app_cfg = config_module.AppConfig.model_validate(
+        {
+            "server": {"host": "127.0.0.1", "port": 8000},
+            "runtime": {"type": "kubernetes", "execd_image": "opensandbox/execd:latest"},
+            "kubernetes": {
+                "template_oci_publish_secret": "registry-credentials",
+            },
+        }
+    )
+    assert app_cfg.kubernetes is not None
+    assert app_cfg.kubernetes.template_oci_publish_secret == "registry-credentials"
+
+
 def test_server_config_uvicorn_tuning_defaults():
     """ServerConfig exposes uvicorn concurrency knobs with sensible defaults."""
     server_cfg = ServerConfig()
@@ -805,6 +835,50 @@ def test_gateway_address_validation_for_non_wildcard_mode():
         ),
     )
     assert cfg_uri_port_like.gateway.address == "10.0.0.1:abc"
+
+
+@pytest.mark.parametrize("whitespace", ["\n", "\r\n", "\r", "\t", " "])
+@pytest.mark.parametrize(
+    "address,route_mode",
+    [
+        ("gateway.opensandbox.io", "header"),
+        ("gateway.opensandbox.io:8080", "header"),
+        ("10.0.0.1", "header"),
+        ("10.0.0.1:8080", "header"),
+        ("*.opensandbox.io", "wildcard"),
+    ],
+    ids=["hostname", "hostname-port", "ip", "ip-port", "wildcard"],
+)
+def test_gateway_address_rejects_trailing_whitespace(address, route_mode, whitespace):
+    with pytest.raises(ValueError):
+        IngressConfig(
+            mode="gateway",
+            gateway=GatewayConfig(
+                address=address + whitespace,
+                route=GatewayRouteModeConfig(mode=route_mode),
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    "address,route_mode",
+    [
+        ("gateway .opensandbox.io", "header"),
+        ("gateway.opensandbox.io\nx", "header"),
+        ("10.0.0.1\n:8080", "header"),
+        ("*.opensandbox.io\nx", "wildcard"),
+    ],
+    ids=["hostname-space", "hostname-newline", "ip-newline-port", "wildcard-newline"],
+)
+def test_gateway_address_rejects_embedded_whitespace(address, route_mode):
+    with pytest.raises(ValueError):
+        IngressConfig(
+            mode="gateway",
+            gateway=GatewayConfig(
+                address=address,
+                route=GatewayRouteModeConfig(mode=route_mode),
+            ),
+        )
 
 
 def test_gateway_address_allows_scheme_less_defaults():

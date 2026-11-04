@@ -107,10 +107,6 @@ Pausing persists the rootfs, pushes it to the configured registry, and releases 
 
 Set `--snapshot-image-uri-template` (Helm: `controller.snapshot.imageURITemplate`) to customize snapshot image names before the initial push. An empty template preserves the default naming rule; see [custom image names](/guides/pause-resume#custom-image-names) for the named fields and date/timezone formatting helpers.
 
-The optional `image-committer-azure` image uses Azure Workload Identity for ACR
-push credentials. See [ACR with Azure Workload Identity](/guides/pause-resume#using-acr-with-azure-workload-identity)
-for the image build and commit Job Pod template configuration.
-
 ## Reading status
 
 The phase reports sandbox runtime health; the conditions explain it. Both are Kubernetes-native and inspectable with plain `kubectl`.

@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Optional
@@ -108,6 +109,15 @@ from opensandbox_server.services.validators import (
 
 _SUPPORTED_EVENT_SCOPES = ("runtime", "all")
 
+# Fixed shard count for the per-process vault PATCH locks (bounded memory;
+# see FastSandboxService.__init__).
+_VAULT_LOCK_SHARDS = 64
+
+# Same-shard-count locks for the policy PATCH/rule-delete composition
+# (relay GET -> merge -> relay PUT); the revision precondition inside the
+# merged PUT is the cross-replica backstop.
+_POLICY_LOCK_SHARDS = 64
+
 logger = logging.getLogger(__name__)
 
 
@@ -135,6 +145,23 @@ class FastSandboxService(SandboxService, ExtensionService):
         self._cr_reader = SandboxCRReader(self._k8s, k8s_client)
         self._template_service = template_service
         self._activity_recorder: Optional[ActivityRecorder] = None
+        # Fixed-size shard locks serialize the server-side vault PATCH
+        # (relay GET -> merge -> relay PUT) within this process. A fixed map
+        # keeps memory bounded: fsb sandboxes mostly expire through FastPath
+        # instead of going through delete_sandbox, so per-sandbox entries
+        # would leak for the process lifetime. Shard collisions only widen
+        # the serialization scope; the revision precondition inside the
+        # merged PUT stays the cross-replica backstop either way.
+        self._vault_locks = [Lock() for _ in range(_VAULT_LOCK_SHARDS)]
+        self._policy_locks = [Lock() for _ in range(_POLICY_LOCK_SHARDS)]
+
+    def vault_lock(self, sandbox_id: str) -> Lock:
+        """Return the process-local PATCH shard lock for one sandbox."""
+        return self._vault_locks[hash(sandbox_id) % _VAULT_LOCK_SHARDS]
+
+    def policy_lock(self, sandbox_id: str) -> Lock:
+        """Return the process-local policy PATCH shard lock for one sandbox."""
+        return self._policy_locks[hash(sandbox_id) % _POLICY_LOCK_SHARDS]
 
     @property
     def cr_reader(self) -> SandboxCRReader:
@@ -444,12 +471,6 @@ class FastSandboxService(SandboxService, ExtensionService):
         if idle_policy_annotation is not None:
             self._persist_idle_policy_annotation(namespace, sandbox_id, idle_policy_annotation)
 
-        # Durable intent exists (accepted or recovery-confirmed): restart the
-        # idle clock from this transition (OSEP-0024).
-        self._record_activity(sandbox_id)
-        if idle_policy_annotation is not None:
-            self._persist_idle_policy_annotation(namespace, sandbox_id, idle_policy_annotation)
-
         return self._build_create_response(
             request,
             info,
@@ -739,43 +760,8 @@ class FastSandboxService(SandboxService, ExtensionService):
         return policy_relay.relay_patch(self, sandbox_id, rules)
 
     def delete_network_policy_rules(self, sandbox_id: str, targets: list[str]) -> dict:
-        """Remove rules by target from the persisted egress binding (idempotent)."""
-        current = self.get_network_policy(sandbox_id)
-        kept = delete_policy_rules(current["policy"], targets)
-        return self._commit_network_policy(
-            sandbox_id,
-            normalized_policy(NetworkPolicy.model_validate(kept)),
-            guard_upstream_proxy=False,
-        )
-
-    def _commit_network_policy(
-        self, sandbox_id: str, normalized: dict, *, guard_upstream_proxy: bool = True
-    ) -> dict:
-        if guard_upstream_proxy:
-            self._reject_network_policy_with_upstream_proxy()
-        current = self._cr_reader.get(self._resolve_namespace(), sandbox_id)
-        metadata = current["metadata"]
-        bindings = [dict(b) for b in current["spec"].get("actionBindings", [])]
-        replacement = {"handler": "egress", "input": json.dumps(normalized)}
-        for index, binding in enumerate(bindings):
-            if binding["handler"] == "egress":
-                bindings[index] = replacement
-                break
-        else:
-            bindings.append(replacement)
-        try:
-            self._fastpath.replace_action_bindings(
-                metadata["namespace"],
-                sandbox_id,
-                bindings,
-                expected_uid=metadata["uid"],
-                expected_generation=metadata["generation"],
-            )
-        except FastPathError as exc:
-            raise self._fastpath_http_error(exc) from exc
-        finally:
-            self._cr_reader.invalidate(metadata["namespace"])
-        return policy_status(normalized)
+        """Remove rules by target from the recorded policy (idempotent)."""
+        return policy_relay.relay_delete_rules(self, sandbox_id, targets)
 
     def get_endpoint(
         self,

@@ -162,11 +162,7 @@ Create from a template (golden image):
 osb sandbox create --template <template-id> --timeout 30m -o json
 ```
 
-Template mode fixes the workload shape on the server: `--image`, `--env`,
-`--resource`, `--entrypoint`, `--volumes-file`, and `--credential-proxy` cannot
-be combined with `--template`. Only `--timeout` (required), `--metadata`,
-`--extension`, and `--network-policy-file` may accompany it. Only templates in
-the `Succeeded` phase can be used. See [Manage templates](#manage-templates).
+Template mode fixes the workload shape on the server: `--image`, `--env`, `--resource`, `--entrypoint`, `--volumes-file`, and `--credential-proxy` cannot be combined with `--template`. Only `--timeout` (required), `--metadata`, `--extension`, and `--network-policy-file` may accompany it. Only templates in the `Succeeded` phase can be used. See [Manage templates](#manage-templates).
 
 Create from a snapshot:
 
@@ -182,8 +178,7 @@ Create from a request file (`-f`, like `kubectl apply -f`):
 osb sandbox create -f sandbox-request.json -o json
 ```
 
-`sandbox-request.json` uses the public `CreateSandboxRequest` JSON format
-(camelCase keys):
+`sandbox-request.json` uses the public `CreateSandboxRequest` JSON format (camelCase keys):
 
 ```json
 {
@@ -198,36 +193,23 @@ osb sandbox create -f sandbox-request.json -o json
 }
 ```
 
-- Exactly one of `image` (string or `{ "uri": ..., "auth": { "username": ..., "password": ... } }`),
-  `templateId`, or `snapshotId` is required; `timeout` is integer seconds, or
-  `null` for manual cleanup.
-- Supported fields: `image`, `templateId`, `snapshotId`, `platform`, `timeout`,
-  `resourceLimits`, `resourceRequests`, `env`, `metadata`, `extensions`,
-  `entrypoint`, `networkPolicy`, `credentialProxy`, `secureAccess`, `volumes`,
-  `lifecycle`.
-- `-f` cannot be combined with request-building flags; `--skip-health-check`,
-  `--ready-timeout`, and `-o` still apply. In template mode the file may only
-  set `timeout`, `metadata`, `extensions`, and `networkPolicy` alongside
-  `templateId` (a finite `timeout` is required).
+- Exactly one of `image` (string or `{ "uri": ..., "auth": { "username": ..., "password": ... } }`), `templateId`, or `snapshotId` is required; `timeout` is integer seconds, or `null` for manual cleanup.
+- Supported fields: `image`, `templateId`, `snapshotId`, `platform`, `timeout`, `resourceLimits`, `resourceRequests`, `env`, `metadata`, `extensions`, `entrypoint`, `networkPolicy`, `credentialProxy`, `secureAccess`, `volumes`, `lifecycle`.
+- `-f` cannot be combined with request-building flags; `--skip-health-check`, `--ready-timeout`, and `-o` still apply. In template mode the file may only set `timeout`, `metadata`, `extensions`, and `networkPolicy` alongside `templateId` (a finite `timeout` is required).
 
 ### Manage templates
 
-Templates are golden-image builds; the build runs asynchronously, so poll
-`template get` until the status phase is `Succeeded`. Template management
-requires a Kubernetes-backed runtime.
+Templates are golden-image builds; the build runs asynchronously, so poll `template get` until the status phase is `Succeeded`. Template management requires a Kubernetes-backed runtime.
 
 ```bash
-osb template create --image python:3.12 --publish s3://bucket/publish -o json
+osb template create --image python:3.12 --publish s3://bucket/publish --format native -o json
+osb template create --image python:3.12 --publish oci://registry.example.com/sandbox/templates --format overlaybd -o json
 osb template get <template-id> -o json
 osb template list -o json
 osb template delete <template-id> -o json
 ```
 
-`template create` also accepts `--resource cpu=1 memory=512Mi disk=2Gi`,
-`--entrypoint` (repeat per argv item), `--env KEY=VALUE`, `--metadata
-KEY=VALUE`, `--format native|overlaybd`, `--readiness-probe`, and
-`--warmup-seconds`. Or pass a request file in the public `CreateTemplateRequest`
-JSON format:
+`template create` also accepts `--resource cpu=1 memory=512Mi disk=2Gi`, `--entrypoint` (repeat per argv item), `--env KEY=VALUE`, `--metadata KEY=VALUE`, `--format native|overlaybd`, `--readiness-probe`, and `--warmup-seconds`. Or pass a request file in the public `CreateTemplateRequest` JSON format:
 
 ```bash
 osb template create -f template-request.json -o json
@@ -237,10 +219,13 @@ osb template create -f template-request.json -o json
 {
   "image": "python:3.12",
   "publish": "s3://bucket/publish",
+  "format": "native",
   "resourceLimits": { "cpu": "1", "memory": "512Mi" },
   "readiness": { "probe": "tcp://127.0.0.1:44772", "warmupSeconds": 60 }
 }
 ```
+
+OCI targets must name a repository without a tag or digest. Use `overlaybd` (the default) for OCI and explicitly select `native` for S3. The builder returns an immutable OCI reference in `status.manifestRef`; `sandbox create --template` uses that reference automatically. See [OCI template setup](../docs/guides/oci-templates.md) for Registry Secrets and runtime prerequisites.
 
 ### Manage snapshots
 
@@ -295,16 +280,9 @@ osb command status <sandbox-id> <execution-id> -o json
 osb command logs <sandbox-id> <execution-id> -o json
 ```
 
-Background start errors or a stream ending before startup confirmation make the
-CLI exit non-zero without success metadata. After a successful start, use
-`command status` and `command logs` to check the process's eventual result.
+Background start errors or a stream ending before startup confirmation make the CLI exit non-zero without success metadata. After a successful start, use `command status` and `command logs` to check the process's eventual result.
 
-By default the payload after `--` is joined into one shell command string, so
-pipelines, redirection, and `$VAR` expansion work as in a terminal. Add `--argv`
-to pass the arguments to the executable as a literal argv list (no shell) when
-values such as `$HOME`, quotes, embedded spaces, or empty strings must reach the
-process unchanged. `--argv` needs a sandbox image whose execd accepts argv
-requests:
+By default the payload after `--` is joined into one shell command string, so pipelines, redirection, and `$VAR` expansion work as in a terminal. Add `--argv` to pass the arguments to the executable as a literal argv list (no shell) when values such as `$HOME`, quotes, embedded spaces, or empty strings must reach the process unchanged. `--argv` needs a sandbox image whose execd accepts argv requests:
 
 ```bash
 osb command run <sandbox-id> -o raw --argv -- python3 -c "import sys; print(sys.argv[1:])" "a b" '$HOME' "x'y" ""
@@ -526,7 +504,8 @@ api_key = "your-api-key"
 domain = "localhost:8080"
 protocol = "http"
 request_timeout = 30
-use_server_proxy = false
+# use_server_proxy is deprecated (maintenance mode); prefer the ingress gateway for data-plane traffic.
+# use_server_proxy = false
 
 [output]
 color = true

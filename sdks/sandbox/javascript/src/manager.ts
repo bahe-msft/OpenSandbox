@@ -81,6 +81,7 @@ export class SandboxManager {
 
   private constructor(opts: {
     sandboxes: Sandboxes;
+    diagnostics?: Diagnostics;
     connectionConfig: ConnectionConfig;
     ownsTransport: boolean;
   }) {
@@ -112,7 +113,7 @@ export class SandboxManager {
       }
       throw err;
     }
-    return new SandboxManager({ sandboxes, connectionConfig, ownsTransport });
+    return new SandboxManager({ sandboxes, diagnostics, connectionConfig, ownsTransport });
   }
 
   listSandboxInfos(filter: SandboxFilter = {}): Promise<ListSandboxesResponse> {

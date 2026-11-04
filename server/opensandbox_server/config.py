@@ -136,7 +136,7 @@ def _is_valid_ip(host: str) -> bool:
 
 
 def _is_valid_ip_or_ip_port(address: str) -> bool:
-    match = _IPV4_WITH_PORT_RE.match(address)
+    match = _IPV4_WITH_PORT_RE.fullmatch(address)
     if not match:
         return False
     ip_str = match.group("ip")
@@ -166,11 +166,11 @@ def _is_valid_hostname(address: str) -> bool:
         if not (1 <= port <= 65535):
             return False
 
-    return bool(_HOSTNAME_RE.match(host))
+    return bool(_HOSTNAME_RE.fullmatch(host))
 
 
 def _is_wildcard_domain(host: str) -> bool:
-    return bool(_WILDCARD_DOMAIN_RE.match(host))
+    return bool(_WILDCARD_DOMAIN_RE.fullmatch(host))
 
 
 class RenewIntentRedisConfig(BaseModel):
@@ -702,6 +702,13 @@ class ServerConfig(BaseModel):
 
 
 class ProxyConfig(BaseModel):
+    """Server proxy settings.
+
+    DEPRECATED: the server-proxied data path is in maintenance mode and only
+    receives security fixes and bug fixes. Route data-plane traffic through the
+    ingress gateway instead.
+    """
+
     resolve_internal: bool = Field(
         default=True,
         description=(
@@ -810,6 +817,15 @@ class KubernetesRuntimeConfig(BaseModel):
         description=(
             "Secret (in the platform namespace) holding the object-store "
             "credentials referenced by server-created SandboxTemplates."
+        ),
+    )
+    template_oci_publish_secret: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "dockerconfigjson Secret used as output.publishSecretRef for "
+            "format: overlaybd SandboxTemplate builds. Required when "
+            "creating overlaybd templates."
         ),
     )
     template_mitm_ca_secret: Optional[str] = Field(
@@ -1226,15 +1242,6 @@ class EgressConfig(BaseModel):
         names = [provider.name for provider in self.credential_providers]
         if len(names) != len(set(names)):
             raise ValueError("credential provider names must be unique")
-        return self
-
-    @model_validator(mode="after")
-    def validate_upstream_proxy_requires_dns_nft(self) -> EgressConfig:
-        # The egress sidecar refuses the upstream proxy unless
-        # OPENSANDBOX_EGRESS_MODE=dns+nft; fail at config load instead of
-        # crash-looping every sidecar.
-        if self.upstream_proxy is not None and self.mode != EGRESS_MODE_DNS_NFT:
-            raise ValueError('egress.upstream_proxy requires egress.mode = "dns+nft"')
         return self
 
     @model_validator(mode="after")

@@ -582,11 +582,6 @@ class Sandbox internal constructor(
             }
         }
 
-        private fun elapsedMillis(startNanos: Long): Long {
-            val elapsed = (System.nanoTime() - startNanos) / 1_000_000L
-            return if (elapsed < 0L) 0L else elapsed
-        }
-
         /**
          * Connects to an existing sandbox instance by ID.
          *

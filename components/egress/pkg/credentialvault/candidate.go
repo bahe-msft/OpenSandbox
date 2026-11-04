@@ -397,6 +397,14 @@ func renderActiveSnapshot(
 	sort.Strings(names)
 	for _, name := range names {
 		binding := bindings[name]
+		if binding.Auth.Type == "" {
+			snapshot.Bindings = append(snapshot.Bindings, ActiveBinding{
+				Name: binding.Name, Match: binding.Match, Headers: []InjectionHeader{},
+				Substitutions: &[]InjectionSubstitution{},
+				Exchange:      &ExchangeRef{Credential: binding.Auth.Credential},
+			})
+			continue
+		}
 		if deferDynamic && bindingUsesDynamicSource(binding, credentials) {
 			snapshot.Bindings = append(snapshot.Bindings, ActiveBinding{Name: binding.Name, Match: binding.Match, Dynamic: true})
 			continue
@@ -424,12 +432,15 @@ func renderActiveSnapshot(
 		if err != nil {
 			return ActiveSnapshot{}, err
 		}
-		snapshot.Bindings = append(snapshot.Bindings, ActiveBinding{
-			Name:          binding.Name,
-			Match:         binding.Match,
-			Headers:       headers,
-			Substitutions: substitutions,
-		})
+		rendered := ActiveBinding{
+			Name:    binding.Name,
+			Match:   binding.Match,
+			Headers: headers,
+		}
+		if len(substitutions) > 0 {
+			rendered.Substitutions = &substitutions
+		}
+		snapshot.Bindings = append(snapshot.Bindings, rendered)
 		values = append(values, substitutionValues...)
 		for _, value := range values {
 			if value != "" {
@@ -457,22 +468,37 @@ func cloneActiveSnapshot(snapshot ActiveSnapshot) ActiveSnapshot {
 		Redactions: append([]string(nil), snapshot.Redactions...),
 	}
 	for i, binding := range snapshot.Bindings {
-		clone.Bindings[i] = ActiveBinding{
-			Name:          binding.Name,
-			Dynamic:       binding.Dynamic,
-			Match:         cloneMatch(binding.Match),
-			Headers:       append([]InjectionHeader(nil), binding.Headers...),
-			Substitutions: make([]InjectionSubstitution, len(binding.Substitutions)),
+		rendered := ActiveBinding{
+			Name: binding.Name, Dynamic: binding.Dynamic,
+			Match: cloneMatch(binding.Match), Headers: cloneInjectionHeaders(binding.Headers),
 		}
-		for j, substitution := range binding.Substitutions {
-			clone.Bindings[i].Substitutions[j] = InjectionSubstitution{
-				Placeholder: substitution.Placeholder,
-				Value:       substitution.Value,
-				In:          append([]string(nil), substitution.In...),
+		if binding.Substitutions != nil {
+			subs := make([]InjectionSubstitution, len(*binding.Substitutions))
+			for j, substitution := range *binding.Substitutions {
+				subs[j] = InjectionSubstitution{
+					Placeholder: substitution.Placeholder,
+					Value:       substitution.Value,
+					In:          append([]string(nil), substitution.In...),
+				}
 			}
+			rendered.Substitutions = &subs
 		}
+		if binding.Exchange != nil {
+			rendered.Exchange = &ExchangeRef{Credential: binding.Exchange.Credential}
+		}
+		clone.Bindings[i] = rendered
 	}
 	return clone
+}
+
+// cloneInjectionHeaders preserves nil-ness: passthrough bindings render null
+// headers while exchange markers carry an explicit empty array — degrading
+// the empty array to null would fail the addon parser closed.
+func cloneInjectionHeaders(headers []InjectionHeader) []InjectionHeader {
+	if headers == nil {
+		return nil
+	}
+	return append(make([]InjectionHeader, 0, len(headers)), headers...)
 }
 
 func cloneMatch(match Match) Match {

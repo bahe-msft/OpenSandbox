@@ -121,22 +121,6 @@ class DecisionSnapshotTest(unittest.TestCase):
         }
         self.assertIsNone(decision.validate(self.snapshot(empty, vault=0, policy=0)))
 
-    def test_accepts_unresolved_dynamic_bindings_without_credentials(self):
-        candidate = self.active()
-        dynamic = binding("dynamic", ["https"], ["api.example.com"])
-        dynamic["dynamic"] = True
-        candidate["fullRenderedBindings"] = [dynamic]
-        candidate["tlsBindingHostSelectors"] = ["api.example.com"]
-        candidate["redactions"] = []
-        self.assertIsNone(decision.validate(self.snapshot(candidate)))
-        for invalid in (False, 1, "true"):
-            dynamic["dynamic"] = invalid
-            self.assert_rejected(candidate)
-        dynamic["dynamic"] = True
-        dynamic["headers"] = [{"name": "Private-Token", "value": "never-log-me"}]
-        candidate["redactions"] = ["never-log-me"]
-        self.assert_rejected(candidate)
-
     def test_rejects_schema_identity_and_derived_state_mismatches(self):
         cases = []
         for field, value in (
@@ -181,6 +165,15 @@ class DecisionSnapshotTest(unittest.TestCase):
             candidate = copy.deepcopy(self.active())
             mutate(candidate)
             self.assert_rejected(candidate)
+
+    def test_rejects_exchange_marker_from_newer_egress(self):
+        """Version-skew gate: snapshots carrying OSEP-0025 exchange markers
+        must fail closed on this (unextended) validator."""
+        candidate = self.active()
+        candidate["fullRenderedBindings"][0]["exchange"] = {
+            "credential": "spi-signer"
+        }
+        self.assert_rejected(candidate)
 
     def test_accepts_empty_substitution_and_legacy_empty_wildcard_language(self):
         candidate = self.active()

@@ -853,32 +853,14 @@ def test_upstream_proxy_config_allows_delete_network_policy_rules(persisted_fsb)
     response = client.request("DELETE", url, json=["a.com"])
 
     assert response.status_code == 200
-    assert fake.last_update is not None
+    assert fake.last_relay is not None and fake.last_relay.path.startswith("/policy/")
 
 
-def test_upstream_proxy_config_allows_create_without_network_policy(http_fsb):
-    client, fake, service = http_fsb
-    service._app_config.egress = EgressConfig(
-        image="opensandbox/egress:v1.1.7",
-        mode=EGRESS_MODE_DNS_NFT,
-        upstream_proxy=EgressUpstreamProxyConfig(url="http://proxy.local:3128"),
-    )
-
-    response = client.post(
-        "/v1/sandboxes",
-        json={
-            "image": {"uri": "python:3.11"},
-            "entrypoint": ["python"],
-            "timeout": 3600,
-            "resourceLimits": {"cpu": "500m", "memory": "512Mi"},
-        },
-    )
-
-    assert response.status_code == 202
-    assert fake.last_create is not None
-
-
-def test_http_policy_replace_preserves_bindings_and_fences_updates(persisted_fsb):
+def test_create_without_network_policy_still_registers_egress_binding(persisted_fsb):
+    """Every fsb sandbox registers an egress subject at create — the relay
+    surfaces (/policy/{uid}, /vault/{uid}) attach to it. A sandbox created
+    without a networkPolicy seeds default-deny and can adopt a policy later
+    through the relay."""
     client, fake, _, sandbox_id = persisted_fsb
     url = f"/v1/sandboxes/{sandbox_id}/networkpolicy"
 
@@ -1049,6 +1031,7 @@ def test_policy_rejects_port_scoped_rules(persisted_fsb):
     assert client.patch(url, json=[port_only]).status_code == 400
     assert client.patch(url, json=[scoped]).status_code == 400
     assert fake.last_update is None
+    assert fake.last_relay is None or fake.last_relay.method == "GET"
 
 
 def test_legacy_policy_route_preserves_body_for_existing_proxy(http_fsb, monkeypatch):

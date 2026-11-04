@@ -184,51 +184,6 @@ func (s *rotatingCandidateSource) Resolve(context.Context) (string, error) {
 	return fmt.Sprintf("resolved-secret-%d", s.resolves.Add(1)), nil
 }
 
-type dynamicCandidateSource struct {
-	rotatingCandidateSource
-}
-
-func (*dynamicCandidateSource) Dynamic() bool { return true }
-
-func TestMutationCandidatePreservesDynamicCredentialResolution(t *testing.T) {
-	var resolves atomic.Int32
-	registry := NewSourceRegistry()
-	registry.Register("rotating-candidate", func(json.RawMessage) (CredentialSource, error) {
-		return &dynamicCandidateSource{rotatingCandidateSource{resolves: &resolves}}, nil
-	})
-	store := NewStoreWithRegistry(nil, func() bool { return true }, registry)
-	policy := testCredentialPolicy(t, `{"defaultAction":"deny","egress":[{"action":"allow","target":"code.example.com"}]}`)
-	request := testCredentialVaultRequest()
-	request.Credentials[0].Source = json.RawMessage(`{"type":"rotating-candidate"}`)
-	candidate, err := store.PrepareCreate(request, policy)
-	require.NoError(t, err)
-	snapshot, err := candidate.ActiveSnapshot(context.Background())
-	require.NoError(t, err)
-	require.True(t, snapshot.Cacheable)
-	require.True(t, snapshot.Bindings[0].Dynamic)
-	require.Empty(t, snapshot.Bindings[0].Headers)
-	require.Zero(t, resolves.Load())
-	payload, err := MarshalDecisionSnapshot(snapshot, 1)
-	require.NoError(t, err)
-	require.Contains(t, string(payload), `"dynamic":true`)
-	require.NotContains(t, string(payload), "resolved-secret")
-	_, err = store.CommitCandidate(candidate)
-	require.NoError(t, err)
-	published, err := store.ActiveSnapshot()
-	require.NoError(t, err)
-	require.Equal(t, snapshot, published)
-	_, err = store.FreezeForPolicy(policy)
-	require.NoError(t, err)
-
-	for i := 1; i <= 2; i++ {
-		resolved, err := store.ResolveBindingWithContext(context.Background(), snapshot.Bindings[0].Name, snapshot.Revision)
-		require.NoError(t, err)
-		require.False(t, resolved.Bindings[0].Dynamic)
-		require.Equal(t, fmt.Sprintf("resolved-secret-%d", i), resolved.Bindings[0].Headers[0].Value)
-	}
-	require.Equal(t, int32(2), resolves.Load())
-}
-
 func TestMutationCandidateFreezesRenderedSnapshot(t *testing.T) {
 	var resolves atomic.Int32
 	registry := NewSourceRegistry()

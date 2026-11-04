@@ -23,14 +23,7 @@ git push
 
 ## Prereleases (rc)
 
-An rc is always cut on the **line-birth version** (`X.Y.0-rc.N` — there
-is no `X.Y.Z-rc` for `Z > 0`). It validates that the platform deploys
-and the fan-out runs: images are published, **all packages are held
-(not published)**, and only the umbrella tag is minted (marked
-`--prerelease` on GitHub). rc runs are approval-free: no `release`
-environment gate, and the BOM PR merges without waiting for review (if
-the release-branch ruleset still mandates review, add a ruleset bypass
-for the release bot — the workflow fails fast instead of waiting).
+An rc is always cut on the **line-birth version** (`X.Y.0-rc.N` — there is no `X.Y.Z-rc` for `Z > 0`). It validates that the platform deploys and the fan-out runs: images are published, **all packages are held (not published)**, and only the umbrella tag is minted (marked `--prerelease` on GitHub). rc runs are approval-free: no `release` environment gate, and the BOM PR merges without waiting for review (if the release-branch ruleset still mandates review, add a ruleset bypass for the release bot — the workflow fails fast instead of waiting).
 
 ```bash
 # 1. bump (channel=rc is derived from the suffix)
@@ -51,11 +44,7 @@ Repeat with `-rc.2`, `-rc.3`, … as fixes land — every rc is a full rebuild a
 
 ## Release Execution (workflow)
 
-Dispatch `.github/workflows/release-umbrella.yml`
-(`dry_run=false`, `version`, `channel`, `release_branch`). Stable
-releases require a release approver other than the triggerer to approve
-the `release` environment; rc releases and dry runs run approval-free.
-The workflow then runs:
+Dispatch `.github/workflows/release-umbrella.yml` (`dry_run=false`, `version`, `channel`, `release_branch`). Stable releases require a release approver other than the triggerer to approve the `release` environment; rc releases and dry runs run approval-free. The workflow then runs:
 
 | Stage | What happens |
 |---|---|
@@ -66,9 +55,7 @@ The workflow then runs:
 | publish | once the BOM PR merges (all images green + code-owner approval), packages publish in parallel per registry (PyPI, npm, NuGet, Maven Central); images are already public at `release-X.Y.Z` from the build stage |
 | tag | `release-X.Y.Z` + `sdks/sandbox/go/vX.Y.Z` minted on `C_bom`, GitHub Release created with the notes and BOM |
 
-A failed release never mints its git tag or GitHub Release, so the
-release feed never shows a partial release; dispatch a dry run
-(`dry_run=true`) to keep the fan-out healthy between release windows.
+A failed release never mints its git tag or GitHub Release, so the release feed never shows a partial release; dispatch a dry run (`dry_run=true`) to keep the fan-out healthy between release windows.
 
 ### Dry runs
 
@@ -86,14 +73,7 @@ release feed never shows a partial release; dispatch a dry run
 
 ### Publish and rollback
 
-Registry legs (PyPI, npm, NuGet, Maven Central) run in parallel and
-independently — there is no cross-ecosystem ordering. Publish steps are
-idempotent: a version already visible on its registry is skipped, so
-re-runs never collide with registry immutability (a released Maven
-version is immutable; the `sandbox-bom` POM's presence on Central is
-the skip marker). A successful upload is not re-verified against the
-public index — registries' simple indexes can lag an upload by minutes.
-On a failure, remediate already-published legs:
+Registry legs (PyPI, npm, NuGet, Maven Central) run in parallel and independently — there is no cross-ecosystem ordering. Publish steps are idempotent: a version already visible on its registry is skipped, so re-runs never collide with registry immutability (a released Maven version is immutable; the `sandbox-bom` POM's presence on Central is the skip marker). A successful upload is not re-verified against the public index — registries' simple indexes can lag an upload by minutes. On a failure, remediate already-published legs:
 
 | Ecosystem | Revocation |
 |---|---|
@@ -115,12 +95,7 @@ Anything that is not a qualifying CVE waits for the next line birth.
 
 ### Staging cleanup
 
-Run-scoped staging image tags (`staging-<sha>-<runid>`) exist only when
-a run does not publish release tags (dry runs, or real runs while the
-`UMBRELLA_PUBLISH_ENABLED` gate is still closed). They are namespaced
-and never referenced by user-facing surfaces; a scheduled job deletes
-staging tags whose run did not complete within 14 days. Held package
-artifacts use the default 14-day workflow-artifact retention.
+Run-scoped staging image tags (`staging-<sha>-<runid>`) exist only when a run does not publish release tags (dry runs, or real runs while the `UMBRELLA_PUBLISH_ENABLED` gate is still closed). They are namespaced and never referenced by user-facing surfaces; a scheduled job deletes staging tags whose run did not complete within 14 days. Held package artifacts use the default 14-day workflow-artifact retention.
 
 ## Legacy Releases
 

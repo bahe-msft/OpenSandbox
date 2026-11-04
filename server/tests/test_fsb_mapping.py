@@ -154,6 +154,19 @@ def test_map_create_request_rejects_unsupported_fields(field_name, payload):
     assert exc_info.value.field == field_name
 
 
+def test_map_create_request_accepts_credential_proxy_ignored():
+    """OSEP-0022: credentialProxy no longer rejects the fsb create; the vault
+    is not carried at create time and rides the relay after creation."""
+    request = _base_request(
+        credential_proxy=CredentialProxyConfig(enabled=True),
+        network_policy=NetworkPolicy(egress=[NetworkRule(action="allow", target="a.com")]),
+    )
+    create = map_create_request(request, "sbx-1", "ns-1", now=NOW)
+    assert create.request_id == "sbx-1"
+    assert len(create.action_bindings) == 1
+    assert create.action_bindings[0].handler == "egress"
+
+
 def test_map_create_request_accepts_idle_policy_only_lifecycle():
     """idlePolicy is control-plane state; the mapping ignores it, the service persists it."""
     from opensandbox_server.api.schema import IdlePolicy

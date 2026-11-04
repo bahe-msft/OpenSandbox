@@ -275,11 +275,7 @@ attestation:
   signatures: […]
 ```
 
-The BOM is authoritative for **digests**, not versions — the version is
-the file name. It is workflow-generated, so version-string drift is
-impossible (~4 KB per release). RC BOMs omit the `server`, `cli`, and
-`sdks` sections entirely: packages are held at rc and only publish (and
-appear in the BOM) at the stable release of the line.
+The BOM is authoritative for **digests**, not versions — the version is the file name. It is workflow-generated, so version-string drift is impossible (~4 KB per release). RC BOMs omit the `server`, `cli`, and `sdks` sections entirely: packages are held at rc and only publish (and appear in the BOM) at the stable release of the line.
 
 **Release notes are hand-authored.** The release manager writes `docs/releases/X.Y.Z.md` from the template at `docs/releases/TEMPLATE.md` — Highlights first, then one section per component (Server, SDKs, Controller incl. task-executor and image-committer, Execd, Networking (egress + ingress), Fast Sandbox, Misc) — and commits it on the release branch **before** triggering the workflow. Preflight fails if the file is missing or empty — a release never starts without its notes. The workflow never rewrites the file; it consumes it as-is for the BOM commit and the GitHub Release. The in-repo copy is **authoritative**; the GitHub Release mirrors the same bytes. Rationale: notes must survive org migrations and stay reachable for users behind GitHub-blocked networks (ACR mirror users), and they feed generated docs (`docs/community/releases.md`, compatibility matrix). Legacy-era notes are not backfilled — `docs/releases/` starts at `release-1.1.0-rc.1`.
 
@@ -331,17 +327,10 @@ GitOps platforms (Argo, Flux, internal deploy systems) point directly at the rep
 ## Test Plan
 
 - **BOM schema** (`specs/schemas/umbrella-release.schema.json`) validated in CI.
-- **Consistency scan unit test**: every listed path updated on
-  `C_build`; no coverage outside the list.
-- **On-demand dry-run** (manual `workflow_dispatch` with
-  `dry_run: true`) to catch fan-out regressions; the former weekly
-  Wednesday schedule was removed, so dispatch a rehearsal before each
-  release window.
-- **Atomicity**: a synthetic build-leg failure aborts before any
-  publish, chart release, or tag.
-- **Verify-then-continue**: per ecosystem, a synthetic verification
-  failure stops subsequent legs, walks the rollback ledger in reverse,
-  and never pushes the tag.
+- **Consistency scan unit test**: every listed path updated on `C_build`; no coverage outside the list.
+- **On-demand dry-run** (manual `workflow_dispatch` with `dry_run: true`) to catch fan-out regressions; the former weekly Wednesday schedule was removed, so dispatch a rehearsal before each release window.
+- **Atomicity**: a synthetic build-leg failure aborts before any publish, chart release, or tag.
+- **Verify-then-continue**: per ecosystem, a synthetic verification failure stops subsequent legs, walks the rollback ledger in reverse, and never pushes the tag.
 - **Idempotency**: re-running at the same version short-circuits to no-ops.
 - **Staging GC**: tags from runs that never reached publish are deleted after 14 days.
 - **hatch-vcs / dependency-range tests**: no legacy `tag_regex` or `git_describe_command` namespace remains; all inter-package ranges are `[X.Y.0, X+1.0.0)`-shaped.

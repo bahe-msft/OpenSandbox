@@ -32,11 +32,7 @@ QEMU support is a contract between the workload image and OpenSandbox. The image
 3. keep each writable Guest overlay captured by v1 in the container rootfs;
 4. recognize the OpenSandbox restore environment and add QEMU `-incoming`;
 5. become Ready only after the QMP socket and Guest service are available;
-6. for an internal BatchSandbox pause snapshot, ensure that workload-controlled
-   processes do not independently resume the source VM via QMP (e.g. `cont`) or
-   restart the source QEMU process after migration export and before the source
-   Pod is deleted (this does not restrict the snapshot worker from resuming the
-   source on failure, or during standalone public snapshots).
+6. for an internal BatchSandbox pause snapshot, ensure that workload-controlled processes do not independently resume the source VM via QMP (e.g. `cont`) or restart the source QEMU process after migration export and before the source Pod is deleted (this does not restrict the snapshot worker from resuming the source on failure, or during standalone public snapshots).
 
 ### Declare the Pod template contract
 
@@ -262,13 +258,7 @@ metadata:
     sandbox.opensandbox.io/qemu-required-node-class: shenlong-v1
 ```
 
-By default, snapshot image names are generated below the configured Registry prefix. A
-QEMU sandbox produces normal container rootfs images such as
-`<prefix>/<sandbox>-<container>:<tag>` and a VMState image such as
-`<prefix>/<sandbox>-vmstate:<tag>`. Both artifact names can be customized with
-[`--snapshot-image-uri-template`](/guides/pause-resume#custom-image-names); VM-state
-artifacts receive `ContainerName` and `ArtifactKind` equal to `vmstate`. Resume
-resolves and uses their immutable manifest digests.
+By default, snapshot image names are generated below the configured Registry prefix. A QEMU sandbox produces normal container rootfs images such as `<prefix>/<sandbox>-<container>:<tag>` and a VMState image such as `<prefix>/<sandbox>-vmstate:<tag>`. Both artifact names can be customized with [`--snapshot-image-uri-template`](/guides/pause-resume#custom-image-names); VM-state artifacts receive `ContainerName` and `ArtifactKind` equal to `vmstate`. Resume resolves and uses their immutable manifest digests.
 
 ## Validation
 

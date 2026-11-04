@@ -386,6 +386,27 @@ class IdlePolicy(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
+class RenewalPolicy(BaseModel):
+    """
+    Renew-on-access behavior (OSEP-0009): observed access moves the
+    expiration to ``max(now + extend_seconds, current)``. Control-plane
+    policy; supersedes the deprecated ``access.renew.extend.seconds``
+    extensions key.
+    """
+
+    extend_seconds: int = Field(
+        alias="extendSeconds",
+        ge=300,
+        le=86400,
+        description=(
+            "Extension window X in seconds for each access-driven renewal: "
+            "the expiration is moved to max(now + X, current expiresAt)."
+        ),
+    )
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
 class SandboxLifecycle(BaseModel):
     """Optional lifecycle hooks applied when a sandbox is created."""
 
@@ -398,6 +419,14 @@ class SandboxLifecycle(BaseModel):
             "Auto-pause and wake-on-access behavior (OSEP-0024). Control-plane "
             "policy only: it never reaches the guest. Supported only by the "
             "fast-sandbox backend."
+        ),
+    )
+    renewal_policy: RenewalPolicy | None = Field(
+        default=None,
+        alias="renewalPolicy",
+        description=(
+            "Renew-on-access behavior (OSEP-0009). Control-plane policy; "
+            "supersedes the deprecated extensions['access.renew.extend.seconds'] key."
         ),
     )
 
@@ -413,8 +442,10 @@ class SandboxLifecycle(BaseModel):
 
 class InlineCredentialSource(BaseModel):
     """
-    Inline or plugin Credential Vault source.
+    Write-only inline credential material for Credential Vault.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     value: str = Field(repr=False, description="Inline credential value.")
     type: Literal["inline", "plugin"] = Field(
@@ -424,7 +455,7 @@ class InlineCredentialSource(BaseModel):
 
     @classmethod
     def plugin(cls, name: str) -> "InlineCredentialSource":
-        """Create a source selecting a trusted egress credential plugin."""
+        """Select a trusted egress credential provider."""
         return cls(type="plugin", value=name)
 
     @field_validator("value")
@@ -435,12 +466,35 @@ class InlineCredentialSource(BaseModel):
         return v
 
 
+class ExchangeCredentialSource(BaseModel):
+    """
+    Exchange credential source (OSEP-0025): no local material; ``endpoint``
+    is configuration, not secret material.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["exchange"] = Field(
+        default="exchange", description="Credential source type."
+    )
+    endpoint: str = Field(
+        description="Header-resolver endpoint (unix:///path or https://host[:port])."
+    )
+
+    @field_validator("endpoint")
+    @classmethod
+    def endpoint_must_not_be_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Credential source endpoint cannot be blank")
+        return v
+
+
 class Credential(BaseModel):
     """Sandbox-local Credential Vault credential."""
 
     name: str = Field(description="Sandbox-local credential name.")
-    source: InlineCredentialSource | dict[str, str] = Field(
-        description="Write-only credential source."
+    source: InlineCredentialSource | ExchangeCredentialSource | dict[str, str] = Field(
+        description="Write-only credential source (inline material or exchange endpoint)."
     )
 
     @field_validator("name")
@@ -453,7 +507,10 @@ class Credential(BaseModel):
     @model_validator(mode="after")
     def normalize_source(self) -> "Credential":
         if isinstance(self.source, dict):
-            self.source = InlineCredentialSource.model_validate(self.source)
+            if self.source.get("type", "inline") == "exchange":
+                self.source = ExchangeCredentialSource.model_validate(self.source)
+            else:
+                self.source = InlineCredentialSource.model_validate(self.source)
         return self
 
 
@@ -494,13 +551,33 @@ class CredentialSubstitution(BaseModel):
 
 
 class CredentialAuth(BaseModel):
-    """Typed Credential Vault auth rule."""
+    """Credential Vault auth rule: ``type`` selects one of the five static
+    kinds; leaving it unset selects the typeless exchange form (OSEP-0025),
+    which sets only ``credential``."""
 
-    type: Literal["bearer", "basic", "apiKey", "customHeaders", "passthrough"]
+    type: Literal["bearer", "basic", "apiKey", "customHeaders", "passthrough"] | None = (
+        None
+    )
     credential: str | None = None
     name: str | None = None
     headers: list[CustomHeaderEntry] | None = None
     substitutions: list[CredentialSubstitution] | None = None
+
+    @model_validator(mode="after")
+    def typeless_form_must_only_carry_credential(self) -> "CredentialAuth":
+        if self.type is not None:
+            return self
+        if not (self.credential or "").strip():
+            raise ValueError(
+                "CredentialAuth requires either a static 'type' or an"
+                " exchange 'credential' reference"
+            )
+        if self.name is not None or self.headers is not None or self.substitutions is not None:
+            raise ValueError(
+                "The typeless exchange auth form carries only 'credential';"
+                " 'name', 'headers', and 'substitutions' require a static 'type'"
+            )
+        return self
 
 
 class CredentialBinding(BaseModel):
@@ -530,17 +607,22 @@ class CredentialMetadata(BaseModel):
     """Sanitized credential metadata returned by Credential Vault."""
 
     name: str
-    source_type: str = Field(alias="sourceType")
+    source_type: str = Field(
+        alias="sourceType",
+        description="Credential source kind (inline or exchange).",
+    )
     revision: int
 
     model_config = ConfigDict(populate_by_name=True)
 
 
 class CredentialAuthMetadata(BaseModel):
-    """Sanitized auth metadata returned for a Credential Vault binding."""
+    """Sanitized auth metadata: static kinds carry ``type`` (``name`` for
+    apiKey); the typeless form carries only ``credential``."""
 
-    type: str
+    type: str | None = None
     name: str | None = None
+    credential: str | None = None
 
 
 class CredentialBindingMetadata(BaseModel):

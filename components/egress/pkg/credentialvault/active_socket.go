@@ -32,19 +32,17 @@ func StartActiveSocketServer(
 	if activeHandler == nil {
 		return nil, nil, fmt.Errorf("active credential vault handler is required")
 	}
-	return startActiveSocketServer(
-		func(w http.ResponseWriter, _ *http.Request) { activeHandler(w) },
-		nil,
-		socketPath,
-		socketGID,
-	)
+	return startActiveSocketServer(func(w http.ResponseWriter, _ *http.Request) { activeHandler(w) }, nil, socketPath, socketGID)
 }
 
 // StartActiveSocketServerRequestAware passes the request to active-vault
 // handlers. Sidecar handlers inspect conditional snapshot headers; fast-sandbox
 // handlers additionally dispatch clientIp (source IP -> subject -> snapshot).
+// resolveHandler serves POST /credential-vault/_resolve; nil mounts the route
+// forbidden.
 func StartActiveSocketServerRequestAware(
 	activeHandler func(http.ResponseWriter, *http.Request),
+	resolveHandler http.Handler,
 	socketPath string,
 	socketGID int,
 	resolveHandlers ...http.HandlerFunc,
@@ -52,18 +50,15 @@ func StartActiveSocketServerRequestAware(
 	if activeHandler == nil {
 		return nil, nil, fmt.Errorf("active credential vault handler is required")
 	}
-	var resolveHandler http.HandlerFunc
-	if len(resolveHandlers) > 0 {
-		resolveHandler = resolveHandlers[0]
-	}
-	return startActiveSocketServer(activeHandler, resolveHandler, socketPath, socketGID)
+	return startActiveSocketServer(activeHandler, resolveHandler, socketPath, socketGID, resolveHandlers...)
 }
 
 func startActiveSocketServer(
-	activeHandler http.HandlerFunc,
-	resolveHandler http.HandlerFunc,
+	activeHandler func(http.ResponseWriter, *http.Request),
+	resolveHandler http.Handler,
 	socketPath string,
 	socketGID int,
+	execResolveHandlers ...http.HandlerFunc,
 ) (*http.Server, func(context.Context) error, error) {
 	if socketPath == "" {
 		return nil, nil, fmt.Errorf("socket path is required")
@@ -109,10 +104,30 @@ func startActiveSocketServer(
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /credential-vault/_active", activeHandler)
-	if resolveHandler != nil {
-		mux.HandleFunc("GET /credential-vault/_resolve", resolveHandler)
-	}
+	mux.HandleFunc("/credential-vault/_active", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		activeHandler(w, r)
+	})
+	mux.HandleFunc("/credential-vault/_resolve", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && len(execResolveHandlers) > 0 && execResolveHandlers[0] != nil {
+			execResolveHandlers[0](w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if resolveHandler == nil {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		resolveHandler.ServeHTTP(w, r)
+	})
 
 	srv := &http.Server{Handler: mux}
 	errCh := make(chan error, 1)

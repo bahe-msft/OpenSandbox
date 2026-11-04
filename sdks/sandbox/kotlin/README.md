@@ -384,13 +384,7 @@ The `ConnectionConfig` class manages API server connection settings.
 
 Transfer timeouts:
 
-- `requestTimeout` bounds each transport phase - connecting, waiting for response
-  headers, and waiting for more of a response body - but it never caps a healthy
-  file upload or download that keeps making progress. A transfer that stalls for
-  longer than the timeout, or an upload that gets no response headers within it
-  after the body has been sent, fails instead of hanging (the Go SDK's
-  `ResponseHeaderTimeout` contract). An explicit `RetryPolicy.overallDeadline`
-  still caps the whole transfer.
+- `requestTimeout` bounds each transport phase - connecting, waiting for response headers, and waiting for more of a response body - but it never caps a healthy file upload or download that keeps making progress. A transfer that stalls for longer than the timeout, or an upload that gets no response headers within it after the body has been sent, fails instead of hanging (the Go SDK's `ResponseHeaderTimeout` contract). An explicit `RetryPolicy.overallDeadline` still caps the whole transfer.
 
 | Parameter        | Description                                | Default                      | Environment Variable   |
 | ---------------- | ------------------------------------------ | ---------------------------- | ---------------------- |
@@ -546,6 +540,34 @@ sandbox.credentialVault().create(
                             .build()
                     )
                     .auth(CredentialAuth.apiKey("x-api-key", "api-token"))
+                    .build()
+            )
+        )
+        .build()
+);
+```
+
+Exchange-sourced credentials (OSEP-0025) carry no local material: the egress resolves header sets per request from a header-resolver endpoint, and bindings reference them through the typeless exchange auth form.
+
+```java
+import com.alibaba.opensandbox.sandbox.domain.models.sandboxes.ExchangeCredentialSource;
+
+sandbox.credentialVault().create(
+    CredentialVaultCreateRequest.builder()
+        .credentials(
+            List.of(
+                Credential.builder()
+                    .name("spi-signer")
+                    .exchangeSource("unix:///run/spi/spi.sock")
+                    .build()
+            )
+        )
+        .bindings(
+            List.of(
+                CredentialBinding.builder()
+                    .name("internal-api")
+                    .match(CredentialMatch.builder().hosts("*.internal.example.com").build())
+                    .auth(CredentialAuth.exchange("spi-signer"))
                     .build()
             )
         )

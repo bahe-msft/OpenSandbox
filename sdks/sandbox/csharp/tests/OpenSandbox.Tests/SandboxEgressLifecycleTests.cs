@@ -27,6 +27,17 @@ namespace OpenSandbox.Tests;
 public class SandboxEgressLifecycleTests
 {
     [Fact]
+    public async Task LegacyFilesystem_ShouldRejectUnsupportedDownloadMetadata()
+    {
+        ISandboxFiles files = new StubFiles();
+        Func<Task> bytes = () => files.ReadBytesDetailedAsync("/data.bin");
+        Func<Task> stream = () => files.ReadBytesStreamDetailedAsync("/data.bin");
+
+        await bytes.Should().ThrowAsync<NotSupportedException>().WithMessage("*download metadata*");
+        await stream.Should().ThrowAsync<NotSupportedException>().WithMessage("*download metadata*");
+    }
+
+    [Fact]
     public async Task CreateAsync_ShouldBuildEgressStackOnce_AndReuseItForOperations()
     {
         var sandboxes = new StubSandboxes();
@@ -236,6 +247,68 @@ public class SandboxEgressLifecycleTests
         idlePolicy.WakeOnAccess.Should().BeTrue();
         idlePolicy.ActiveProbe!.Port.Should().Be(8080);
         idlePolicy.ActiveProbe.Path.Should().Be("/active");
+    }
+
+    [Fact]
+    public async Task CreateAsync_ShouldForwardLifecycleRenewalPolicy()
+    {
+        var sandboxes = new StubSandboxes();
+        var adapterFactory = new StubAdapterFactory(sandboxes, new StubEgress());
+
+        await using var sandbox = await Sandbox.CreateAsync(new SandboxCreateOptions
+        {
+            Image = "python:3.12",
+            ConnectionConfig = new ConnectionConfig(new ConnectionConfigOptions
+            {
+                Domain = "127.0.0.1:8080",
+                Protocol = ConnectionProtocol.Http
+            }),
+            AdapterFactory = adapterFactory,
+            SkipHealthCheck = true,
+            Diagnostics = new SdkDiagnosticsOptions
+            {
+                LoggerFactory = NullLoggerFactory.Instance
+            },
+            Lifecycle = new SandboxLifecycle
+            {
+                RenewalPolicy = new RenewalPolicy { ExtendSeconds = 3600 }
+            }
+        });
+
+        sandboxes.LastCreateRequest.Should().NotBeNull();
+        var renewalPolicy = sandboxes.LastCreateRequest!.Lifecycle!.RenewalPolicy;
+        renewalPolicy.Should().NotBeNull();
+        renewalPolicy!.ExtendSeconds.Should().Be(3600);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ShouldFastFailOnOutOfRangeRenewalPolicy()
+    {
+        var sandboxes = new StubSandboxes();
+        var adapterFactory = new StubAdapterFactory(sandboxes, new StubEgress());
+
+        Func<Task> act = () => Sandbox.CreateAsync(new SandboxCreateOptions
+        {
+            Image = "python:3.12",
+            ConnectionConfig = new ConnectionConfig(new ConnectionConfigOptions
+            {
+                Domain = "127.0.0.1:8080",
+                Protocol = ConnectionProtocol.Http
+            }),
+            AdapterFactory = adapterFactory,
+            SkipHealthCheck = true,
+            Diagnostics = new SdkDiagnosticsOptions
+            {
+                LoggerFactory = NullLoggerFactory.Instance
+            },
+            Lifecycle = new SandboxLifecycle
+            {
+                RenewalPolicy = new RenewalPolicy { ExtendSeconds = 299 }
+            }
+        });
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        sandboxes.LastCreateRequest.Should().BeNull();
     }
 
     [Fact]

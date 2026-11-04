@@ -56,6 +56,12 @@ type ExecutionError struct {
 type ExecutionComplete struct {
 	Timestamp     int64 `json:"timestamp"`
 	ExecutionTime int64 `json:"execution_time"`
+	// ExitCode is the successful foreground POST /command process exit status
+	// (0), present only on its execution_complete event after the process has
+	// exited. Nil for background startup acknowledgements, code execution,
+	// other events, and servers that predate execution_complete.exit_code.
+	// Non-zero command exits use error.exit_code instead.
+	ExitCode *int `json:"exit_code,omitempty"`
 }
 
 // ExecutionInit represents the initialization event from the server.
@@ -86,14 +92,23 @@ type Execution struct {
 
 	// ExitCode is the process exit code. Nil if not available.
 	ExitCode *int
+
+	// codeExecution marks a language-backed code execution. Shell command
+	// modes keep line-based joining; code output is streamed as fragments.
+	codeExecution bool
 }
 
-// Text returns the combined stdout text.
+// Text returns the combined stdout text. For command output, a newline is
+// inserted between two events only when the first ends in neither LF nor CR.
+// For a code execution, the stdout fragments are concatenated unchanged.
 func (e *Execution) Text() string {
 	var b strings.Builder
 	for i, m := range e.Stdout {
-		if i > 0 {
-			b.WriteByte('\n')
+		if i > 0 && !e.codeExecution {
+			previous := e.Stdout[i-1].Text
+			if !strings.HasSuffix(previous, "\n") && !strings.HasSuffix(previous, "\r") {
+				b.WriteByte('\n')
+			}
 		}
 		b.WriteString(m.Text)
 	}
@@ -245,12 +260,19 @@ func processStreamEvent(exec *Execution, event StreamEvent, handlers *ExecutionH
 		complete := ExecutionComplete{
 			Timestamp:     ev.Timestamp,
 			ExecutionTime: ev.ExecutionTime,
+			ExitCode:      ev.ExitCode,
 		}
 		exec.Complete = &complete
-		// Foreground command exit code: 0 if no error
-		if exec.ExitCode == nil && exec.Error == nil {
-			zero := 0
-			exec.ExitCode = &zero
+		// Prefer the wire execution_complete.exit_code when present; otherwise
+		// infer 0 for a successful foreground completion (older servers omit it).
+		if exec.ExitCode == nil {
+			if ev.ExitCode != nil {
+				code := *ev.ExitCode
+				exec.ExitCode = &code
+			} else if exec.Error == nil {
+				zero := 0
+				exec.ExitCode = &zero
+			}
 		}
 		if handlers != nil && handlers.OnComplete != nil {
 			return handlers.OnComplete(complete)

@@ -35,8 +35,7 @@ from opensandbox.internal.readiness import (
     ReadinessBudget,
     validate_polling_interval,
 )
-from opensandbox.internal.lifecycle_metrics import report_sandbox_create_metric
-from opensandbox.models.diagnostics import DiagnosticContent
+from opensandbox.models.diagnostics import DiagnosticContent, DiagnosticContext
 from opensandbox.models.sandboxes import (
     CreateSnapshotRequest,
     CredentialProxyConfig,

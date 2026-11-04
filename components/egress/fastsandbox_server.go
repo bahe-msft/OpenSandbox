@@ -25,6 +25,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"hash/crc32"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -58,19 +59,31 @@ type fastSandboxPolicyServer struct {
 	reg *subject.MemoryRegistry
 	nft fastSandboxNftApplier
 
-	mu sync.Mutex
+	// actionGate serializes registry writers without making cancellation wait
+	// for a mutex holder. Vault transactions use mu, never this gate.
+	actionGate chan struct{}
+
+	// Never acquire mu while holding a registry lock (including callbacks).
+	// Registry lookups also stay outside mu so kernel I/O cannot pin mu.
+	// Pre-read identities are validated against subjFence under mu.
+	mu      sync.Mutex
+	rebinds map[subject.Subject]*subjectRebind
 	// pendingPolicies holds the SET_BINDING input of a still-denying subject
 	// until its data-plane-ready Hook activates it. Deliberately NOT stored
 	// in the registry: DNS dispatch must keep denying (fail closed) while the
 	// policy has not been made effective.
 	pendingPolicies map[subject.Subject]*policy.NetworkPolicy
 	vaults          map[subject.Subject]vaultEntry
-	// subjAtt records the latest network attachment, used for terminal
-	// cleanup (gateway refcounts) even when the REMOVE_BINDING envelope omits
-	// the attachment block.
+	// subjAtt records the latest validated registration attempt, including
+	// failed enforcement, for same-fence comparison and old-IP cleanup.
 	subjAtt map[subject.Subject]actionhandler.NetworkAttachment
+	// subjSandbox mirrors the SET_BINDING SandboxRef.Name (wire sandboxId,
+	// D11); the resolve path puts it on the resolver wire. Refreshed and
+	// purged with subjAtt.
+	subjSandbox map[subject.Subject]string
 	// subjFence mirrors the registered fence per subject: the relay paths
-	// pre-read the registry before s.mu (lock order: registry → s.mu), and
+	// finish registry pre-reads before taking s.mu; no registry lock spans mu.
+	// The mirror is published after successful registration, and
 	// this in-lock comparison rejects requests whose pre-read went stale
 	// across a rebind.
 	subjFence map[subject.Subject]subject.Fencing
@@ -103,24 +116,13 @@ type fastSandboxPolicyServer struct {
 	// each other or with a concurrent SET_BINDING commit).
 	policyCommitMu sync.Mutex
 
-	// vaultFiles owns the per-subject vault files; nil keeps the vault
-	// memory-only (the default, and the sidecar posture).
-	vaultFiles *vaultPersistence
-	// vaultRecovery is the sticky recovery latch: non-nil freezes vault
-	// writes until the process restarts (first reason wins; reads are
-	// lock-free so healthz never contends).
-	vaultRecovery atomic.Pointer[vaultRecoveryState]
-
-	// gatewayDNSRefs maps each subject to its gateway so the shared
-	// prerouting REDIRECT (sandbox DNS -> loopback proxy) is installed once
-	// per gateway and removed when the last subject using it is gone. Keyed
-	// per SUBJECT (not per gateway) so at-least-once SET_BINDING delivery is
-	// idempotent: a duplicate registration is a map no-op instead of a
-	// double refcount. Injected fns keep the hooks testable without iptables.
-	gwMu               sync.Mutex
-	gatewayDNSRefs     map[subject.Subject]netip.Addr
-	dnsRedirectInstall func(gateway netip.Addr, port int) error
-	dnsRedirectRemove  func() error
+	// gatewayDNSRefs maps each subject to its gateway; the shared prerouting
+	// REDIRECT table is rebuilt from its complete gateway set. The staged map
+	// is published only after the nft replacement succeeds, so failures retain
+	// ownership for a later lifecycle retry. gwMu serializes map/table updates.
+	gwMu             sync.Mutex
+	gatewayDNSRefs   map[subject.Subject]netip.Addr
+	dnsRedirectApply func(ctx context.Context, gateways []netip.Addr, port int) error
 
 	// mitmMu guards the per-subject interception entries; the Pod-netns table
 	// is rebuilt wholesale from this map on every change (see
@@ -138,23 +140,45 @@ type fastSandboxPolicyServer struct {
 	// makes the Fastlet invalidate Binding readiness and replay SET_BINDING
 	// followed by the reached Hooks (restart recovery).
 	instanceID string
+	// actionsAPIVersion is one protocol for the whole shared Fastlet domain.
+	// V2 is explicit and default-off; in that mode v1 action and relay routes
+	// are not mounted, so older senders fail closed.
+	actionsAPIVersion string
+	actionOwners      map[subject.Subject]actionhandler.Owner
+	actionOwnerLocks  [256]sync.RWMutex
 }
 
 func newFastSandboxPolicyServer(ctx context.Context, reg *subject.MemoryRegistry, nft fastSandboxNftApplier) *fastSandboxPolicyServer {
 	return &fastSandboxPolicyServer{
-		ctx:                ctx,
-		reg:                reg,
-		nft:                nft,
-		vaults:             make(map[subject.Subject]vaultEntry),
-		pendingPolicies:    make(map[subject.Subject]*policy.NetworkPolicy),
-		subjAtt:            make(map[subject.Subject]actionhandler.NetworkAttachment),
-		subjFence:          make(map[subject.Subject]subject.Fencing),
-		gatewayDNSRefs:     make(map[subject.Subject]netip.Addr),
-		dnsRedirectInstall: iptables.SetupGatewayDNSRedirect,
-		dnsRedirectRemove:  iptables.RemoveGatewayDNSRedirect,
-		mitmEntries:        make(map[subject.Subject]iptables.MitmRedirectEntry),
-		instanceID:         newHandlerInstanceID(),
+		ctx:               ctx,
+		reg:               reg,
+		nft:               nft,
+		actionGate:        make(chan struct{}, 1),
+		rebinds:           make(map[subject.Subject]*subjectRebind),
+		vaults:            make(map[subject.Subject]vaultEntry),
+		pendingPolicies:   make(map[subject.Subject]*policy.NetworkPolicy),
+		policies:          make(map[subject.Subject]*policyEntry),
+		subjAtt:           make(map[subject.Subject]actionhandler.NetworkAttachment),
+		subjSandbox:       make(map[subject.Subject]string),
+		subjFence:         make(map[subject.Subject]subject.Fencing),
+		gatewayDNSRefs:    make(map[subject.Subject]netip.Addr),
+		dnsRedirectApply:  iptables.ReplaceGatewayDNSRedirects,
+		mitmEntries:       make(map[subject.Subject]iptables.MitmRedirectEntry),
+		instanceID:        newHandlerInstanceID(),
+		actionsAPIVersion: constants.ActionsAPIVersion,
+		actionOwners:      make(map[subject.Subject]actionhandler.Owner),
 	}
+}
+
+func (s *fastSandboxPolicyServer) SetActionsAPIVersion(version string) {
+	s.actionsAPIVersion = version
+}
+
+func (s *fastSandboxPolicyServer) ownerLock(subj subject.Subject) *sync.RWMutex {
+	// Subject names are caller-provided identifiers. A bounded stripe set
+	// prevents requests for arbitrary subjects from growing a lock map forever;
+	// hash collisions only serialize otherwise independent subjects.
+	return &s.actionOwnerLocks[crc32.ChecksumIEEE([]byte(subj))%uint32(len(s.actionOwnerLocks))]
 }
 
 // SetMitm wires the shared mitmproxy into the control plane: the healthz gate
@@ -196,81 +220,84 @@ const fastSandboxDNSProxyPort = 15353
 // that runs under policyCommitMu (see applyPolicy).
 const policyApplyTimeout = 10 * time.Second
 
-// installGatewayDNSRedirect records a subject's gateway and installs (once)
-// the prerouting REDIRECT for it. Idempotent under at-least-once SET_BINDING
-// delivery: a duplicate registration (or a retried deny-first install) is a
-// no-op. A rebind that moved the subject to a different gateway releases the
-// old gateway first. Fails closed: a subject whose DNS cannot reach the
-// proxy must not register as usable.
-func (s *fastSandboxPolicyServer) installGatewayDNSRedirect(subj subject.Subject, gateway netip.Addr) error {
+// installGatewayDNSRedirect stages a subject's gateway and atomically
+// rebuilds the shared prerouting table from the complete desired set. Always
+// reconcile, including duplicate delivery: a prior command may have applied
+// but returned an ambiguous error. Fails closed: a subject whose DNS cannot
+// reach the proxy must not register as usable.
+func (s *fastSandboxPolicyServer) installGatewayDNSRedirect(ctx context.Context, subj subject.Subject, gateway netip.Addr) error {
 	s.gwMu.Lock()
 	defer s.gwMu.Unlock()
-	if old, ok := s.gatewayDNSRefs[subj]; ok {
-		if old == gateway {
-			return nil // duplicate delivery: already counted for this gateway
-		}
-		// The subject moved gateways (rebind): release the old one first.
-		delete(s.gatewayDNSRefs, subj)
-		if s.countGatewayUsersLocked(old) == 0 && s.dnsRedirectRemove != nil {
-			_ = s.dnsRedirectRemove()
-		}
+	next := cloneGatewayDNSRefs(s.gatewayDNSRefs)
+	next[subj] = gateway.Unmap()
+	if err := s.reconcileGatewayDNSRedirectsLocked(ctx, next); err != nil {
+		return fmt.Errorf("gateway DNS redirect install: %w", err)
 	}
-	s.gatewayDNSRefs[subj] = gateway
-	if s.dnsRedirectInstall == nil {
-		return nil
-	}
-	if s.countGatewayUsersLocked(gateway) > 1 {
-		return nil // already installed for this gateway
-	}
-	if err := s.dnsRedirectInstall(gateway, fastSandboxDNSProxyPort); err != nil {
-		delete(s.gatewayDNSRefs, subj)
-		return err
-	}
+	s.gatewayDNSRefs = next
 	return nil
 }
 
-// countGatewayUsersLocked counts the subjects currently mapped to a gateway.
-// Callers hold gwMu.
-func (s *fastSandboxPolicyServer) countGatewayUsersLocked(gateway netip.Addr) int {
-	n := 0
-	for _, g := range s.gatewayDNSRefs {
-		if g == gateway {
-			n++
-		}
-	}
-	return n
-}
-
-// releaseGatewayDNSRedirect drops the subject's gateway mapping and removes
-// the shared REDIRECT table when the last subject using that gateway is gone.
-// Idempotent: a duplicate unload is a no-op.
-func (s *fastSandboxPolicyServer) releaseGatewayDNSRedirect(subj subject.Subject) {
+// releaseGatewayDNSRedirect stages ownership removal and reconciles the full
+// set even when the subject is absent. A previous apply may have succeeded
+// while its result was lost, leaving no committed map entry to drive cleanup.
+// On failure, retain the old map for a retry.
+func (s *fastSandboxPolicyServer) releaseGatewayDNSRedirect(ctx context.Context, subj subject.Subject) error {
 	s.gwMu.Lock()
 	defer s.gwMu.Unlock()
-	gateway, ok := s.gatewayDNSRefs[subj]
-	if !ok {
-		return
+	next := cloneGatewayDNSRefs(s.gatewayDNSRefs)
+	delete(next, subj)
+	if err := s.reconcileGatewayDNSRedirectsLocked(ctx, next); err != nil {
+		return fmt.Errorf("gateway DNS redirect release: %w", err)
 	}
-	delete(s.gatewayDNSRefs, subj)
-	if s.countGatewayUsersLocked(gateway) > 0 {
-		return
-	}
-	if s.dnsRedirectRemove != nil {
-		if err := s.dnsRedirectRemove(); err != nil {
-			log.Warnf("gateway DNS redirect remove (ignored): %v", err)
-		}
-	}
+	s.gatewayDNSRefs = next
+	return nil
 }
 
-// Handler returns the fast-sandbox-profile HTTP mux: the Sandbox Actions Handler
-// endpoints (Fastlet, envelope-driven) plus the healthz probe. Policy rides the
-// SET_BINDING binding input; the credential vault is egress-held behind the
-// FastPath handler-relay (OSEP-0022) — there is no proxy-route surface.
+// reconcileGatewayDNSRedirectsLocked derives a normalized gateway set from
+// the staged subject map. Callers hold gwMu; the applier atomically replaces
+// the table and treats an empty set as removal of the table.
+func (s *fastSandboxPolicyServer) reconcileGatewayDNSRedirectsLocked(ctx context.Context, refs map[subject.Subject]netip.Addr) error {
+	if s.dnsRedirectApply == nil {
+		return nil
+	}
+	set := make(map[netip.Addr]struct{}, len(refs))
+	for _, gateway := range refs {
+		set[gateway.Unmap()] = struct{}{}
+	}
+	gateways := make([]netip.Addr, 0, len(set))
+	for gateway := range set {
+		gateways = append(gateways, gateway)
+	}
+	return s.dnsRedirectApply(ctx, gateways, fastSandboxDNSProxyPort)
+}
+
+func cloneGatewayDNSRefs(refs map[subject.Subject]netip.Addr) map[subject.Subject]netip.Addr {
+	clone := make(map[subject.Subject]netip.Addr, len(refs))
+	for subj, gateway := range refs {
+		clone[subj] = gateway
+	}
+	return clone
+}
+
+// Handler returns the fast-sandbox-profile HTTP mux: the Sandbox Actions
+// Handler endpoints, the relay surfaces (/policy/{uid}, /vault/{uid}), and
+// the healthz probe. No proxy-route surface.
 func (s *fastSandboxPolicyServer) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc(constants.ActionsStatusPath, s.handleActionsStatus)
-	mux.HandleFunc(constants.ActionsDispatchPath, s.handleActions)
-	mux.HandleFunc(constants.VaultRelayPathPrefix, s.handleVaultRelay)
+	if s.actionsAPIVersion == constants.ActionsAPIVersionV2 {
+		mux.HandleFunc(vaultInitializationPrefix, s.handleVaultInitialization)
+		mux.HandleFunc(vaultStatePrefix, s.handleVaultState)
+		mux.HandleFunc(constants.ActionsV2StatusPath, s.handleActionsV2Status)
+		mux.HandleFunc(constants.ActionsV2DispatchPath, s.handleActionsV2)
+		mux.HandleFunc(constants.ActionsV2OwnerPathPrefix, s.handleActionsV2Owner)
+		mux.HandleFunc(constants.ActionsV2VaultRelayPathPrefix, s.handleVaultRelay)
+		mux.HandleFunc(constants.ActionsV2PolicyRelayPathPrefix, s.handlePolicyRelay)
+	} else {
+		mux.HandleFunc(constants.ActionsStatusPath, s.handleActionsStatus)
+		mux.HandleFunc(constants.ActionsDispatchPath, s.handleActions)
+		mux.HandleFunc(constants.VaultRelayPathPrefix, s.handleVaultRelay)
+		mux.HandleFunc(constants.PolicyRelayPathPrefix, s.handlePolicyRelay)
+	}
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	return mux
 }
@@ -291,6 +318,9 @@ type healthzResponse struct {
 	// VaultHealthIssue is the non-empty vault-persistence reason (recovery
 	// latch; see fastsandbox_vault_persist.go). Status mirrors its class.
 	VaultHealthIssue string `json:"vaultHealthIssue,omitempty"`
+	// PolicyHealthIssue is the non-empty policy-persistence reason (recovery
+	// latch; see fastsandbox_policy_persist.go).
+	PolicyHealthIssue string `json:"policyHealthIssue,omitempty"`
 }
 
 // handleHealthz: 503 while the mitm stack is not ready (pre-create probe) and
@@ -315,6 +345,13 @@ func (s *fastSandboxPolicyServer) handleHealthz(w http.ResponseWriter, _ *http.R
 			})
 			return
 		}
+		if issue := s.policyHealthIssue(); issue != "" {
+			writeJSON(w, http.StatusServiceUnavailable, healthzResponse{
+				Status:            "policy-unhealthy",
+				PolicyHealthIssue: issue,
+			})
+			return
+		}
 		if s.mitmGate.MitmPending() {
 			writeJSON(w, http.StatusServiceUnavailable, healthzResponse{Status: "mitmproxy-not-ready"})
 			return
@@ -329,6 +366,13 @@ func (s *fastSandboxPolicyServer) handleHealthz(w http.ResponseWriter, _ *http.R
 		writeJSON(w, http.StatusServiceUnavailable, healthzResponse{
 			Status:           "vault-unhealthy",
 			VaultHealthIssue: issue,
+		})
+		return
+	}
+	if issue := s.policyHealthIssue(); issue != "" {
+		writeJSON(w, http.StatusServiceUnavailable, healthzResponse{
+			Status:            "policy-unhealthy",
+			PolicyHealthIssue: issue,
 		})
 		return
 	}
@@ -352,12 +396,100 @@ func (s *fastSandboxPolicyServer) handleCredentialVaultActive(w http.ResponseWri
 		http.Error(w, fmt.Sprintf("invalid clientIp %q", raw), http.StatusBadRequest)
 		return
 	}
-	subj, ok := s.reg.Resolve(subject.SubjectKey{SourceIP: ip})
-	if !ok {
-		http.Error(w, "no subject for clientIp", http.StatusNotFound)
+	result := s.withVaultAccess(ip, func(store *credentialvault.Store, _ string) vaultAccessResult {
+		return vaultAccessResult{respond: captureActiveVaultSnapshot(r, store)}
+	})
+	if result.err != nil {
+		result.err.write(w)
 		return
 	}
-	handleActiveVaultSnapshot(w, r, s.vaultFor(subj))
+	result.respond(w)
+}
+
+// vaultAccessError is a fixed-vocabulary failure of the clientIp → subject →
+// vault derivation.
+type vaultAccessError struct {
+	status int
+	reason string
+}
+
+func (e *vaultAccessError) write(w http.ResponseWriter) {
+	http.Error(w, e.reason, e.status)
+}
+
+// vaultAccessResult is the locked derivation outcome: store and wire
+// sandboxId, or a failure. respond, when set, was produced under the same
+// s.mu hold (the active-snapshot capture).
+type vaultAccessResult struct {
+	store     *credentialvault.Store
+	sandboxID string
+	respond   func(http.ResponseWriter)
+	err       *vaultAccessError
+}
+
+// withVaultAccess applies the active-vault identity discipline (registry
+// pre-read, then s.mu; lock order registry → s.mu unchanged) and runs derive
+// under the same hold. Shared by the _active and _resolve paths; the resolve
+// path additionally requires the recorded sandboxId.
+func (s *fastSandboxPolicyServer) withVaultAccess(
+	ip netip.Addr,
+	derive func(store *credentialvault.Store, sandboxID string) vaultAccessResult,
+) vaultAccessResult {
+	subj, resolved := s.reg.Resolve(subject.SubjectKey{SourceIP: ip})
+	fence, registered := s.reg.Fence(subj)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !resolved {
+		return vaultAccessResult{err: &vaultAccessError{http.StatusNotFound, "no subject for clientIp"}}
+	}
+	if s.subjectRebindingLocked(subj) {
+		return vaultAccessResult{err: &vaultAccessError{http.StatusServiceUnavailable, "subject rebind in progress"}}
+	}
+	if !registered || !s.fenceMatchesLocked(subj, fence) || s.subjAtt[subj].IP != ip {
+		return vaultAccessResult{err: &vaultAccessError{http.StatusNotFound, "no subject for clientIp"}}
+	}
+	store := s.vaultForLocked(subj, fence)
+	if s.vaultSealedLocked(subj) {
+		return vaultAccessResult{err: &vaultAccessError{http.StatusConflict, "subject vault is sealed"}}
+	}
+	if entry := s.vaults[subj]; entry.vaultStateUnknown {
+		return vaultAccessResult{err: &vaultAccessError{http.StatusServiceUnavailable, "vault state is unknown"}}
+	}
+	return derive(store, s.subjSandbox[subj])
+}
+
+// resolveVaultAccess derives the fast-sandbox resolve access: clientIp →
+// subject → store plus the wire subject (the SET_BINDING-recorded sandboxId,
+// never a protocol value). Runs again at recheck; failure there is a scoped
+// invalidation of the in-flight resolution.
+func (s *fastSandboxPolicyServer) resolveVaultAccess(r *http.Request) (credentialvault.ResolveAccess, *credentialvault.ResolveAccessError) {
+	raw := strings.TrimSpace(r.URL.Query().Get("clientIp"))
+	if raw == "" {
+		return credentialvault.ResolveAccess{}, &credentialvault.ResolveAccessError{
+			Status: http.StatusBadRequest,
+			Reason: "clientIp query parameter required",
+		}
+	}
+	ip, err := netip.ParseAddr(raw)
+	if err != nil {
+		return credentialvault.ResolveAccess{}, &credentialvault.ResolveAccessError{
+			Status: http.StatusBadRequest,
+			Reason: "invalid clientIp",
+		}
+	}
+	result := s.withVaultAccess(ip, func(store *credentialvault.Store, sandboxID string) vaultAccessResult {
+		if sandboxID == "" {
+			return vaultAccessResult{err: &vaultAccessError{http.StatusServiceUnavailable, "sandbox identity unavailable"}}
+		}
+		return vaultAccessResult{store: store, sandboxID: sandboxID}
+	})
+	if result.err != nil {
+		return credentialvault.ResolveAccess{}, &credentialvault.ResolveAccessError{
+			Status: result.err.status,
+			Reason: result.err.reason,
+		}
+	}
+	return credentialvault.ResolveAccess{SandboxID: result.sandboxID, Store: result.store}, nil
 }
 
 // applyPolicy applies a policy to a subject. Ordering: nft FIRST, registry
@@ -396,45 +528,89 @@ func (s *fastSandboxPolicyServer) applyPolicy(subj subject.Subject, pol *policy.
 // sealed marks a paused subject whose vault file was exported into the
 // snapshot bundle: every vault op answers 409; enforcement is unchanged.
 type vaultEntry struct {
-	store    *credentialvault.Store
-	fence    subject.Fencing
-	degraded string
-	sealed   bool
+	store             *credentialvault.Store
+	fence             subject.Fencing
+	degraded          string
+	sealed            bool
+	fileMeta          vaultFileMetadata
+	vaultStateUnknown bool
+	v2Verified        bool
+	// vaultStateProtected records that this live fence previously observed a
+	// non-v1 or unreadable source. A later missing/legacy file cannot erase that
+	// provenance and reopen the v1 writer path.
+	vaultStateProtected bool
+	// lazyVaultProbe limits retry-on-read to entries first created without a
+	// binding reload; ordinary reload failures still require SET_BINDING replay.
+	lazyVaultProbe bool
 }
 
-// vaultFor returns the per-subject vault, created on first use (rehydrated
+// vaultFileMetadata keeps the complete decoded ordering/initialization
+// identity beside the read-only live slice. The source file remains the
+// durable authority; this metadata prevents a reload from silently dropping
+// lineage information even though OS-1 does not write v2 yet.
+type vaultFileMetadata struct {
+	version          int
+	revision         int64
+	state            credentialvault.FileState
+	lineage          string
+	stateRevision    uint64
+	initializationID string
+}
+
+// vaultFor returns nil for absent or rebinding subjects. Otherwise the vault
+// is created on first use (rehydrated
 // from its persisted file at registration, OSEP-0022 stage 2).
 // A store is only valid under the fence it was created with: a mismatch
 // (same-UID rebind without REMOVE_BINDING, or a TOCTOU store materialized
 // against an unregistered subject) is dropped, never inherited — a reset
 // never carries old credentials into a new sandbox (OSEP-0022). The fence is
-// read under s.mu, serialized with the rebind purge in applySetBinding.
+// pre-read outside s.mu and checked against the published mirror under s.mu.
 func (s *fastSandboxPolicyServer) vaultFor(subj subject.Subject) *credentialvault.Store {
-	fence, _ := s.reg.Fence(subj)
+	fence, registered := s.reg.Fence(subj)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	fence, _ := s.reg.Fence(subj)
+	if s.subjectRebindingLocked(subj) {
+		return nil
+	}
+	if !registered || !s.fenceMatchesLocked(subj, fence) {
+		return nil
+	}
 	return s.vaultForLocked(subj, fence)
 }
 
 // vaultForLocked implements vaultFor; callers hold s.mu.
 func (s *fastSandboxPolicyServer) vaultForLocked(subj subject.Subject, fence subject.Fencing) *credentialvault.Store {
+	if fence == (subject.Fencing{}) {
+		return nil
+	}
 	if e, ok := s.vaults[subj]; ok {
-		if fence != (subject.Fencing{}) && e.fence == fence {
+		if e.fence == fence {
+			if e.lazyVaultProbe && e.vaultStateUnknown && !e.vaultStateProtected {
+				s.inspectLazyVaultStateLocked(subj, &e)
+			}
+			if s.vaultFiles != nil && s.vaultFiles.isSealed(subj) {
+				e.sealed = true
+			}
+			s.vaults[subj] = e
 			return e.store
 		}
 		delete(s.vaults, subj)
 	}
-	v := credentialvault.NewStore(nil, func() bool { return true })
-	s.vaults[subj] = vaultEntry{store: v, fence: fence}
+	v := credentialvault.NewSubjectStore()
+	e := vaultEntry{store: v, fence: fence, lazyVaultProbe: true}
+	s.inspectLazyVaultStateLocked(subj, &e)
+	if s.vaultFiles != nil && s.vaultFiles.isSealed(subj) {
+		e.sealed = true
+	}
+	s.vaults[subj] = e
 	return v
 }
 
 // dropVault purges the subject's vault slice (rebind cleanup): memory and,
 // when persistence is enabled, the per-subject file. The caller holds s.mu.
-func (s *fastSandboxPolicyServer) dropVault(subj subject.Subject) {
+func (s *fastSandboxPolicyServer) dropVault(subj subject.Subject) error {
 	delete(s.vaults, subj)
-	s.purgeVaultFile(subj)
+	return s.purgeVaultFile(subj)
 }
 
 // OnRegistered implements subject.LifecycleHooks: deny-first enforcement
@@ -451,7 +627,7 @@ func (s *fastSandboxPolicyServer) OnRegistered(subj subject.Subject, att actionh
 		return err
 	}
 	dnsStarted := time.Now()
-	if err := s.installGatewayDNSRedirect(subj, att.Gateway); err != nil {
+	if err := s.installGatewayDNSRedirect(nftCtx, subj, att.Gateway); err != nil {
 		// Fail closed: sandbox DNS addressed to gateway:53 must reach the
 		// proxy; without the redirect the sandbox would fall back to a
 		// resolver the policy cannot see.
@@ -465,7 +641,9 @@ func (s *fastSandboxPolicyServer) OnRegistered(subj subject.Subject, att actionh
 		// traffic the MITM layer is responsible for). Roll back the gateway
 		// DNS redirect installed above — the caller retries OnRegistered,
 		// and an unreleased mapping would keep the gateway redirect forever.
-		s.releaseGatewayDNSRedirect(subj)
+		if rollbackErr := s.releaseGatewayDNSRedirect(nftCtx, subj); rollbackErr != nil {
+			return fmt.Errorf("mitm redirect: %w (DNS rollback failed: %v)", err, rollbackErr)
+		}
 		return err
 	}
 	log.Infof("subject %s deny-first enforced (nft + gateway redirect + mitm redirect) total=%dms denyFirst=%dms dnsRedirect=%dms mitm=%dms",
@@ -504,14 +682,14 @@ func (s *fastSandboxPolicyServer) setMitmRedirect(subj subject.Subject, att acti
 	return nil
 }
 
-// OnUnloaded implements subject.LifecycleHooks: remove enforcement and drop
-// the pending policy and vault (stale for a new sandbox of the same UID).
-// The gateway refcount is released when the last subject using it goes away.
+// OnUnloaded implements subject.LifecycleHooks: remove enforcement only.
+// The caller unregisters and then purges local state outside the registry lock.
+// Gateway membership is reconciled from the remaining subject owners; a
+// failed DNS update is returned so terminal cleanup can retry.
 //
-// Enforcement removal runs FIRST: a transient nft failure leaves every other
-// teardown step undone, and the caller keeps the subject registered so the
-// retried terminal cleanup re-runs everything (no double gateway release, no
-// stale rules).
+// Enforcement removal runs FIRST. A transient nft failure leaves later
+// teardown steps undone; a DNS reconcile failure also prevents the caller from
+// unregistering the subject and is retried with the same terminal cleanup.
 func (s *fastSandboxPolicyServer) OnUnloaded(subj subject.Subject, _ actionhandler.NetworkAttachment) error {
 	if err := s.unloadEnforcement(subj); err != nil {
 		return err
@@ -520,19 +698,20 @@ func (s *fastSandboxPolicyServer) OnUnloaded(subj subject.Subject, _ actionhandl
 	return nil
 }
 
-// unloadEnforcement performs the full teardown shared by REMOVE_BINDING
-// (OnUnloaded) and stale-subject takeover: nft removal first (a transient
-// failure leaves every other step undone so the caller retries whole), then
-// the per-subject state, the gateway DNS refcount, and the MITM entry. Does
-// not touch the registry — safe to run under the registry write lock.
+// unloadEnforcement tears down kernel/redirect state only. It must never
+// acquire s.mu or read the registry: takeover calls it under the registry
+// write lock. Registry calls and their callbacks never span s.mu acquisition.
+// nft removal goes first; nft or DNS failure retains the existing cleanup
+// retry boundary, and DNS ownership is committed only after reconciliation.
 func (s *fastSandboxPolicyServer) unloadEnforcement(subj subject.Subject) error {
 	nftCtx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancel()
 	if err := s.nft.Remove(nftCtx, subj); err != nil {
 		return err
 	}
-	s.dropSubjectState(subj)
-	s.releaseGatewayDNSRedirect(subj)
+	if err := s.releaseGatewayDNSRedirect(nftCtx, subj); err != nil {
+		return err
+	}
 	s.removeMitmRedirect(subj)
 	return nil
 }
@@ -553,23 +732,64 @@ func (s *fastSandboxPolicyServer) takeoverStaleSubject(stale subject.Subject) er
 }
 
 // dropSubjectState removes every piece of per-subject bookkeeping (vault,
-// pending policy, attachment) plus the persisted vault file — terminal
-// cleanup (OSEP-0022: REMOVE_BINDING purges memory + file).
+// policy record, pending policy, attachment) plus the persisted files —
+// terminal cleanup.
+//
+// Purges run after registry eviction, never in a registry callback.
+// The action gate prevents another registration from racing victim cleanup.
 func (s *fastSandboxPolicyServer) dropSubjectState(subj subject.Subject) {
 	s.mu.Lock()
-	delete(s.vaults, subj)
+	if err := s.dropSubjectStateLocked(subj); err != nil {
+		s.mu.Unlock()
+		log.Warnf("subject %s: local state cleanup refused: %v", subj, err)
+		return
+	}
+	cleared := s.rebinds[subj] != nil
+	delete(s.rebinds, subj)
+	s.mu.Unlock()
+	if cleared {
+		log.Infof("subject_rebind_cleared")
+	}
+}
+
+// dropSubjectStateLocked preserves an in-flight rebind token. Superseding
+// SETs use it only after full kernel removal and Unregister; Vault must stay
+// guarded until the successor has completed local publication.
+func (s *fastSandboxPolicyServer) dropSubjectStateLocked(subj subject.Subject) error {
+	if _, err := s.vaultPurgeStatusLocked(subj); err != nil {
+		return err
+	}
+	// v1 lifecycle cleanup is intentionally best-effort: a failed unlink is
+	// already logged by purgeVaultFile and the remaining bytes stay fenced to
+	// their recorded owner. v2/unknown schemas were refused by the preflight.
+	_ = s.dropVault(subj)
+	delete(s.policies, subj)
+	s.purgePolicyFile(subj)
+	delete(s.subjFence, subj)
 	delete(s.pendingPolicies, subj)
 	delete(s.subjAtt, subj)
-	s.purgeVaultFile(subj)
+	delete(s.subjSandbox, subj)
+	return nil
+}
+
+// recordBindingState records a validated network attempt before enforcement
+// (a failed deny-first may already have kernel effects; retries must compare
+// its network). sandboxName is the envelope's SandboxRef.Name — the wire
+// sandboxId; the CR name is immutable per fence, so only a non-empty name is
+// recorded (a degenerate replay cannot erase the identity). Called outside
+// the registry lock.
+func (s *fastSandboxPolicyServer) recordBindingState(subj subject.Subject, att actionhandler.NetworkAttachment, sandboxName string) {
+	s.mu.Lock()
+	s.subjAtt[subj] = att
+	if name := strings.TrimSpace(sandboxName); name != "" {
+		s.subjSandbox[subj] = name
+	}
 	s.mu.Unlock()
 }
 
-// recordBindingState stores the SET_BINDING bookkeeping for a registered
-// subject: the network attachment (terminal cleanup). Called after the
-// registry lock is released.
-func (s *fastSandboxPolicyServer) recordBindingState(subj subject.Subject, att actionhandler.NetworkAttachment) {
+// recordRegisteredFence publishes relay bookkeeping after registration succeeds.
+func (s *fastSandboxPolicyServer) recordRegisteredFence(subj subject.Subject, fence subject.Fencing) {
 	s.mu.Lock()
-	s.subjAtt[subj] = att
 	s.subjFence[subj] = fence
 	s.mu.Unlock()
 }
@@ -590,16 +810,6 @@ func (s *fastSandboxPolicyServer) attachment(subj subject.Subject) (actionhandle
 	defer s.mu.Unlock()
 	att, ok := s.subjAtt[subj]
 	return att, ok
-}
-
-// storePendingPolicy holds the SET_BINDING policy of a still-denying subject
-// until its data-plane-ready Hook activates it. DNS dispatch keeps denying
-// while the policy is only pending (fail closed).
-func (s *fastSandboxPolicyServer) storePendingPolicy(subj subject.Subject, pol *policy.NetworkPolicy) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.pendingPolicies[subj] = pol
-	log.Infof("subject %s: policy stored (deny-first until data-plane-ready)", subj)
 }
 
 // clearPendingPolicy drops a subject's pending policy (binding removal or

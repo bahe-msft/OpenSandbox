@@ -21,7 +21,7 @@ for request/response validation and serialization.
 
 import ipaddress
 from datetime import datetime
-from typing import Annotated, Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, PrivateAttr, RootModel, field_validator, model_validator
 
@@ -30,6 +30,8 @@ from opensandbox_server.constants import (
     IDLE_TIMEOUT_MIN_SECONDS,
     PROBE_TIMEOUT_MAX_SECONDS,
     PROBE_TIMEOUT_MIN_SECONDS,
+    RENEW_EXTEND_MAX_SECONDS,
+    RENEW_EXTEND_MIN_SECONDS,
 )
 from opensandbox_server.constants import OPENSANDBOX_LIFECYCLE
 
@@ -174,6 +176,7 @@ class NetworkRule(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = "forbid"
 
 
 class NetworkPolicy(BaseModel):
@@ -193,6 +196,7 @@ class NetworkPolicy(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = "forbid"
 
 
 class CredentialProxyConfig(BaseModel):
@@ -230,9 +234,25 @@ class InlineCredentialSource(BaseModel):
         extra = "forbid"
 
 
+class ExchangeCredentialSource(BaseModel):
+    """Exchange source (OSEP-0025); endpoint semantics stay with the egress."""
+
+    type: Literal["exchange"] = Field(..., description="Credential source type.")
+    endpoint: str = Field(
+        ...,
+        description="Header-resolver endpoint; egress validates the scheme.",
+    )
+
+    class Config:
+        populate_by_name = True
+        extra = "forbid"
+
+
 class Credential(BaseModel):
     name: str = Field(..., min_length=1, description="Unique credential name.")
-    source: InlineCredentialSource = Field(..., description="Credential value source.")
+    source: InlineCredentialSource | ExchangeCredentialSource = Field(
+        ..., description="Credential value source."
+    )
 
     class Config:
         populate_by_name = True
@@ -329,14 +349,30 @@ class PassthroughCredentialAuth(BaseModel):
         extra = "forbid"
 
 
-CredentialAuth = Annotated[
+class ExchangeCredentialAuth(BaseModel):
+    """Typeless exchange auth (OSEP-0025); the cross-lock is egress-owned."""
+
+    credential: str = Field(
+        ...,
+        min_length=1,
+        description="Name of the exchange-sourced credential to resolve per request.",
+    )
+
+    class Config:
+        populate_by_name = True
+        extra = "forbid"
+
+
+# No discriminator: the typeless variant carries no `type` key, so union
+# members are mutually exclusive by shape.
+CredentialAuth = (
     BearerCredentialAuth
     | BasicCredentialAuth
     | ApiKeyCredentialAuth
     | CustomHeadersCredentialAuth
-    | PassthroughCredentialAuth,
-    Field(discriminator="type"),
-]
+    | PassthroughCredentialAuth
+    | ExchangeCredentialAuth
+)
 
 
 class CredentialMatch(BaseModel):
@@ -436,9 +472,17 @@ class CredentialVaultMutationRequest(BaseModel):
 
 
 class CredentialAuthMetadata(BaseModel):
-    type: str = Field(..., description="Injected credential shape type.")
+    """Sanitized auth shape; the typeless form carries `credential` only."""
+
+    type: Optional[str] = Field(
+        default=None, description="Injected credential shape type."
+    )
     name: Optional[str] = Field(
         default=None, description="Header name, for the apiKey shape only."
+    )
+    credential: Optional[str] = Field(
+        default=None,
+        description="Exchange-sourced credential name, typeless form only.",
     )
 
     class Config:
@@ -447,7 +491,11 @@ class CredentialAuthMetadata(BaseModel):
 
 class CredentialMetadata(BaseModel):
     name: str
-    source_type: str = Field(..., alias="sourceType", description="Credential source type.")
+    source_type: str = Field(
+        ...,
+        alias="sourceType",
+        description="Credential source kind (inline or exchange).",
+    )
     revision: int
 
     class Config:
@@ -618,9 +666,33 @@ class IdlePolicy(BaseModel):
         extra = "forbid"
 
 
+class RenewalPolicy(BaseModel):
+    """Renew-on-access behavior (OSEP-0009): observed access moves the
+    expiration to ``max(now + extendSeconds, current)``. Control-plane
+    policy; supersedes the deprecated ``access.renew.extend.seconds``
+    extensions key.
+    """
+
+    extend_seconds: int = Field(
+        ...,
+        alias="extendSeconds",
+        ge=RENEW_EXTEND_MIN_SECONDS,
+        le=RENEW_EXTEND_MAX_SECONDS,
+        description=(
+            "Extension window X in seconds for each access-driven renewal: "
+            "the expiration is moved to max(now + X, current expiresAt)."
+        ),
+    )
+
+    class Config:
+        populate_by_name = True
+        extra = "forbid"
+
+
 class SandboxLifecycle(BaseModel):
     """Extensible lifecycle configuration: hooks run in the guest via execd;
-    ``idlePolicy`` is control-plane state (OSEP-0024) and never reaches it.
+    ``idlePolicy`` (OSEP-0024) and ``renewalPolicy`` (OSEP-0009) are
+    control-plane state and never reach it.
     """
 
     pre_start: Optional[LifecycleHook] = Field(None, alias="preStart")
@@ -629,6 +701,14 @@ class SandboxLifecycle(BaseModel):
         None,
         alias="idlePolicy",
         description="Auto-pause and wake-on-access behavior (fast-sandbox backend only).",
+    )
+    renewal_policy: Optional[RenewalPolicy] = Field(
+        None,
+        alias="renewalPolicy",
+        description=(
+            "Renew-on-access behavior (OSEP-0009); control-plane state. "
+            "Supersedes the deprecated access.renew.extend.seconds extensions key."
+        ),
     )
 
     @property
@@ -1663,7 +1743,11 @@ class CreateFsbTemplateRequest(BaseModel):
     publish: str = Field(
         ...,
         min_length=1,
-        description="S3-compatible publish target for the built artifacts, e.g. 's3://bucket/publish'",
+        description=(
+            "Publish destination for the built snapshot set: "
+            "'oci://registry/repository' for format=overlaybd (default), "
+            "'s3://bucket/prefix' for format=native."
+        ),
     )
     format: Literal["native", "overlaybd"] = Field(
         "overlaybd",
@@ -1686,7 +1770,11 @@ class FsbTemplateStatus(BaseModel):
     manifest_ref: Optional[str] = Field(
         None,
         alias="manifestRef",
-        description="S3 manifest reference of the published artifacts; present when Succeeded",
+        description=(
+            "Published artifact reference — oci://...@sha256 for "
+            "format=overlaybd, s3://.../manifest.json for native; present "
+            "when Succeeded"
+        ),
     )
     message: Optional[str] = Field(
         None,
@@ -1711,7 +1799,13 @@ class FsbTemplate(BaseModel):
     )
     metadata: Optional[Dict[str, str]] = Field(None, description="Custom metadata from the creation request")
     readiness: Optional[FsbTemplateReadiness] = Field(None, description="Build-side readiness gate")
-    publish: str = Field(..., description="S3-compatible publish target")
+    publish: str = Field(
+        ...,
+        description=(
+            "Artifact publish destination — oci://registry/repository for "
+            "format=overlaybd (default), s3://bucket/prefix for format=native"
+        ),
+    )
     format: Literal["native", "overlaybd"] = Field(..., description="Snapshot storage encoding")
     status: FsbTemplateStatus = Field(..., description="Build status")
     created_at: datetime = Field(..., alias="createdAt", description="Creation timestamp")

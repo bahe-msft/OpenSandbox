@@ -133,13 +133,37 @@ func validRenderedBinding(binding *ActiveBinding, redactions map[string]struct{}
 			selectors[host] = struct{}{}
 		}
 	}
-	if len(seenHosts) == 0 || !validRenderedCredentials(binding, redactions) {
+	if len(seenHosts) == 0 {
 		return false
 	}
 	binding.Headers = append([]InjectionHeader{}, binding.Headers...)
-	binding.Substitutions = append([]InjectionSubstitution{}, binding.Substitutions...)
-	for i := range binding.Substitutions {
-		binding.Substitutions[i].In = append([]string{}, binding.Substitutions[i].In...)
+	if binding.Exchange != nil {
+		// Marker binding: no rendered material, so no redaction coverage.
+		// Canonical form keeps explicit empty arrays; the marker plus any
+		// rendered content is non-canonical and rejected.
+		credential := binding.Exchange.Credential
+		if credential == "" || credential != strings.TrimSpace(credential) {
+			return false
+		}
+		if len(binding.Headers) != 0 {
+			return false
+		}
+		if binding.Substitutions != nil && len(*binding.Substitutions) != 0 {
+			return false
+		}
+		empty := []InjectionSubstitution{}
+		binding.Substitutions = &empty
+		return true
+	}
+	if !validRenderedCredentials(binding, redactions) {
+		return false
+	}
+	if binding.Substitutions != nil {
+		subs := append([]InjectionSubstitution{}, *binding.Substitutions...)
+		for i := range subs {
+			subs[i].In = append([]string{}, subs[i].In...)
+		}
+		binding.Substitutions = &subs
 	}
 	return true
 }
@@ -164,7 +188,7 @@ func validCanonicalStringsOnly(values []string, valid func(string) bool) bool {
 
 func validRenderedCredentials(binding *ActiveBinding, redactions map[string]struct{}) bool {
 	if binding.Dynamic {
-		return len(binding.Headers) == 0 && len(binding.Substitutions) == 0
+		return len(binding.Headers) == 0 && (binding.Substitutions == nil || len(*binding.Substitutions) == 0)
 	}
 	seenHeaders := make(map[string]struct{}, len(binding.Headers))
 	for _, header := range binding.Headers {
@@ -182,19 +206,21 @@ func validRenderedCredentials(binding *ActiveBinding, redactions map[string]stru
 			}
 		}
 	}
-	for _, substitution := range binding.Substitutions {
-		if substitution.Placeholder == "" || !validCanonicalStringsOnly(substitution.In, func(value string) bool {
-			return value == "path" || value == "query" || value == "header" || value == "body"
-		}) {
-			return false
-		}
-		required := append(substitutionRedactionVariants(substitution.Value), substitution.Placeholder)
-		for _, value := range required {
-			if value == "" {
-				continue
-			}
-			if _, ok := redactions[value]; !ok {
+	if binding.Substitutions != nil {
+		for _, substitution := range *binding.Substitutions {
+			if substitution.Placeholder == "" || !validCanonicalStringsOnly(substitution.In, func(value string) bool {
+				return value == "path" || value == "query" || value == "header" || value == "body"
+			}) {
 				return false
+			}
+			required := append(substitutionRedactionVariants(substitution.Value), substitution.Placeholder)
+			for _, value := range required {
+				if value == "" {
+					continue
+				}
+				if _, ok := redactions[value]; !ok {
+					return false
+				}
 			}
 		}
 	}

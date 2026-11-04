@@ -329,7 +329,13 @@ internal object SandboxModelConverter {
                     )
                 },
             idlePolicy = idlePolicy?.toApiIdlePolicy(),
+            renewalPolicy = renewalPolicy?.toApiRenewalPolicy(),
         )
+    }
+
+    /** Converts Domain RenewalPolicy -> API RenewalPolicy (OSEP-0009). */
+    internal fun RenewalPolicy.toApiRenewalPolicy(): ApiRenewalPolicy {
+        return ApiRenewalPolicy(extendSeconds = extendSeconds)
     }
 
     /**

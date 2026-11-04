@@ -61,6 +61,12 @@ PLURAL = "sandboxtemplates"
 # exist in the sandboxtemplate-builder image under this name (builder
 # default); execd comes from runtime.execd_image.
 TEMPLATE_KERNEL = "vmlinux.bin"
+# OSEP-0018 on fsb: the guest init sources the baked envs and launches
+# bootstrap.sh, so a baked EXECD_INIT=1 makes bootstrap.sh exec into
+# `execd --init` — execd runs as a subreaper under the guest init (no PID 1
+# signal shield). Injected at CRD projection from runtime.execd_run_as_init;
+# the server value wins over a client-provided env of the same name.
+EXECD_INIT_ENV = "EXECD_INIT"
 DEFAULT_VCPU = "1"
 DEFAULT_MEMORY = "512Mi"
 # Guest rootfs logical size when the client omits resourceLimits.disk. The
@@ -77,10 +83,79 @@ TEMPLATE_RESOURCE_KEYS = frozenset({"cpu", "memory", "disk"})
 # here turns a would-be failed build into a 400 at template creation.
 _VALID_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+# Artifact encodings accepted for SandboxTemplate builds. overlaybd is the
+# fast-sandbox OCI path: output.publish must be a repository-only oci://
+# target (the builder generates the per-build <uuid>_rootfs/_snapfiles tags
+# itself). native stays on the object-store path.
+_TEMPLATE_FORMATS = ("native", "overlaybd")
+
 _TEMPLATE_NOT_FOUND = {
     "code": SandboxErrorCodes.FSB_TEMPLATE_NOT_FOUND,
     "message": "Template not found.",
 }
+
+
+def _publish_validation_error(format: str, publish: str) -> Optional[str]:
+    """Reject format/publish pairs the builder would reject, as a 400 here.
+
+    overlaybd: ``oci://host/repository`` — port allowed, no userinfo
+    (credentials live in publishSecretRef), no tag/digest (the system
+    generates the build tags). native: ``s3://bucket/prefix``.
+    """
+    if format == "overlaybd":
+        if not publish.startswith("oci://"):
+            return (
+                "overlaybd templates publish to an OCI registry: "
+                "publish must be 'oci://registry/repository' "
+                "(S3-compatible stores are not supported for overlaybd)."
+            )
+        remainder = publish[len("oci://"):]
+        host, _, repository = remainder.partition("/")
+        if not host or not repository:
+            return (
+                "publish must be 'oci://registry/repository' with a "
+                "non-empty registry host and repository path."
+            )
+        if "@" in host:
+            return (
+                "publish must not embed credentials in the registry host "
+                "(userinfo like user:pass@host is rejected; publish "
+                "credentials come from publishSecretRef)."
+            )
+        if "@" in repository or ":" in repository:
+            return (
+                "publish must be repository-only: tags and digests are "
+                "rejected because the system generates an immutable "
+                "per-build tag pair."
+            )
+        if repository.endswith("/"):
+            return (
+                "publish must be 'oci://registry/repository' without a "
+                "trailing slash."
+            )
+        path_component = r"[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*"
+        if (
+            not re.fullmatch(r"(?:[a-zA-Z0-9.-]+|\[[0-9a-fA-F:]+\])(?::[0-9]+)?", host)
+            or not re.fullmatch(rf"{path_component}(?:/{path_component})*", repository)
+        ):
+            return "publish must be a valid oci://registry/repository without a tag or digest."
+        return None
+    if format == "native":
+        if not publish.startswith("s3://"):
+            return (
+                "native templates publish to an S3-compatible store: "
+                "publish must be 's3://bucket/prefix'."
+            )
+        if not publish[len("s3://"):].partition("/")[0]:
+            return (
+                "publish must be 's3://bucket/prefix' with a non-empty "
+                "bucket name."
+            )
+        return None
+    return (
+        f"Unsupported template format {format!r}; "
+        f"supported formats: {', '.join(_TEMPLATE_FORMATS)}."
+    )
 
 
 class FastSandboxTemplateService:
@@ -94,6 +169,7 @@ class FastSandboxTemplateService:
     ):
         self._config = config
         self._execd_image = config.runtime.execd_image
+        self._execd_run_as_init = bool(config.runtime.execd_run_as_init)
         self._repository = repository
         self._k8s_client = k8s_client
         self._k8s_config = config.kubernetes or KubernetesRuntimeConfig()
@@ -204,7 +280,7 @@ class FastSandboxTemplateService:
                 )
         if request.env:
             invalid_env_names = [
-                name for name in request.env if not _VALID_ENV_NAME.match(name)
+                name for name in request.env if not _VALID_ENV_NAME.fullmatch(name)
             ]
             if invalid_env_names:
                 raise HTTPException(
@@ -218,6 +294,32 @@ class FastSandboxTemplateService:
                         ),
                     },
                 )
+        publish = request.publish.strip()
+        publish_error = _publish_validation_error(request.format, publish)
+        if publish_error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": SandboxErrorCodes.INVALID_PARAMETER,
+                    "message": publish_error,
+                },
+            )
+        if (
+            request.format == "overlaybd"
+            and not self._k8s_config.template_oci_publish_secret
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": SandboxErrorCodes.INVALID_PARAMETER,
+                    "message": (
+                        "Server is not configured for overlaybd templates: "
+                        "set [kubernetes].template_oci_publish_secret to a "
+                        "kubernetes.io/dockerconfigjson Secret in the "
+                        "template namespace."
+                    ),
+                },
+            )
         namespace = self._resolve_namespace()
         template_id = f"tpl-{uuid.uuid4()}"
         now = datetime.now(timezone.utc)
@@ -233,7 +335,7 @@ class FastSandboxTemplateService:
                 if request.readiness is not None
                 else None
             ),
-            "publish": request.publish.strip(),
+            "publish": publish,
             "format": request.format,
         }
         record = FastSandboxTemplateRecord(
@@ -343,18 +445,13 @@ class FastSandboxTemplateService:
         self._repo().delete(template_id, namespace)
 
     def resolve_template_artifact(self, template_id: str) -> tuple[str, list[str]]:
-        """Resolve a Succeeded template to its artifact identity + entrypoint.
+        """Resolve a Succeeded template to its runnable artifact + entrypoint.
 
-        The returned image reference is the TEMPLATE ID (tpl-<uuid>): the
-        builder publishes the content-addressed index under that key, so the
-        runtime pulls and caches this template's exact artifact set — two
-        templates of the same source image never alias each other. The
-        legacy sha256(image) index stays a last-writer-wins fallback for
-        warmImages and older clients. Template-mode Create uses this:
-        unknown or non-Succeeded templates both yield 404, so no existence
-        information leaks.
-
-        Reads the DB row only; the watch reactor converges build phase.
+        native → the template id (the builder's content-addressed index key);
+        overlaybd → the CRD's immutable OCI manifest_ref. Unknown,
+        non-Succeeded, or manifest-less templates all yield 404, so no
+        existence information leaks. Reads the DB row only; the watch
+        reactor converges build phase.
         """
         namespace = self._resolve_namespace()
         record = self._repo().get(template_id, namespace)
@@ -366,9 +463,36 @@ class FastSandboxTemplateService:
         if record.phase is not FastSandboxTemplatePhase.SUCCEEDED:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_TEMPLATE_NOT_FOUND)
         entrypoint = list(record.spec.get("entrypoint") or DEFAULT_ENTRYPOINT)
-        return record.template_id, entrypoint
+        if str(record.spec.get("format") or "overlaybd") != "overlaybd":
+            return record.template_id, entrypoint
+        manifest_ref = record.manifest_ref or ""
+        if not re.fullmatch(re.escape(record.publish) + r"@sha256:[0-9a-f]{64}", manifest_ref):
+            # Transient (status not landed) or a legacy overlaybd+S3 row
+            # (rejected upstream). Both 404; the legacy message is
+            # actionable for the owner.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": SandboxErrorCodes.FSB_TEMPLATE_NOT_FOUND,
+                    "message": (
+                        "Template artifact is not runnable: overlaybd "
+                        "templates require an immutable OCI manifestRef in the publish repository from a build "
+                        "against the current fast-sandbox contract; rebuild "
+                        "the template."
+                    ),
+                },
+            )
+        return manifest_ref, entrypoint
 
     # -- CRD mapping -----------------------------------------------------------
+
+    def _publish_secret_name(self, format: str) -> str:
+        """Publish secret for a template format: overlaybd builds publish to
+        an OCI registry (dockerconfigjson Secret), native builds to the
+        object store (S3 credentials)."""
+        if format == "overlaybd":
+            return self._k8s_config.template_oci_publish_secret or ""
+        return self._k8s_config.template_s3_publish_secret
 
     def _build_crd(self, record: FastSandboxTemplateRecord) -> dict:
         limits = record.spec.get("resourceLimits") or {}
@@ -377,14 +501,16 @@ class FastSandboxTemplateService:
         # resourceLimits.disk (parallel to cpu/memory) is the logical size of
         # the guest rootfs; artifacts are stored and pulled at this size.
         rootfs_size = str(limits.get("disk") or DEFAULT_ROOTFS_SIZE)
+        fmt = str(record.spec.get("format") or "overlaybd")
         spec: dict = {
             "image": record.source_image,
-            # Per-template artifact identity: the builder publishes the image
+            # Native artifact identity: the builder publishes the image
             # index under BOTH this key (exact, immutable per template) and
             # the legacy sha256(source-image) key (last-writer-wins, kept for
             # warmImages and older clients). Sandbox creates carry the
             # template key, so two templates of the same source image resolve
-            # to their own artifact sets and caches.
+            # to their own artifact sets and caches. OCI creates instead use
+            # the immutable manifestRef recorded after publication.
             "indexKey": record.template_id,
             "entrypoint": list(record.spec.get("entrypoint") or DEFAULT_ENTRYPOINT),
             "execd": self._execd_image,
@@ -392,14 +518,30 @@ class FastSandboxTemplateService:
             "machine": {"vcpu": vcpu, "memory": memory},
             "output": {
                 "rootfsSize": rootfs_size,
-                "format": record.spec.get("format", "overlaybd"),
+                "format": fmt,
                 "publish": record.publish,
-                "publishSecretRef": {"name": self._k8s_config.template_s3_publish_secret},
+                "publishSecretRef": {"name": self._publish_secret_name(fmt)},
             },
         }
         env = record.spec.get("env") or {}
+        if self._execd_run_as_init:
+            # Copy first: the stored row keeps the client env untouched, and
+            # the server value wins over a client-provided EXECD_INIT.
+            env = {**env, EXECD_INIT_ENV: "1"}
         if env:
             spec["envs"] = [{"name": name, "value": value} for name, value in env.items()]
+        # OSEP-0022 CA wiring: bake the pinned MITM CA Secret's certificate
+        # entry (never the private key) into every server-created template
+        # when configured. The Secret must exist in the template's
+        # namespace (ops-runbook distribution); a missed copy fails the
+        # build observably.
+        if self._k8s_config.template_mitm_ca_secret:
+            mitm_certificate: dict = {
+                "secretRef": {"name": self._k8s_config.template_mitm_ca_secret}
+            }
+            if self._k8s_config.template_mitm_ca_secret_key:
+                mitm_certificate["key"] = self._k8s_config.template_mitm_ca_secret_key
+            spec["egressMitmCertificate"] = mitm_certificate
         # The CRD requires the readiness object itself (structural
         # defaulting fills warmupSeconds=60); always emit it, empty when the
         # request carried no readiness gate.

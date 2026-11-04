@@ -335,12 +335,7 @@ The `ConnectionConfig` class manages API server connection settings.
 Runtime notes:
 
 - In browsers, the SDK uses the global `fetch` implementation.
-- `requestTimeoutSeconds` bounds the wait for a response: it stops applying once
-  the response headers arrive (streaming responses are not cut off). It never
-  caps a healthy file upload body, which can legitimately take longer than the
-  timeout; on Node.js a stalled upload, or an upload that gets no response
-  headers within the timeout once the body has been sent, is aborted instead of
-  hanging (the Go SDK's `ResponseHeaderTimeout` contract).
+- `requestTimeoutSeconds` bounds the wait for a response: it stops applying once the response headers arrive (streaming responses are not cut off). It never caps a healthy file upload body, which can legitimately take longer than the timeout; on Node.js a stalled upload, or an upload that gets no response headers within the timeout once the body has been sent, is aborted instead of hanging (the Go SDK's `ResponseHeaderTimeout` contract).
 - In Node.js, every `Sandbox` and `SandboxManager` gets its own transport via `withTransportIfMissing()` unless you pass an already-initialized `ConnectionConfig`; shared configs are reused, and the SDK only closes transports it allocated itself. Call `sandbox.close()` or `manager.close()` when you are done so the SDK can release the agent it owns.
 
 | Parameter               | Description                                                                                                  | Default          | Environment Variable   |
@@ -460,8 +455,7 @@ await sandbox.credentialVault.create({
 });
 ```
 
-See [Credential Vault](https://github.com/opensandbox-group/OpenSandbox/blob/main/docs/guides/credential-vault.md) for auth types,
-binding guidance, and Git/curl examples.
+See [Credential Vault](https://github.com/opensandbox-group/OpenSandbox/blob/main/docs/guides/credential-vault.md) for auth types, binding guidance, and Git/curl examples.
 
 ### 5. Resource cleanup
 
@@ -472,3 +466,4 @@ Both `Sandbox` and `SandboxManager` own a scoped HTTP agent when running on Node
 - The SDK can run in browsers, but **streaming file uploads are Node-only**.
 - If you pass `ReadableStream` or `AsyncIterable` for `writeFiles`, the browser will fall back to **buffering in memory** before upload.
 - Reason: browsers do not support streaming `multipart/form-data` bodies with custom boundaries (required by the execd upload API).
+- Redirects: same-origin redirects keep request headers, while cross-origin redirects drop `OPEN-SANDBOX-*` / `OPENSANDBOX-*` headers (plus `Authorization`, `Cookie`, and `Proxy-Authorization`) so credentials are never replayed. File uploads never follow redirects. Browsers cannot inspect a manual redirect target, so a request carrying protected headers fails closed when a redirect is received; Node.js is unaffected. See [Redirects and protected headers](../../../docs/sdks/javascript.md#redirects-and-protected-headers).

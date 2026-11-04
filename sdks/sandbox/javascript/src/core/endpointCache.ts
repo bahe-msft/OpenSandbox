@@ -105,10 +105,6 @@ export class EndpointCache {
           this.put(sandboxId, port, useServerProxy, ep);
           this.inflight.delete(key);
         }
-        // Only clear our own entry (an invalidate() may have replaced it).
-        if (this.inflight.get(key) === promise) {
-          this.inflight.delete(key);
-        }
         return this.cloneEndpoint(ep);
       })
       .catch((err) => {

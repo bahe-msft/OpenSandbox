@@ -29,20 +29,11 @@ OpenSandbox's own BatchSandbox API remains `sandbox.opensandbox.io/v1alpha1`.
 
 ## Pause and resume
 
-This provider supports the standard `POST /v1/sandboxes/{id}/pause` and
-`POST /v1/sandboxes/{id}/resume` endpoints. Both are implemented by patching
-the `Sandbox` CRD's `spec.operatingMode` field.
+This provider supports the standard `POST /v1/sandboxes/{id}/pause` and `POST /v1/sandboxes/{id}/resume` endpoints. Both are implemented by patching the `Sandbox` CRD's `spec.operatingMode` field.
 
-Pause patches `spec.operatingMode: Suspended`. The agent-sandbox controller
-terminates and destroys the Pod but retains the `Sandbox` object, so the
-`sandboxId` stays stable across pause/resume cycles. The sandbox reports
-`Running` → `Pausing` → `Paused`; while the Pod is terminating, the status
-`reason` comes from the `Suspended` condition (e.g. `PodTerminating`).
+Pause patches `spec.operatingMode: Suspended`. The agent-sandbox controller terminates and destroys the Pod but retains the `Sandbox` object, so the `sandboxId` stays stable across pause/resume cycles. The sandbox reports `Running` → `Pausing` → `Paused`; while the Pod is terminating, the status `reason` comes from the `Suspended` condition (e.g. `PodTerminating`).
 
-Resume patches `spec.operatingMode: Running`. The controller recreates the Pod
-from the Sandbox spec, so expect scheduling and image-pull latency before the
-sandbox is usable again. The sandbox reports `Paused` → `Resuming` →
-`Pending` → `Running`.
+Resume patches `spec.operatingMode: Running`. The controller recreates the Pod from the Sandbox spec, so expect scheduling and image-pull latency before the sandbox is usable again. The sandbox reports `Paused` → `Resuming` → `Pending` → `Running`.
 
 | | Preserved? |
 |--|-----------|
@@ -53,8 +44,7 @@ sandbox is usable again. The sandbox reports `Paused` → `Resuming` →
 
 Anything not written to a persistent volume is lost on pause.
 
-A paused sandbox still expires at its original timeout; a retained expired
-sandbox reports `Terminated` and can no longer be paused or resumed.
+A paused sandbox still expires at its original timeout; a retained expired sandbox reports `Terminated` and can no longer be paused or resumed.
 
 ## Start OpenSandbox server
 

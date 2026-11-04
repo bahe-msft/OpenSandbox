@@ -15,10 +15,7 @@ Extend the existing rootfs pause/resume implementation with an opt-in QEMU check
 
 The first version uses the configured image registry for both artifacts. It does not require object storage, a custom OCI artifact media type, `savevm`, or a Kubernetes RuntimeClass.
 
-This document records the design and its boundaries. Workload authors and
-cluster operators should follow the
-[QEMU VMState operations guide](../../../docs/guides/qemu-vmstate-snapshots.md)
-for image preparation, Helm deployment, Kind validation, and troubleshooting.
+This document records the design and its boundaries. Workload authors and cluster operators should follow the [QEMU VMState operations guide](../../../docs/guides/qemu-vmstate-snapshots.md) for image preparation, Helm deployment, Kind validation, and troubleshooting.
 
 ## Motivation
 
@@ -147,9 +144,7 @@ The launch manifest records the base digest and overlay path. A writable QEMU di
 3. Preflight QMP, compatibility, disk layout, limits, and work space. Volume paths come from the source PodSpec instead of nerdctl's Docker-compatible inspect view, which is incomplete for CRI-created containers.
 4. Export the QEMU migration stream through a file descriptor passed to QEMU over QMP and compress it with zstd.
 5. Wait for migration completion; the source QEMU enters `postmigrate`.
-6. Freeze companion outer containers (leaving the QEMU container unfrozen to
-   avoid kernel worker freeze deadlocks while QEMU remains quiesced in postmigrate),
-   remove temporary helpers, and commit rootfs images.
+6. Freeze companion outer containers (leaving the QEMU container unfrozen to avoid kernel worker freeze deadlocks while QEMU remains quiesced in postmigrate), remove temporary helpers, and commit rootfs images.
 7. Build and push the standard VM state image and rootfs images.
 8. Resolve all registry manifest digests and update the complete `SandboxSnapshot.status` in one status write.
 9. For an internal pause snapshot, release the source Pod only after the snapshot is ready. A standalone public snapshot resumes the source outer container and QEMU after artifact publication.
@@ -198,23 +193,13 @@ Existing objects without `status.format` are interpreted as `rootfs-v1`.
 
 ## Risks and mitigations
 
-- **Secret material in guest RAM:** use a dedicated private snapshot repository,
-  retention controls, audit, and encryption at rest.
-- **Large VM state:** enforce configurable byte/time limits and explicit worker
-  ephemeral-storage requests. Compression effectiveness is workload-dependent.
-- **Compatibility failure:** record and validate versioned machine type, QEMU
-  version, CPU model, memory, vCPU count, config digest, and node class.
-- **Tag mutation:** tags are publication handles only; restore always uses the
-  manifest digest.
-- **Probe restart during checkpoint:** the QEMU workload contract requires a
-  checkpoint-aware supervisor/liveness path; for internal BatchSandbox pause,
-  workload-controlled processes must not independently resume the source VM via QMP
-  or restart QEMU before source Pod deletion.
-- **Mounted writable disks:** reject them in v1 instead of producing an
-  incomplete snapshot.
-- **Node-level worker privileges:** isolate snapshot-capable nodes and use
-  admission policy to allow host PID, `SYS_PTRACE`, and the containerd runtime
-  directory only for the image-committer Job identity.
+- **Secret material in guest RAM:** use a dedicated private snapshot repository, retention controls, audit, and encryption at rest.
+- **Large VM state:** enforce configurable byte/time limits and explicit worker ephemeral-storage requests. Compression effectiveness is workload-dependent.
+- **Compatibility failure:** record and validate versioned machine type, QEMU version, CPU model, memory, vCPU count, config digest, and node class.
+- **Tag mutation:** tags are publication handles only; restore always uses the manifest digest.
+- **Probe restart during checkpoint:** the QEMU workload contract requires a checkpoint-aware supervisor/liveness path; for internal BatchSandbox pause, workload-controlled processes must not independently resume the source VM via QMP or restart QEMU before source Pod deletion.
+- **Mounted writable disks:** reject them in v1 instead of producing an incomplete snapshot.
+- **Node-level worker privileges:** isolate snapshot-capable nodes and use admission policy to allow host PID, `SYS_PTRACE`, and the containerd runtime directory only for the image-committer Job identity.
 
 ## Upgrade strategy
 
