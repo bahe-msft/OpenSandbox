@@ -36,6 +36,7 @@ from opensandbox_server.integrations.idle_pause import start_idle_pause_sweeper
 from opensandbox_server.integrations.renew_intent import start_renew_intent_consumer
 from opensandbox_server.logging_config import configure_logging
 from opensandbox_server.startup_guard import api_key_confirm
+from opensandbox_server.services.authentication import ExecAuthConfig, ExecAuthenticator
 from opensandbox_server.tenants import (
     validate_tenant_config,
     validate_tenant_namespaces_on_startup,
@@ -134,7 +135,9 @@ class _DateHeaderFastAPI(FastAPI):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if tenant_provider is None:
+    if app_config.server.authn_config is not None:
+        app.state.authenticator = ExecAuthenticator(ExecAuthConfig.load(app_config.server.authn_config))
+    if tenant_provider is None and app_config.server.authn_config is None:
         try:
             api_key_confirm(configured_api_key=app_config.server.api_key)
         except Exception as exc:

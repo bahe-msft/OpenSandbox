@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenSandbox management authentication result",
+  "description": "JSON stdout from a trusted checker that exits with code zero. This is a subprocess protocol, not an HTTP API exposed by OSB.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["allowed"],
+  "properties": {
+    "allowed": {"type": "boolean"},
+    "subject": {"type": ["string", "null"], "minLength": 1, "maxLength": 256}
+  },
+  "$defs": {
+    "Request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token"],
+      "properties": {"token": {"type": "string", "minLength": 1, "maxLength": 16384, "writeOnly": true}}
+    }
+  }
+}

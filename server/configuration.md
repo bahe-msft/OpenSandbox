@@ -59,7 +59,8 @@ Example files: [`example.config.toml`](opensandbox_server/examples/example.confi
 |-----|------|---------|-------------|
 | `host` | string | `"0.0.0.0"` | HTTP API bind address. |
 | `port` | integer | `8080` | Listen port (1–65535). |
-| `api_key` | string \| omitted | `null` | If set, requests must send header `OPEN-SANDBOX-API-KEY` (public routes like `/health`, `/docs` excluded). If unset, API key checks are skipped, and startup requires explicit risk acknowledgment: interactive TTY `YES` or `OPENSANDBOX_INSECURE_SERVER=YES`. |
+| `api_key` | string \| omitted | `null` | If set, requests must send header `OPEN-SANDBOX-API-KEY` (public routes like `/health`, `/docs` excluded). Cannot be combined with `authn_config`, including API keys supplied by environment override. If no authentication mode is configured, startup requires explicit risk acknowledgment: interactive TTY `YES` or `OPENSANDBOX_INSECURE_SERVER=YES`. |
+| `authn_config` | absolute path \| omitted | `null` | Exec-authentication TOML file. Mutually exclusive with `api_key` and key-based `[tenants]`; command and timeout belong in this file. |
 | `eip` | string \| omitted | `null` | Public IP/hostname used as the host part of returned sandbox endpoint URLs (mainly Docker runtime). |
 | `max_sandbox_timeout_seconds` | integer \| omitted | `null` | Cap on the `timeout` field of **create** requests (≥ 60). Does not apply to renew-expiration or total lifetime. Omit to disable. |
 | `timeout_keep_alive` | integer | `30` | Idle keep-alive timeout (s) passed to uvicorn. |
@@ -69,6 +70,19 @@ Example files: [`example.config.toml`](opensandbox_server/examples/example.confi
 | `thread_pool_size` | integer | `200` | Anyio threadpool size for sync route handlers. |
 | `loop` | `"auto"` \| `"uvloop"` \| `"asyncio"` | `"auto"` | Event loop; `auto` prefers uvloop. |
 | `http` | `"auto"` \| `"httptools"` \| `"h11"` | `"auto"` | HTTP parser; `auto` prefers httptools. |
+
+---
+
+## Exec authentication — `authn.toml`
+
+When `server.authn_config` is selected, clients send `Authorization: Bearer <credential>`. OSB launches the independently packaged checker and consumes an allow/deny JSON result. `server.api_key` remains available as a separate, mutually exclusive mode; configuring both is rejected even when the API-key value is empty. Existing sandbox endpoint/proxy authentication is unchanged.
+
+| File key | Type | Default | Description |
+|----------|------|---------|-------------|
+| `exec.command` | string[] | Required | Fixed argv with an absolute executable path; no shell interpolation or user-supplied arguments. |
+| `exec.timeout_seconds` | number | `3` | OSB-enforced total deadline, including queue wait; greater than zero and at most 30 seconds. |
+
+Other TOML sections belong to the checker and are not interpreted by OSB. Up to eight checks execute concurrently. Decisions are not cached. Exit zero with `allowed: false` returns `401`; nonzero exit, timeout, malformed result, or stdout larger than 4 KiB returns `503` with no fallback. Credentials travel only on stdin and stderr is discarded. The optional returned subject is exposed as `request.state.auth_subject`. Setup, protocol, platform constraints, and Kind example: [Management authentication checker](../docs/guides/authentication-exec.md).
 
 ---
 

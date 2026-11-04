@@ -42,8 +42,12 @@ curl -H "OPEN-SANDBOX-API-KEY: your-secret-api-key" http://localhost:8080/v1/san
 ```
 
 ::: warning
-If `server.api_key` is empty, the server runs without authentication. In non-interactive environments (Docker/Kubernetes/CI), set `OPENSANDBOX_INSECURE_SERVER=YES` to acknowledge the risk. **Always set an API key in production.**
+If neither `server.api_key`, `[tenants]`, nor `server.authn_config` is configured, the server runs without authentication. In non-interactive environments (Docker/Kubernetes/CI), set `OPENSANDBOX_INSECURE_SERVER=YES` to acknowledge the risk. **Always configure authentication in production.**
 :::
+
+### External validation
+
+Set `server.authn_config` to an absolute TOML-file path to validate management bearer credentials with an independently packaged executable. Its command and server-enforced timeout belong in that file. Keep `server.api_key` for static-key authentication, but configure only one of these two options, including environment overrides. See [Management authentication checker](/guides/authentication-exec) for the protocol and isolated Kind example. Existing sandbox endpoint authentication is unchanged.
 
 ## Key Configuration Areas
 

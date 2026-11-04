@@ -686,6 +686,16 @@ class ServerConfig(BaseModel):
         default=None,
         description="Global API key for authenticating incoming lifecycle API calls.",
     )
+    authn_config: Optional[Path] = Field(
+        default=None, description="Absolute path to the management exec-authentication TOML file.",
+    )
+
+    @field_validator("authn_config")
+    @classmethod
+    def validate_authn_config_path(cls, value: Optional[Path]) -> Optional[Path]:
+        if value is not None and not value.is_absolute():
+            raise ValueError("server.authn_config must be an absolute path.")
+        return value
     eip: Optional[str] = Field(
         default=None,
         description="Bound public IP. When set, used as the host part when returning sandbox endpoints.",
@@ -1625,6 +1635,11 @@ class AppConfig(BaseModel):
     )
     @model_validator(mode="after")
     def validate_runtime_blocks(self) -> "AppConfig":
+        if self.server.authn_config is not None:
+            if self.server.api_key is not None:
+                raise ValueError("Only one of server.api_key and server.authn_config may be configured.")
+            if self.tenants is not None:
+                raise ValueError("server.authn_config cannot be combined with key-based [tenants].")
         if self.runtime.type == "docker":
             if self.kubernetes is not None:
                 raise ValueError("Kubernetes block must be omitted when runtime.type = 'docker'.")
@@ -1692,6 +1707,13 @@ def _load_toml_data(path: Path) -> dict[str, Any]:
 
 def _apply_raw_env_overrides(raw_data: dict[str, Any]) -> None:
     """Apply environment overrides that must participate in model validation."""
+    api_key = os.environ.get(API_KEY_ENV_VAR)
+    if api_key is not None:
+        server_data = raw_data.setdefault("server", {})
+        if not isinstance(server_data, dict):
+            raise ValueError("[server] must be a TOML table.")
+        server_data["api_key"] = api_key
+
     postgresql_dsn = os.environ.get(POSTGRESQL_DSN_ENV_VAR)
     if postgresql_dsn is None:
         return
@@ -1708,8 +1730,6 @@ def _apply_raw_env_overrides(raw_data: dict[str, Any]) -> None:
 
 def _apply_env_overrides(config: AppConfig) -> None:
     """Apply environment variable overrides to parsed configuration."""
-    if API_KEY_ENV_VAR in os.environ:
-        config.server.api_key = os.environ[API_KEY_ENV_VAR]
     _apply_secure_access_env_overrides(config)
 
 
